@@ -347,6 +347,9 @@ def store_buy():
 @app.post("/api/store/equip")
 @require_auth
 def store_equip():
+    err = limited("mutation")
+    if err:
+        return err
     item_id = (request.get_json(silent=True) or {}).get("item_id", "")
     item = CATALOG.get(item_id)
     if not item or item["kind"] != "skin":
@@ -366,6 +369,9 @@ def store_equip():
 @app.post("/api/daily/claim")
 @require_auth
 def daily_claim():
+    err = limited("mutation")
+    if err:
+        return err
     uid = g.user["id"]
     today = _today()
     u = q("SELECT last_daily, streak FROM users WHERE id = ?", (uid,), one=True)
@@ -387,6 +393,9 @@ def daily_claim():
 @app.post("/api/coupons/redeem")
 @require_auth
 def coupon_redeem():
+    err = limited("mutation")
+    if err:
+        return err
     code = ((request.get_json(silent=True) or {}).get("code") or "").strip().upper()
     if not code:
         return jsonify({"error": "missing_code"}), 400
@@ -450,6 +459,9 @@ def messages_get():
 @app.post("/api/matches/quick")
 @require_auth
 def match_quick():
+    err = limited("mutation")
+    if err:
+        return err
     blocked = user_blocked_reason(g.user)
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
@@ -475,6 +487,9 @@ def match_quick():
 @app.post("/api/matches/ai")
 @require_auth
 def match_ai():
+    err = limited("mutation")
+    if err:
+        return err
     blocked = user_blocked_reason(g.user)
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
@@ -496,6 +511,9 @@ def match_ai():
 @app.post("/api/matches/friend")
 @require_auth
 def match_friend():
+    err = limited("mutation")
+    if err:
+        return err
     blocked = user_blocked_reason(g.user)
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
@@ -512,6 +530,9 @@ def match_friend():
 @app.post("/api/matches/join")
 @require_auth
 def match_join():
+    err = limited("mutation")
+    if err:
+        return err
     blocked = user_blocked_reason(g.user)
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
@@ -615,6 +636,9 @@ def match_fire(mid):
 @app.post("/api/matches/<mid>/leave")
 @require_auth
 def match_leave(mid):
+    err = limited("mutation")
+    if err:
+        return err
     m = load_match(mid)
     side = side_for(m, g.user["id"]) if m else None
     if not m or side is None:
