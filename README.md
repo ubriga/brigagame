@@ -18,8 +18,17 @@ GitHub Pages (static)  --HTTPS-->  PythonAnywhere (Flask API + SQLite)
 ```
 
 PythonAnywhere free tier has no WebSockets, so sync is HTTP short-polling
-(every 1.5s with a `since=<version>` cursor - cheap empty responses when
-nothing changed). Artillery shots are discrete events, so this feels live.
+with a `since=<version>` cursor (cheap empty responses when nothing changed).
+Polling is adaptive: ~0.8s right after activity, backing off to ~2.6s when
+idle and ~5s in hidden tabs, so exchanges feel live without hammering the
+free tier. Artillery shots are discrete events, so this feels live.
+
+Quick match also invites players who are simply present anywhere in the app
+(an app-wide presence pulse every 8s marks them active), not only players who
+clicked quick match. The invite is always a reservation - joining happens
+only through the accept/decline prompt (20s). Declines and timeouts fall back
+to another present player. The same pulse delivers unread-message counts for
+the global messages badge.
 
 ## Security model
 - Google ID token verified server-side (signature, audience, expiry, verified email).

@@ -9,6 +9,7 @@ const GameView = {
   serverOffset: 0, onExit: null,
   displayTowers: null, displayHp: null, pendingTowers: null,
   shake: 0, endAt: null, ended: false, readySent: false,
+  pollDelay: 900, showAimUntil: 0,
 
   W: 1000, H: 560, GROUND: 520, BLOCK: 26, TROWS: 6, TCOLS: 4,
   TX: { p1: 140, p2: 760 },
@@ -31,20 +32,54 @@ const GameView = {
       <div id="reload-wrap"><div id="reload-bar"></div></div>
       <div id="aim-info">זווית 45° · עוצמה 50</div>
       <div id="weapon-bar"></div>
-      <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז באוויר.</p>`;
+      <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז באוויר.</p>
+      <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
+        · <b>רווח</b> ירייה · <b>1-4</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
     this.ctx = this.canvas.getContext("2d");
     this.bindInput();
     await this.refresh(0);
-    this.pollTimer = setInterval(() => this.poll(), CONFIG.POLL_MS);
+    this._destroyed = false;
+    this.pollDelay = CONFIG.POLL_MIN_MS || 900;
+    this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     const loop = () => { this.draw(); this.raf = requestAnimationFrame(loop); };
     loop();
   },
 
   destroy() {
-    clearInterval(this.pollTimer);
+    this.stopPoll();
     cancelAnimationFrame(this.raf);
+    if (this._onKey) window.removeEventListener("keydown", this._onKey);
+    this._onKey = null;
     this.canvas = null;
+  },
+
+  stopPoll() {
+    this._destroyed = true;
+    clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+  },
+
+  // Adaptive polling: right after a state change we poll hot; when nothing
+  // changes we back off gradually so idle clients stay cheap on the free
+  // tier. Hidden tabs poll rarely. Net effect: opponent shots appear about
+  // twice as fast during an exchange, with less load overall than a fixed
+  // 1.5s interval.
+  async pollLoop() {
+    if (this._destroyed) return;
+    const prevV = this.snap ? this.snap.version : -1;
+    try { await this.poll(); } catch (e) { /* transient network error */ }
+    if (this._destroyed) return;
+    const changed = !!(this.snap && this.snap.version > prevV);
+    if (document.hidden) {
+      this.pollDelay = CONFIG.POLL_HIDDEN_MS || 5000;
+    } else if (changed) {
+      this.pollDelay = CONFIG.POLL_MIN_MS || 800;
+    } else {
+      this.pollDelay = Math.min(CONFIG.POLL_MAX_MS || 2600,
+                                Math.round(this.pollDelay * 1.35) + 40);
+    }
+    this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
   },
 
   mySide() { return this.snap ? this.snap.you : "p1"; },
@@ -88,6 +123,45 @@ const GameView = {
       if (!this.aiming) return;
       this.aiming = false; updateAim(pos(e)); this.fire();
     });
+    // Keyboard controls: arrows adjust angle/power, space fires, 1-4 picks a
+    // weapon. Shift makes arrow steps bigger. The aim indicator stays visible
+    // briefly after a key press so keyboard aiming has visual feedback.
+    this._onKey = (e) => {
+      if (!this.canvas || !this.snap || this.snap.status !== "active") return;
+      const t = e.target;
+      if (t && ["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName)) return;
+      if (document.activeElement && document.activeElement.tagName === "BUTTON")
+        document.activeElement.blur();
+      const step = e.shiftKey ? 5 : 1;
+      const weapons = ["standard", "double_bomb", "homing_missile", "cluster_shell"];
+      let used = true;
+      switch (e.key) {
+        case "ArrowUp":
+          this.aimAngle = Math.min(90, this.aimAngle + step); break;
+        case "ArrowDown":
+          this.aimAngle = Math.max(0, this.aimAngle - step); break;
+        case "ArrowRight":
+          this.aimPower = Math.min(100, this.aimPower + step); break;
+        case "ArrowLeft":
+          this.aimPower = Math.max(5, this.aimPower - step); break;
+        case " ":
+          if (this.canFire()) this.fire();
+          break;
+        case "1": case "2": case "3": case "4": {
+          const id = weapons[Number(e.key) - 1];
+          const qty = id === "standard" ? 1 : (this._inventory?.[id]?.qty || 0);
+          if (id && qty > 0) { this.weapon = id; Sfx.play("click"); this.renderWeapons(); }
+          break;
+        }
+        default: used = false;
+      }
+      if (!used) return;
+      e.preventDefault();
+      this.showAimUntil = performance.now() + 1600;
+      const el = document.getElementById("aim-info");
+      if (el) el.textContent = `זווית ${this.aimAngle}° · עוצמה ${this.aimPower}`;
+    };
+    window.addEventListener("keydown", this._onKey);
   },
 
   canFire() {
@@ -221,6 +295,11 @@ const GameView = {
         this.renderWeapons();
       }
       if (window.refreshMe) window.refreshMe();
+      // Stay hot right after our shot so the opponent's answer shows fast.
+      this.pollDelay = CONFIG.POLL_MIN_MS || 800;
+      clearTimeout(this.pollTimer);
+      if (!this._destroyed && this.snap.status !== "finished")
+        this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     } else if (data.error_he) {
       toast(data.error_he);
     }
@@ -359,7 +438,8 @@ const GameView = {
     // cannons
     for (const side of ["p1", "p2"]) this.drawCannon(side);
     // aim arrow
-    if (this.aiming && this.canFire()) this.drawAim();
+    if ((this.aiming || performance.now() < (this.showAimUntil || 0))
+        && this.canFire()) this.drawAim();
     // animations
     for (const a of this.anims) {
       if (a.t < 0) continue;  // sequenced for later
@@ -568,7 +648,7 @@ const GameView = {
   },
 
   showEnd() {
-    clearInterval(this.pollTimer);
+    this.stopPoll();
     const s = this.snap, ov = document.getElementById("game-overlay");
     const iWon = s.winner_side === s.you;
     const res = (s.results || {})[s.you] || {};

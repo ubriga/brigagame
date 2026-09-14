@@ -203,6 +203,79 @@ s, declined = call("POST", f"/api/matches/{dmid}/decline", token=tb)
 s2, still_waiting = call("GET", f"/api/matches/{dmid}/state?since=0", token=ta)
 check("quick match decline path", s == 200 and declined["declined"] and
       s2 == 200 and still_waiting["status"] == "waiting")
+call("POST", f"/api/matches/{dmid}/leave", token=ta)  # clean up the waiting match
+
+# --- presence invites: present-anywhere players get quick-match offers
+run_tag = str(int(time.time()))
+def devlogin(name):
+    _, r = call("POST", "/api/auth/dev",
+                body={"email": f"{name}-{run_tag}@example.com", "name": name.title()})
+    return r["token"]
+tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlogin("frank")
+
+# carol is simply present in the app - she never clicks quick match.
+s, hb = call("POST", "/api/presence/ping", token=tc)
+check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
+
+# dave clicks quick; with no waiting match he waits, and the system should
+# immediately offer his match to carol.
+s, dq = call("POST", "/api/matches/quick", token=td)
+lmid = dq["match_id"]
+check("dave waits for an opponent", s == 200 and dq["status"] == "waiting", str(dq))
+s, hb = call("POST", "/api/presence/ping", token=tc)
+check("idle present player receives invite",
+      s == 200 and hb.get("offer") and hb["offer"]["match_id"] == lmid, str(hb))
+s, hidden2 = call("GET", f"/api/matches/{lmid}/state?since=0", token=tc)
+check("presence invite does not auto-join", s == 404, str(hidden2))
+
+# decline falls back to another present player on the owner's next poll.
+s, dec = call("POST", f"/api/matches/{lmid}/decline", token=tc)
+check("carol declines", s == 200 and dec["declined"])
+call("POST", "/api/presence/ping", token=te)            # erin is present too
+call("GET", f"/api/matches/{lmid}/state?since=0", token=td)  # owner poll drives fallback
+s, hb = call("POST", "/api/presence/ping", token=te)
+check("decline falls back to another present player",
+      s == 200 and hb.get("offer") and hb["offer"]["match_id"] == lmid, str(hb))
+s, hb_c = call("POST", "/api/presence/ping", token=tc)
+check("declining player is not re-invited",
+      s == 200 and hb_c.get("offer") is None, str(hb_c))
+
+# timeout also falls back: erin ignores the invite until it expires.
+wait_s = int(hb["offer"].get("expires_in", 20)) + 2
+print(f"waiting {wait_s}s for offer expiry...")
+time.sleep(wait_s)
+call("POST", "/api/presence/ping", token=tf)            # frank becomes present
+call("GET", f"/api/matches/{lmid}/state?since=0", token=td)
+s, hb = call("POST", "/api/presence/ping", token=tf)
+check("timeout falls back to a new present player",
+      s == 200 and hb.get("offer") and hb["offer"]["match_id"] == lmid, str(hb))
+s, hb_e = call("POST", "/api/presence/ping", token=te)
+check("timed-out player is not re-invited", s == 200 and hb_e.get("offer") is None, str(hb_e))
+
+# frank accepts from the prompt: both clients see the active game.
+s, acc = call("POST", f"/api/matches/{lmid}/accept", token=tf)
+check("invited player accepts", s == 200 and acc["status"] == "active", str(acc))
+s, sd = call("GET", f"/api/matches/{lmid}/state?since=0", token=td)
+s2, sf = call("GET", f"/api/matches/{lmid}/state?since=0", token=tf)
+check("both clients enter the game",
+      s == s2 == 200 and sd["status"] == sf["status"] == "active"
+      and sd["you"] == "p1" and sf["you"] == "p2"
+      and len(sd["towers"]["p1"]) == 6 and len(sf["towers"]["p2"]) == 6)
+# frank is now busy in an active match: not eligible for more invites.
+s, dq2 = call("POST", "/api/matches/quick", token=tc)
+check("carol can still quick-click", s == 200 and dq2["status"] in ("waiting", "offered"), str(dq2))
+call("POST", f"/api/matches/{dq2['match_id']}/leave", token=tc)
+call("POST", f"/api/matches/{lmid}/leave", token=tf)
+call("POST", f"/api/matches/{lmid}/leave", token=td)
+
+# --- unread-messages indicator data
+call("POST", "/api/admin/broadcast", token=tadm,
+     body={"title": "בדיקה", "body": "הודעת בדיקה לכל השחקנים"})
+s, hb = call("POST", "/api/presence/ping", token=tc)
+check("ping reports unread messages", s == 200 and hb.get("unread_messages", 0) >= 1, str(hb))
+call("GET", "/api/messages", token=tc)  # viewing marks read
+s, hb = call("POST", "/api/presence/ping", token=tc)
+check("unread clears after reading", s == 200 and hb.get("unread_messages") == 0, str(hb))
 
 # --- moderation
 s, r = call("GET", "/api/admin/users", token=tadm)

@@ -220,6 +220,67 @@ def claim_waiting_match(match_id, user_id):
     return cur.rowcount == 1
 
 
+def sweep_expired_offers():
+    """Expire offers. An unanswered invite counts as a pass for that match so
+    matchmaking moves on to other present players instead of re-pinging."""
+    now = time.time()
+    execute("INSERT OR IGNORE INTO match_offer_declines (match_id, user_id, created_at)"
+            " SELECT match_id, invited_user_id, ? FROM match_offers"
+            " WHERE expires_at <= ?", (_now_iso(), now))
+    execute("DELETE FROM match_offers WHERE expires_at <= ?", (now,))
+    execute("DELETE FROM match_offer_declines"
+            " WHERE created_at < datetime('now', '-1 day')")
+
+
+def offer_to_present_player(match_id, owner_id):
+    """Offer a waiting quick match to a random player who is present anywhere
+    in the app (heartbeat-active), even if they never clicked quick match.
+    The accept/decline prompt remains the consent mechanism: this function
+    only reserves the match; joining happens solely via /accept.
+    Returns True when an invite was created."""
+    now = time.time()
+    sweep_expired_offers()
+    live = q("SELECT 1 FROM match_offers WHERE match_id = ? AND expires_at > ?",
+             (match_id, now), one=True)
+    if live:
+        return False
+    now_iso = _now_iso()
+    presence_cutoff = datetime.fromtimestamp(
+        now - Config.PRESENCE_WINDOW_SECONDS, timezone.utc).isoformat()
+    cooldown_cutoff = datetime.fromtimestamp(
+        now - Config.INVITE_COOLDOWN_SECONDS, timezone.utc).isoformat()
+    live_waiting_cutoff = datetime.fromtimestamp(now - 10, timezone.utc).isoformat()
+    row = q("SELECT u.id FROM users u WHERE u.id != ?"
+            " AND u.last_seen IS NOT NULL AND u.last_seen >= ?"
+            " AND u.suspended = 0"
+            " AND (u.banned_until IS NULL OR u.banned_until <= ?)"
+            # not already holding a live invite
+            " AND NOT EXISTS (SELECT 1 FROM match_offers o"
+            "  WHERE o.invited_user_id = u.id AND o.expires_at > ?)"
+            # not declined/timed-out for this match, and no recent decline anywhere
+            " AND NOT EXISTS (SELECT 1 FROM match_offer_declines d"
+            "  WHERE d.user_id = u.id AND (d.match_id = ? OR d.created_at >= ?))"
+            # not busy inside an active match
+            " AND NOT EXISTS (SELECT 1 FROM matches m WHERE m.status = 'active'"
+            "  AND (m.p1 = u.id OR m.p2 = u.id))"
+            # not actively waiting for an opponent in their own match
+            " AND NOT EXISTS (SELECT 1 FROM matches m2 WHERE m2.status = 'waiting'"
+            "  AND m2.p1 = u.id AND m2.updated_at >= ?)"
+            " ORDER BY RANDOM() LIMIT 1",
+            (owner_id, presence_cutoff, now_iso, now, match_id,
+             cooldown_cutoff, live_waiting_cutoff), one=True)
+    if not row:
+        return False
+    try:
+        execute("INSERT INTO match_offers (match_id, invited_user_id,"
+                " expires_at, created_at) VALUES (?,?,?,?)",
+                (match_id, row["id"], now + Config.OFFER_TTL_SECONDS, now_iso))
+        return True
+    except Exception:
+        # Another request reserved the match first.
+        return False
+
+
 # --------------------------------------------------------------- auth
 @app.post("/api/auth/google")
 def auth_google():
@@ -460,6 +521,32 @@ def messages_get():
     return jsonify({"messages": out})
 
 
+# --------------------------------------------------------------- presence
+@app.post("/api/presence/ping")
+@require_auth
+def presence_ping():
+    """App-wide presence pulse. Marks the player as present (so quick matches
+    can invite them from any screen) and returns any pending match offer."""
+    err = limited("state")
+    if err:
+        return err
+    uid = g.user["id"]
+    execute("UPDATE users SET last_seen = ? WHERE id = ?", (_now_iso(), uid))
+    now = time.time()
+    offer = q("SELECT match_id, expires_at FROM match_offers"
+              " WHERE invited_user_id = ? AND expires_at > ?"
+              " ORDER BY expires_at DESC LIMIT 1", (uid, now), one=True)
+    unread = q("SELECT COUNT(*) c FROM messages m LEFT JOIN message_reads r"
+               " ON r.message_id = m.id AND r.user_id = ?"
+               " WHERE (m.user_id IS NULL OR m.user_id = ?)"
+               " AND r.read_at IS NULL", (uid, uid), one=True)["c"]
+    out = {"ok": True, "offer": None, "unread_messages": unread}
+    if offer:
+        out["offer"] = {"match_id": offer["match_id"],
+                        "expires_in": max(1, int(offer["expires_at"] - now))}
+    return jsonify(out)
+
+
 # --------------------------------------------------------------- matchmaking
 @app.post("/api/matches/quick")
 @require_auth
@@ -474,7 +561,7 @@ def match_quick():
     now = time.time()
     # Offers are reservations, not joins. The invited player is not attached
     # to the match until they explicitly accept.
-    execute("DELETE FROM match_offers WHERE expires_at <= ?", (now,))
+    sweep_expired_offers()
     existing = q("SELECT match_id, expires_at FROM match_offers"
                  " WHERE invited_user_id = ? AND expires_at > ?"
                  " ORDER BY expires_at DESC LIMIT 1", (uid, now), one=True)
@@ -508,6 +595,10 @@ def match_quick():
     execute("INSERT INTO matches (id, code, mode, status, p1, state, version,"
             " created_at, updated_at) VALUES (?,?,?,?,?,?,0,?,?)",
             (mid, None, "quick", "waiting", uid, "{}", now_iso, now_iso))
+    # Also offer the new match to a player who is simply present in the app,
+    # even if they never clicked quick match. Consent stays with the invited
+    # player via the accept/decline prompt.
+    offer_to_present_player(mid, uid)
     return jsonify({"match_id": mid, "status": "waiting"})
 
 
@@ -555,6 +646,10 @@ def match_decline(mid):
         return err
     cur = execute("DELETE FROM match_offers WHERE match_id = ?"
                   " AND invited_user_id = ?", (mid, g.user["id"]))
+    if cur.rowcount == 1:
+        execute("INSERT OR IGNORE INTO match_offer_declines"
+                " (match_id, user_id, created_at) VALUES (?,?,?)",
+                (mid, g.user["id"], _now_iso()))
     return jsonify({"ok": True, "declined": cur.rowcount == 1})
 
 
@@ -647,6 +742,10 @@ def match_state(mid):
     if m["status"] == "waiting":
         execute("UPDATE matches SET updated_at = ? WHERE id = ?", (_now_iso(), mid))
         m["updated_at"] = _now_iso()
+        # Quick-match owners keep inviting present players while they wait:
+        # after a decline or timeout, fall back to another present player.
+        if m["mode"] == "quick":
+            offer_to_present_player(mid, g.user["id"])
     try:
         since = max(0, int(request.args.get("since", 0)))
     except (TypeError, ValueError):
