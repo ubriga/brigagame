@@ -135,6 +135,7 @@ check("rating moved", ma["user"]["rating"] != 1000 or mb["user"]["rating"] != 10
 s, r = call("POST", "/api/matches/ai", token=tb)
 aid = r["match_id"]
 check("ai match active", s == 200 and r["status"] == "active")
+check("ai difficulty selected", call("GET", f"/api/matches/{aid}/state?since=0", token=tb)[1]["ai_difficulty"] == "normal")
 s, st = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 check("ai opponent named", st["players"]["p2"]["name"] == "OrelAI Bot")
 time.sleep(9)
@@ -142,11 +143,66 @@ s, st2 = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 ai_shot = any(e["type"] == "shot" and e.get("side") == "p2" for e in st2["events"])
 check("AI fires back on poll", ai_shot)
 
-# --- quick match pairing
+# --- quick match consent + two-way real-time sync
 s, r1 = call("POST", "/api/matches/quick", token=ta)
-s, r2 = call("POST", "/api/matches/quick", token=tb)
-check("quick match pairs two players",
-      r1["match_id"] == r2["match_id"] and r2["status"] == "active", str((r1, r2)))
+qmid = r1["match_id"]
+# Owner's waiting-screen poll is the heartbeat that makes this match eligible.
+s, waiting_state = call("GET", f"/api/matches/{qmid}/state?since=0", token=ta)
+check("quick match owner waits safely", s == 200 and waiting_state["status"] == "waiting")
+s, offer = call("POST", "/api/matches/quick", token=tb)
+check("quick match asks second player",
+      s == 200 and offer["match_id"] == qmid and offer["status"] == "offered", str(offer))
+s, hidden = call("GET", f"/api/matches/{qmid}/state?since=0", token=tb)
+check("offer does not auto-join player", s == 404, str(hidden))
+s, accepted = call("POST", f"/api/matches/{qmid}/accept", token=tb)
+check("player explicitly accepts", s == 200 and accepted["status"] == "active", str(accepted))
+s, qa = call("GET", f"/api/matches/{qmid}/state?since=0", token=ta)
+s2, qb = call("GET", f"/api/matches/{qmid}/state?since=0", token=tb)
+check("both clients receive complete initial state",
+      s == s2 == 200 and qa["you"] == "p1" and qb["you"] == "p2"
+      and len(qa["towers"]["p1"]) == 6 and len(qb["towers"]["p2"]) == 6)
+call("POST", f"/api/matches/{qmid}/ready", token=ta)
+call("POST", f"/api/matches/{qmid}/ready", token=tb)
+# Standard weapons are ready immediately. A p1 shot must become visible to p2.
+s, shot_a = call("POST", f"/api/matches/{qmid}/fire", token=ta,
+                 body={"angle": 45, "power": 45, "weapon": "standard"})
+s2, seen_b = call("GET", f"/api/matches/{qmid}/state?since={qb['version']}", token=tb)
+check("p1 state update reaches p2",
+      s == s2 == 200 and any(e.get("type") == "shot" and e.get("side") == "p1"
+                            for e in seen_b.get("events", [])))
+s, shot_b = call("POST", f"/api/matches/{qmid}/fire", token=tb,
+                 body={"angle": 45, "power": 45, "weapon": "standard"})
+s2, seen_a = call("GET", f"/api/matches/{qmid}/state?since={shot_a['version']}", token=ta)
+check("p2 state update reaches p1",
+      s == s2 == 200 and any(e.get("type") == "shot" and e.get("side") == "p2"
+                            for e in seen_a.get("events", [])))
+
+# Leaving before either client has marked the game loaded is a technical abort,
+# not a win/loss or rating event.
+s, abort_wait = call("POST", "/api/matches/quick", token=ta)
+abmid = abort_wait["match_id"]
+call("GET", f"/api/matches/{abmid}/state?since=0", token=ta)
+s, abort_offer = call("POST", "/api/matches/quick", token=tb)
+call("POST", f"/api/matches/{abmid}/accept", token=tb)
+_, before_a = call("GET", "/api/me", token=ta)
+_, before_b = call("GET", "/api/me", token=tb)
+call("POST", f"/api/matches/{abmid}/leave", token=tb)
+_, after_a = call("GET", "/api/me", token=ta)
+_, after_b = call("GET", "/api/me", token=tb)
+_, aborted = call("GET", f"/api/matches/{abmid}/state?since=0", token=ta)
+check("technical load failure is void, not a loss",
+      aborted["status"] == "aborted" and before_a["user"]["wins"] == after_a["user"]["wins"]
+      and before_b["user"]["losses"] == after_b["user"]["losses"])
+
+# Decline releases the reservation without joining or harming the waiting owner.
+s, d1 = call("POST", "/api/matches/quick", token=ta)
+dmid = d1["match_id"]
+call("GET", f"/api/matches/{dmid}/state?since=0", token=ta)
+s, d2 = call("POST", "/api/matches/quick", token=tb)
+s, declined = call("POST", f"/api/matches/{dmid}/decline", token=tb)
+s2, still_waiting = call("GET", f"/api/matches/{dmid}/state?since=0", token=ta)
+check("quick match decline path", s == 200 and declined["declined"] and
+      s2 == 200 and still_waiting["status"] == "waiting")
 
 # --- moderation
 s, r = call("GET", "/api/admin/users", token=tadm)

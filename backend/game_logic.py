@@ -47,6 +47,7 @@ def new_state(p1_mods, p2_mods):
         "wind": round(random.uniform(-WIND_MAX, WIND_MAX), 1),
         "last_shot_at": {"p1": 0.0, "p2": 0.0},
         "damage_dealt": {"p1": 0.0, "p2": 0.0},
+        "ready": {"p1": False, "p2": False},
         "started_at": time.time(),
     }
 
@@ -262,7 +263,7 @@ def cooldown_for(weapon):
     return WEAPONS.get(weapon, WEAPONS["standard"])["cooldown"]
 
 
-def ai_choose_shot(state, side="p2"):
+def ai_choose_shot(state, side="p2", difficulty="normal"):
     """Heuristic shot with human-like noise for the single-player bot.
 
     Aims at the center of the enemy's remaining tower mass (so carved gaps
@@ -279,12 +280,18 @@ def ai_choose_shot(state, side="p2"):
     else:
         tx, ty = muzzle(enemy)
     dist = max(60.0, abs(tx - sx))
-    angle = 45 + random.uniform(-13, 13)
+    profiles = {
+        "easy": {"angle_noise": 20, "power_min": 0.72, "power_max": 1.28},
+        "normal": {"angle_noise": 13, "power_min": 0.82, "power_max": 1.20},
+        "hard": {"angle_noise": 6, "power_min": 0.93, "power_max": 1.08},
+    }
+    profile = profiles.get(difficulty, profiles["normal"])
+    angle = 45 + random.uniform(-profile["angle_noise"], profile["angle_noise"])
     rad = math.radians(angle)
     dy = ty - sy  # positive when target is lower (y grows downward)
     denom = 2 * (math.cos(rad) ** 2) * (dy + dist * math.tan(rad))
     v = math.sqrt(max(400.0, dist * GRAVITY * dist / max(200.0, denom)))
-    power = v / POWER_SCALE * random.uniform(0.82, 1.20)
+    power = v / POWER_SCALE * random.uniform(profile["power_min"], profile["power_max"])
     power = min(96.0, max(30.0, power))
     weapon = "standard"
     return angle, power, weapon
