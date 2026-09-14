@@ -101,7 +101,7 @@ DEFAULT_SKIN = {"colors": ["#3b82f6", "#1e3a8a"]}
 
 # Weapon combat stats (server-side only).
 WEAPONS = {
-    "standard":       {"damage": 48, "radius": 60, "cooldown": 4.0},
+    "standard":       {"damage": 34, "radius": 64, "cooldown": 4.0},
     "double_bomb":    {"damage": 34, "radius": 50, "cooldown": 5.0},
     "homing_missile": {"damage": 55, "radius": 60, "cooldown": 5.0},
     "cluster_shell":  {"damage": 18, "radius": 40, "cooldown": 6.0},
