@@ -458,6 +458,7 @@ const GameView = {
     c.globalAlpha = a.t < 0.7 ? 1 : 1 - (a.t - 0.7) / 0.3;
     c.font = "800 30px system-ui, sans-serif";
     c.textAlign = "center";
+    c.direction = "ltr";
     c.lineWidth = 5; c.strokeStyle = "rgba(10,10,20,.85)";
     const label = a.damage > 0 ? `-${Math.round(a.damage)}` : "החטאה!";
     c.strokeText(label, a.x, a.y - rise);
