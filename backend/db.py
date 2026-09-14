@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     streak INTEGER NOT NULL DEFAULT 0,
     last_daily TEXT,
     last_login TEXT,
+    last_seen TEXT,
     banned_until TEXT,
     suspended INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
@@ -67,6 +68,13 @@ CREATE TABLE IF NOT EXISTS match_offers (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_match_offers_user ON match_offers(invited_user_id, expires_at);
+CREATE TABLE IF NOT EXISTS match_offer_declines (
+    match_id TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (match_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_declines_user ON match_offer_declines(user_id, created_at);
 CREATE TABLE IF NOT EXISTS match_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     match_id TEXT NOT NULL REFERENCES matches(id),
@@ -142,6 +150,15 @@ def close_db(_exc=None):
         db.close()
 
 
+def migrate_db():
+    """Idempotent schema additions for databases created by older versions."""
+    db = get_db()
+    cols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
+    if "last_seen" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN last_seen TEXT")
+        db.commit()
+
+
 def init_db():
     import flask
     app = flask.current_app
@@ -149,6 +166,7 @@ def init_db():
         db = get_db()
         db.executescript(SCHEMA)
         db.commit()
+        migrate_db()
 
 
 def q(sql, args=(), one=False):

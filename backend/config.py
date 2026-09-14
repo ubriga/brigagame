@@ -34,6 +34,11 @@ class Config:
     # NEVER set in production.
     DEV_AUTH = os.environ.get("DEV_AUTH", "") == "1"
 
+    # Quick-match lobby invites (presence heartbeat + offer TTL).
+    PRESENCE_WINDOW_SECONDS = int(os.environ.get("PRESENCE_WINDOW_SECONDS", "25"))
+    OFFER_TTL_SECONDS = int(os.environ.get("OFFER_TTL_SECONDS", "20"))
+    INVITE_COOLDOWN_SECONDS = int(os.environ.get("INVITE_COOLDOWN_SECONDS", "120"))
+
     SESSION_TTL_DAYS = 14
     MAX_SESSIONS_PER_USER = 5
     MAX_CONTENT_LENGTH = 32 * 1024

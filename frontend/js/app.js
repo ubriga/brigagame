@@ -10,14 +10,55 @@ const App = {
     };
     document.getElementById("logout-btn").onclick = async () => {
       await API.post("/api/auth/logout"); API.setToken(null);
+      App.stopPulse();
       App.me = null; location.hash = "#/login";
     };
     document.getElementById("mute-btn").textContent = Sfx.muted ? "🔇" : "🔊";
     if (API.token) {
       const { status, data } = await API.get("/api/me");
-      if (status === 200) this.setMe(data);
+      if (status === 200) { this.setMe(data); this.startPulse(); }
     }
     this.route();
+  },
+
+  // App-wide presence pulse: keeps the player invitable from ANY screen
+  // (lobby, store, leaderboard, ...) and delivers incoming match invites as
+  // a global overlay.
+  startPulse() {
+    this.stopPulse();
+    const beat = async () => {
+      if (!API.token) return;
+      const { status, data } = await API.post("/api/presence/ping");
+      if (status !== 200 || !data) return;
+      const offer = data.offer;
+      if (offer && offer.match_id && this._offerMatchId !== offer.match_id)
+        this.showMatchOffer(offer.match_id, offer.expires_in || 20);
+      if (typeof data.unread_messages === "number")
+        this.setUnread(data.unread_messages);
+    };
+    beat();
+    this._pulse = setInterval(beat, CONFIG.PRESENCE_PULSE_MS || 8000);
+  },
+
+  stopPulse() {
+    clearInterval(this._pulse);
+    this._pulse = null;
+  },
+
+  // Unread-messages indicator: a red badge on the messages nav icon, visible
+  // from every screen (the topbar is global), plus a toast the moment a new
+  // message arrives no matter where the player is.
+  setUnread(n) {
+    const badge = document.getElementById("msg-badge");
+    if (badge) {
+      badge.textContent = n > 99 ? "99+" : String(n);
+      badge.classList.toggle("hidden", n <= 0);
+    }
+    if (this._unread != null && n > this._unread) {
+      Sfx.play("coin");
+      toast("✉️ הגיעה הודעה חדשה! פתח את ״הודעות״ לקריאה", 4500);
+    }
+    this._unread = n;
   },
 
   setMe(data) {
@@ -73,7 +114,7 @@ const App = {
       document.getElementById("dev-btn").onclick = async () => {
         const email = document.getElementById("dev-email").value.trim();
         const { status, data } = await API.post("/api/auth/dev", { email });
-        if (status === 200) { API.setToken(data.token); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); location.hash = "#/lobby"; }
+        if (status === 200) { API.setToken(data.token); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
         else toast(data.error_he || "כניסת פיתוח כבויה");
       };
     }
@@ -88,6 +129,7 @@ const App = {
             API.setToken(data.token);
             const me = await API.get("/api/me");
             if (me.status === 200) App.setMe(me.data);
+            App.startPulse();
             Sfx.ensure(); Sfx.startMusic();
             location.hash = "#/lobby";
           } else toast(data.error_he || data.detail || "ההתחברות נכשלה");
@@ -148,7 +190,7 @@ const App = {
         toast("מחכה ליריב...");
         go(data.match_id);
       } else if (data.status === "offered" && data.match_id) {
-        this.showMatchOffer(view, data.match_id, data.expires_in || 20);
+        this.showMatchOffer(data.match_id, data.expires_in || 20);
       } else if (data.match_id) go(data.match_id);
       else toast(data.error_he || "שגיאה");
     };
@@ -194,8 +236,9 @@ const App = {
   },
 
 
-  showMatchOffer(view, matchId, seconds) {
-    const currentView = view;
+  showMatchOffer(matchId, seconds) {
+    if (this._offerBox) this._offerBox.remove();
+    this._offerMatchId = matchId;
     const box = document.createElement("div");
     box.className = "match-offer";
     box.innerHTML = `<div class="card match-offer-card">
@@ -208,14 +251,19 @@ const App = {
         <button class="btn secondary" id="offer-decline">לא עכשיו</button>
       </div>
     </div>`;
-    currentView.appendChild(box);
+    document.body.appendChild(box);
+    this._offerBox = box;
     let remaining = seconds, done = false;
-    const close = () => { clearInterval(timer); box.remove(); };
+    const close = () => {
+      clearInterval(timer); box.remove();
+      if (this._offerBox === box) this._offerBox = null;
+      if (this._offerMatchId === matchId) this._offerMatchId = null;
+    };
     const decline = async (expired = false) => {
       if (done) return; done = true;
       await API.post(`/api/matches/${matchId}/decline`);
       close();
-      toast(expired ? "ההזמנה פגה" : "המשחק בוטל");
+      toast(expired ? "ההזמנה פגה" : "דחית את ההזמנה");
     };
     document.getElementById("offer-accept").onclick = async () => {
       if (done) return; done = true;
@@ -358,6 +406,7 @@ const App = {
         <p>${esc(m.body)}</p></div>`;
     }
     view.innerHTML = html;
+    this.setUnread(0);
   },
 
   // ---------------- admin ----------------
