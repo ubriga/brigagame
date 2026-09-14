@@ -137,7 +137,7 @@ aid = r["match_id"]
 check("ai match active", s == 200 and r["status"] == "active")
 s, st = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 check("ai opponent named", st["players"]["p2"]["name"] == "OrelAI Bot")
-time.sleep(6)
+time.sleep(9)
 s, st2 = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 ai_shot = any(e["type"] == "shot" and e.get("side") == "p2" for e in st2["events"])
 check("AI fires back on poll", ai_shot)

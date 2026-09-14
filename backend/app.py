@@ -20,7 +20,7 @@ from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
                      MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
 from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
                         tower_hp)
-from security import init_security, limited
+from security import init_security, limited, request_ip_hash
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -56,6 +56,18 @@ def public_user(u):
         "is_admin": u["email"].lower() == Config.ADMIN_EMAIL.lower(),
     }
 
+
+
+
+def audit(action, target_type="", target_id="", details=None, actor_id=None):
+    """Append-only, privacy-minimized operator/security activity record."""
+    safe = details if isinstance(details, dict) else {}
+    execute("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id,"
+            " details, ip_hash, user_agent, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (actor_id if actor_id is not None else (getattr(g, "user", {}) or {}).get("id"),
+             str(action)[:80], str(target_type)[:40], str(target_id)[:120],
+             json.dumps(safe, ensure_ascii=False)[:2000], request_ip_hash(),
+             request.headers.get("User-Agent", "")[:300], _now_iso()))
 
 def add_coins(user_id, delta, reason, ref=""):
     """Single place where coins move. Writes the ledger row too."""
@@ -212,12 +224,14 @@ def auth_google():
     try:
         info = verify_google_credential(cred)
     except ValueError as exc:
-        return jsonify({"error": "invalid_credential", "detail": str(exc)}), 401
+        audit("auth.google_failed", details={"reason": str(exc)[:80]})
+        return jsonify({"error": "invalid_credential"}), 401
     user = get_or_create_user(info["email"], info["name"], info["picture"])
     blocked = user_blocked_reason(user)
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     token = create_session(user["id"])
+    audit("auth.login", "user", user["id"], actor_id=user["id"])
     return jsonify({"token": token, "user": public_user(user)})
 
 
@@ -242,6 +256,7 @@ def auth_dev():
 @require_auth
 def auth_logout():
     auth = request.headers.get("Authorization", "")
+    audit("auth.logout", "user", g.user["id"])
     destroy_session(auth[7:].strip())
     return jsonify({"ok": True})
 
@@ -322,6 +337,7 @@ def store_buy():
         execute("INSERT INTO user_items (user_id, item_id, qty) VALUES (?,?,1)",
                 (uid, item_id))
     u = q("SELECT coins FROM users WHERE id = ?", (uid,), one=True)
+    audit("user.purchase", "item", item_id, {"price": price})
     return jsonify({"ok": True, "coins": u["coins"], "spent": price})
 
 
@@ -360,6 +376,7 @@ def daily_claim():
     execute("UPDATE users SET last_daily = ?, streak = ? WHERE id = ?",
             (today, streak, uid))
     add_coins(uid, amount, "daily_bonus")
+    audit("user.daily_claim", "user", uid, {"amount": amount, "streak": streak})
     return jsonify({"ok": True, "amount": amount, "streak": streak})
 
 
@@ -401,6 +418,7 @@ def coupon_redeem():
                 (uid, c["item_id"], qty, qty))
         reward = item["name_he"]
     u = q("SELECT coins FROM users WHERE id = ?", (uid,), one=True)
+    audit("user.coupon_redeem", "coupon", code)
     return jsonify({"ok": True, "reward": reward, "coins": u["coins"]})
 
 
@@ -522,7 +540,10 @@ def match_state(mid):
     m = load_match(mid)
     if not m or side_for(m, g.user["id"]) is None:
         return jsonify({"error": "not_found"}), 404
-    since = int(request.args.get("since", 0))
+    try:
+        since = max(0, int(request.args.get("since", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_since"}), 400
     # AI opponent acts on poll when its cooldown has elapsed (+ reaction delay)
     if m["p2_ai"] and m["status"] == "active":
         last = m["state"]["last_shot_at"]["p2"]
@@ -625,6 +646,9 @@ def leaderboard():
 @app.get("/api/admin/overview")
 @require_admin
 def admin_overview():
+    err = limited("admin")
+    if err:
+        return err
     today = _today()
     stats = {
         "users_total": q("SELECT COUNT(*) c FROM users", one=True)["c"],
@@ -652,6 +676,9 @@ def admin_overview():
 @app.get("/api/admin/users")
 @require_admin
 def admin_users():
+    err = limited("admin")
+    if err:
+        return err
     term = f"%{request.args.get('q', '').strip()}%"
     rows = q("SELECT * FROM users WHERE email LIKE ? OR name LIKE ?"
              " ORDER BY id DESC LIMIT 100", (term, term))
@@ -666,6 +693,9 @@ def admin_users():
 @app.post("/api/admin/users/<int:uid>/moderate")
 @require_admin
 def admin_moderate(uid):
+    err = limited("admin")
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
     action = body.get("action")
     target = q("SELECT * FROM users WHERE id = ?", (uid,), one=True)
@@ -674,7 +704,10 @@ def admin_moderate(uid):
     if target["email"].lower() == Config.ADMIN_EMAIL.lower():
         return jsonify({"error": "cannot_moderate_admin"}), 400
     if action == "ban":
-        hours = max(1, min(24 * 365, int(body.get("hours", 24))))
+        try:
+            hours = max(1, min(24 * 365, int(body.get("hours", 24))))
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_hours"}), 400
         until = datetime.fromtimestamp(
             time.time() + hours * 3600, tz=timezone.utc).isoformat()
         execute("UPDATE users SET banned_until = ? WHERE id = ?", (until, uid))
@@ -692,14 +725,21 @@ def admin_moderate(uid):
             " VALUES (?,?,?,?)",
             (uid, "עדכון מהנהלת Brigagame",
              f"סטטוס החשבון שלך עודכן: {msg}.", _now_iso()))
+    audit("admin.moderate", "user", uid, {"action": action, "result": msg})
     return jsonify({"ok": True, "result": msg})
 
 
 @app.post("/api/admin/users/<int:uid>/coins")
 @require_admin
 def admin_coins(uid):
+    err = limited("admin")
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
-    delta = int(body.get("delta", 0))
+    try:
+        delta = int(body.get("delta", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_delta"}), 400
     reason = (body.get("reason") or "admin_adjustment")[:120]
     if delta == 0 or abs(delta) > 100000:
         return jsonify({"error": "bad_delta"}), 400
@@ -707,12 +747,16 @@ def admin_coins(uid):
         return jsonify({"error": "not_found"}), 404
     add_coins(uid, delta, reason)
     u = q("SELECT coins FROM users WHERE id = ?", (uid,), one=True)
+    audit("admin.coins", "user", uid, {"delta": delta, "reason": reason})
     return jsonify({"ok": True, "coins": u["coins"]})
 
 
 @app.post("/api/admin/broadcast")
 @require_admin
 def admin_broadcast():
+    err = limited("admin")
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
     title = (body.get("title") or "").strip()[:120]
     text = (body.get("body") or "").strip()[:2000]
@@ -720,12 +764,16 @@ def admin_broadcast():
         return jsonify({"error": "missing_fields"}), 400
     execute("INSERT INTO messages (user_id, title, body, created_at)"
             " VALUES (NULL,?,?,?)", (title, text, _now_iso()))
+    audit("admin.broadcast", details={"title": title})
     return jsonify({"ok": True})
 
 
 @app.get("/api/admin/coupons")
 @require_admin
 def admin_coupons_list():
+    err = limited("admin")
+    if err:
+        return err
     rows = q("SELECT * FROM coupons ORDER BY created_at DESC LIMIT 100")
     return jsonify({"coupons": [dict(r) for r in rows]})
 
@@ -733,18 +781,34 @@ def admin_coupons_list():
 @app.post("/api/admin/coupons")
 @require_admin
 def admin_coupons_create():
+    err = limited("admin")
+    if err:
+        return err
     body = request.get_json(silent=True) or {}
     kind = body.get("kind", "coins")
     code = (body.get("code") or secrets.token_urlsafe(4)[:6].upper()).strip().upper()
     if kind == "coins":
-        amount = max(1, min(100000, int(body.get("amount", 100))))
+        try:
+            amount = max(1, min(100000, int(body.get("amount", 100))))
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_amount"}), 400
         item_id = None
     elif kind == "item" and body.get("item_id") in CATALOG:
         amount, item_id = 0, body["item_id"]
     else:
         return jsonify({"error": "bad_kind"}), 400
-    max_uses = max(1, min(100000, int(body.get("max_uses", 1))))
+    try:
+        max_uses = max(1, min(100000, int(body.get("max_uses", 1))))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_max_uses"}), 400
+    if not code or len(code) > 32 or not all(ch.isalnum() or ch in "-_" for ch in code):
+        return jsonify({"error": "bad_code"}), 400
     expires_at = body.get("expires_at") or None
+    if expires_at:
+        try:
+            datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_expiry"}), 400
     try:
         execute("INSERT INTO coupons (code, kind, amount, item_id, max_uses,"
                 " expires_at, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -752,19 +816,41 @@ def admin_coupons_create():
                  g.user["id"], _now_iso()))
     except Exception:
         return jsonify({"error": "code_exists"}), 400
+    audit("admin.coupon_create", "coupon", code, {"kind": kind, "max_uses": max_uses})
     return jsonify({"ok": True, "code": code})
 
 
 @app.delete("/api/admin/coupons/<code>")
 @require_admin
 def admin_coupons_delete(code):
+    err = limited("admin")
+    if err:
+        return err
     execute("DELETE FROM coupons WHERE code = ?", (code.upper(),))
+    audit("admin.coupon_delete", "coupon", code.upper())
     return jsonify({"ok": True})
+
+
+@app.get("/api/admin/audit")
+@require_admin
+def admin_audit():
+    err = limited("admin")
+    if err:
+        return err
+    rows = q("SELECT a.id, a.created_at, a.action, a.target_type, a.target_id,"
+             " a.details, a.ip_hash, a.user_agent, u.email actor_email"
+             " FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id"
+             " ORDER BY a.id DESC LIMIT 200")
+    return jsonify({"audit": [dict(r) for r in rows],
+                    "notice": "רישום תפעולי ואבטחתי ממוזער; כתובות IP אינן נשמרות גלויות."})
 
 
 @app.get("/api/admin/matches")
 @require_admin
 def admin_matches():
+    err = limited("admin")
+    if err:
+        return err
     rows = q("SELECT id, mode, status, version, created_at, updated_at FROM matches"
              " ORDER BY updated_at DESC LIMIT 50")
     return jsonify({"matches": [dict(r) for r in rows]})

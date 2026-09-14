@@ -78,6 +78,11 @@ def get_or_create_user(email: str, name: str, picture: str) -> dict:
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     now = _now()
+    # Bound stolen-token exposure and session-table growth.
+    execute("DELETE FROM sessions WHERE expires_at <= ?", (_iso(now),))
+    rows = q("SELECT id FROM sessions WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+    for row in rows[Config.MAX_SESSIONS_PER_USER - 1:]:
+        execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
     execute(
         "INSERT INTO sessions (token_hash, user_id, created_at, expires_at)"
         " VALUES (?,?,?,?)",
