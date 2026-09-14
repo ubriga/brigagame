@@ -60,6 +60,13 @@ CREATE TABLE IF NOT EXISTS matches (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status, mode);
+CREATE TABLE IF NOT EXISTS match_offers (
+    match_id TEXT PRIMARY KEY REFERENCES matches(id) ON DELETE CASCADE,
+    invited_user_id INTEGER NOT NULL REFERENCES users(id),
+    expires_at REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_match_offers_user ON match_offers(invited_user_id, expires_at);
 CREATE TABLE IF NOT EXISTS match_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     match_id TEXT NOT NULL REFERENCES matches(id),

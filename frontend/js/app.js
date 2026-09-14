@@ -112,7 +112,14 @@ const App = {
           <h2>🎮 משחק</h2>
           <div class="grid">
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
-            <button class="btn secondary" id="ai-btn">🤖 נגד המחשב</button>
+            <div class="ai-start">
+              <select id="ai-difficulty" aria-label="רמת קושי">
+                <option value="easy">קל</option>
+                <option value="normal" selected>רגיל</option>
+                <option value="hard">קשה</option>
+              </select>
+              <button class="btn secondary" id="ai-btn">🤖 נגד המחשב</button>
+            </div>
             <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
             <div style="display:flex;gap:8px">
               <input id="join-code" placeholder="קוד משחק" maxlength="6" style="text-transform:uppercase">
@@ -138,14 +145,17 @@ const App = {
       Sfx.play("click");
       const { data } = await API.post("/api/matches/quick");
       if (data.status === "waiting") {
-        toast("מחכה ליריב... נכנסים אוטומטית כשמישהו מצטרף");
+        toast("מחכה ליריב...");
         go(data.match_id);
+      } else if (data.status === "offered" && data.match_id) {
+        this.showMatchOffer(view, data.match_id, data.expires_in || 20);
       } else if (data.match_id) go(data.match_id);
       else toast(data.error_he || "שגיאה");
     };
     document.getElementById("ai-btn").onclick = async () => {
       Sfx.play("click");
-      const { data } = await API.post("/api/matches/ai");
+      const difficulty = document.getElementById("ai-difficulty").value;
+      const { data } = await API.post("/api/matches/ai", { difficulty });
       if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
     };
     document.getElementById("friend-btn").onclick = async () => {
@@ -181,6 +191,48 @@ const App = {
         e.target.disabled = true; e.target.textContent = "🎁 בונוס יומי (נאסף)";
       } else toast(data.error_he || "שגיאה");
     };
+  },
+
+
+  showMatchOffer(view, matchId, seconds) {
+    const currentView = view;
+    const box = document.createElement("div");
+    box.className = "match-offer";
+    box.innerHTML = `<div class="card match-offer-card">
+      <div class="match-offer-icon">⚔️</div>
+      <h2>נמצא יריב!</h2>
+      <p>להיכנס למשחק?</p>
+      <p class="sub">ההזמנה תיסגר בעוד <b id="offer-seconds">${seconds}</b> שניות</p>
+      <div class="match-offer-actions">
+        <button class="btn" id="offer-accept">כן, מתחילים</button>
+        <button class="btn secondary" id="offer-decline">לא עכשיו</button>
+      </div>
+    </div>`;
+    currentView.appendChild(box);
+    let remaining = seconds, done = false;
+    const close = () => { clearInterval(timer); box.remove(); };
+    const decline = async (expired = false) => {
+      if (done) return; done = true;
+      await API.post(`/api/matches/${matchId}/decline`);
+      close();
+      toast(expired ? "ההזמנה פגה" : "המשחק בוטל");
+    };
+    document.getElementById("offer-accept").onclick = async () => {
+      if (done) return; done = true;
+      const accept = document.getElementById("offer-accept");
+      accept.disabled = true; accept.textContent = "נכנסים...";
+      const { status, data } = await API.post(`/api/matches/${matchId}/accept`);
+      close();
+      if (status === 200 && data.match_id) location.hash = "#/game/" + data.match_id;
+      else toast(data.error_he || "המשחק כבר לא זמין");
+    };
+    document.getElementById("offer-decline").onclick = () => decline(false);
+    const timer = setInterval(() => {
+      remaining -= 1;
+      const el = document.getElementById("offer-seconds");
+      if (el) el.textContent = Math.max(0, remaining);
+      if (remaining <= 0) decline(true);
+    }, 1000);
   },
 
   // ---------------- game ----------------

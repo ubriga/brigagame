@@ -195,13 +195,18 @@ def match_snapshot(m, user_id, since):
         "you": side_for(m, user_id),
         "players": players,
         "towers": state.get("towers"),
-        "tower_hp": {side: tower_hp(state, side) for side in ("p1", "p2")},
+        # Waiting matches intentionally have no battlefield yet. Returning null
+        # instead of calculating against {} keeps the waiting screen healthy.
+        "tower_hp": ({side: tower_hp(state, side) for side in ("p1", "p2")}
+                     if state.get("towers") else None),
         "wind": state.get("wind"),
         "damage_dealt": state.get("damage_dealt"),
         "skins": {s: skin_colors(mods.get(s, {}).get("skin")) for s in ("p1", "p2")},
         "last_shot_at": state.get("last_shot_at"),
         "winner_side": state.get("winner_side"),
         "results": state.get("results"),
+        "ready": state.get("ready", {}),
+        "ai_difficulty": state.get("ai_difficulty"),
         "server_time": time.time(),
         "events": events,
     }
@@ -466,22 +471,91 @@ def match_quick():
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     uid = g.user["id"]
-    # join an existing waiting quick match if one exists
-    waiting = q("SELECT id FROM matches WHERE mode = 'quick' AND status = 'waiting'"
-                " AND p1 != ? ORDER BY created_at LIMIT 1", (uid,), one=True)
-    if waiting and claim_waiting_match(waiting["id"], uid):
-        m = load_match(waiting["id"])
-        m["state"] = new_state(user_mods(m["p1"]), user_mods(uid))
-        m["version"] += 1
-        save_match(m)
-        emit_events(m["id"], m["version"], [{"type": "match_start"}])
-        return jsonify({"match_id": m["id"], "status": "active"})
+    now = time.time()
+    # Offers are reservations, not joins. The invited player is not attached
+    # to the match until they explicitly accept.
+    execute("DELETE FROM match_offers WHERE expires_at <= ?", (now,))
+    existing = q("SELECT match_id, expires_at FROM match_offers"
+                 " WHERE invited_user_id = ? AND expires_at > ?"
+                 " ORDER BY expires_at DESC LIMIT 1", (uid, now), one=True)
+    if existing:
+        return jsonify({"match_id": existing["match_id"], "status": "offered",
+                        "expires_in": max(1, int(existing["expires_at"] - now))})
+
+    # A waiting match is eligible only while its owner is actively polling its
+    # waiting screen. This prevents abandoned matches from producing a dead or
+    # black game for a later player.
+    live_after = datetime.fromtimestamp(now - 10, timezone.utc).isoformat()
+    waiting = q("SELECT m.id FROM matches m WHERE m.mode = 'quick'"
+                " AND m.status = 'waiting' AND m.p1 != ? AND m.updated_at >= ?"
+                " AND NOT EXISTS (SELECT 1 FROM match_offers o"
+                " WHERE o.match_id = m.id AND o.expires_at > ?)"
+                " ORDER BY m.created_at LIMIT 1", (uid, live_after, now), one=True)
+    if waiting:
+        expires = now + 20
+        try:
+            execute("INSERT INTO match_offers (match_id, invited_user_id, expires_at, created_at)"
+                    " VALUES (?,?,?,?)", (waiting["id"], uid, expires, _now_iso()))
+            return jsonify({"match_id": waiting["id"], "status": "offered",
+                            "expires_in": 20})
+        except Exception:
+            # Another request reserved it first. Fall through and create a new
+            # waiting match instead of ever auto-joining the player.
+            pass
+
     mid = secrets.token_hex(6)
-    now = _now_iso()
+    now_iso = _now_iso()
     execute("INSERT INTO matches (id, code, mode, status, p1, state, version,"
             " created_at, updated_at) VALUES (?,?,?,?,?,?,0,?,?)",
-            (mid, None, "quick", "waiting", uid, "{}", now, now))
+            (mid, None, "quick", "waiting", uid, "{}", now_iso, now_iso))
     return jsonify({"match_id": mid, "status": "waiting"})
+
+
+@app.post("/api/matches/<mid>/accept")
+@require_auth
+def match_accept(mid):
+    err = limited("mutation")
+    if err:
+        return err
+    uid = g.user["id"]
+    now = time.time()
+    offer = q("SELECT * FROM match_offers WHERE match_id = ?"
+              " AND invited_user_id = ? AND expires_at > ?", (mid, uid, now), one=True)
+    if not offer:
+        execute("DELETE FROM match_offers WHERE match_id = ? AND invited_user_id = ?",
+                (mid, uid))
+        return jsonify({"error": "offer_expired",
+                        "error_he": "ההזמנה פגה. אפשר לחפש משחק חדש."}), 410
+    m = load_match(mid)
+    if not m or m["status"] != "waiting" or m["p2"] is not None:
+        execute("DELETE FROM match_offers WHERE match_id = ?", (mid,))
+        return jsonify({"error": "unavailable",
+                        "error_he": "המשחק כבר לא זמין."}), 409
+    state = new_state(user_mods(m["p1"]), user_mods(uid))
+    # Publish the player, active status and complete initial game state in one
+    # database update. No client can observe an active match with empty state.
+    cur = execute("UPDATE matches SET p2 = ?, status = 'active', state = ?,"
+                  " version = version + 1, updated_at = ? WHERE id = ?"
+                  " AND status = 'waiting' AND p2 IS NULL",
+                  (uid, json.dumps(state), _now_iso(), mid))
+    execute("DELETE FROM match_offers WHERE match_id = ?", (mid,))
+    if cur.rowcount != 1:
+        return jsonify({"error": "unavailable",
+                        "error_he": "המשחק כבר לא זמין."}), 409
+    active = load_match(mid)
+    emit_events(mid, active["version"], [{"type": "match_start"}])
+    return jsonify({"match_id": mid, "status": "active"})
+
+
+@app.post("/api/matches/<mid>/decline")
+@require_auth
+def match_decline(mid):
+    err = limited("mutation")
+    if err:
+        return err
+    cur = execute("DELETE FROM match_offers WHERE match_id = ?"
+                  " AND invited_user_id = ?", (mid, g.user["id"]))
+    return jsonify({"ok": True, "declined": cur.rowcount == 1})
 
 
 @app.post("/api/matches/ai")
@@ -494,9 +568,15 @@ def match_ai():
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     uid = g.user["id"]
+    difficulty = (request.get_json(silent=True) or {}).get("difficulty", "normal")
+    if difficulty not in ("easy", "normal", "hard"):
+        return jsonify({"error": "bad_difficulty",
+                        "error_he": "רמת הקושי אינה תקינה."}), 400
     mid = secrets.token_hex(6)
     now = _now_iso()
     state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
+    state["ai_difficulty"] = difficulty
+    state["ready"] = {"p1": False, "p2": True}
     # grace period: the bot's cooldown counts from match start, giving the
     # player a few seconds to take in the field before the first incoming shell
     state["last_shot_at"]["p2"] = time.time()
@@ -519,7 +599,7 @@ def match_friend():
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     uid = g.user["id"]
     mid = secrets.token_hex(6)
-    code = secrets.token_urlsafe(4).replace("-", "").replace("_", "")[:6].upper()
+    code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6))
     now = _now_iso()
     execute("INSERT INTO matches (id, code, mode, status, p1, state, version,"
             " created_at, updated_at) VALUES (?,?,?,?,?,?,0,?,?)",
@@ -564,6 +644,9 @@ def match_state(mid):
     m = load_match(mid)
     if not m or side_for(m, g.user["id"]) is None:
         return jsonify({"error": "not_found"}), 404
+    if m["status"] == "waiting":
+        execute("UPDATE matches SET updated_at = ? WHERE id = ?", (_now_iso(), mid))
+        m["updated_at"] = _now_iso()
     try:
         since = max(0, int(request.args.get("since", 0)))
     except (TypeError, ValueError):
@@ -571,8 +654,10 @@ def match_state(mid):
     # AI opponent acts on poll when its cooldown has elapsed (+ reaction delay)
     if m["p2_ai"] and m["status"] == "active":
         last = m["state"]["last_shot_at"]["p2"]
-        if time.time() - last > cooldown_for("standard") + 2.2:
-            angle, power, weapon = ai_choose_shot(m["state"], "p2")
+        difficulty = m["state"].get("ai_difficulty", "normal")
+        reaction = {"easy": 4.2, "normal": 2.2, "hard": 0.8}.get(difficulty, 2.2)
+        if time.time() - last > cooldown_for("standard") + reaction:
+            angle, power, weapon = ai_choose_shot(m["state"], "p2", difficulty)
             events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
             m["version"] += 1
             if won:
@@ -581,6 +666,21 @@ def match_state(mid):
             save_match(m)
             emit_events(mid, m["version"], events)
     return jsonify(match_snapshot(m, g.user["id"], since))
+
+
+@app.post("/api/matches/<mid>/ready")
+@require_auth
+def match_ready(mid):
+    err = limited("mutation")
+    if err:
+        return err
+    m = load_match(mid)
+    side = side_for(m, g.user["id"]) if m else None
+    if not m or side is None or m["status"] != "active":
+        return jsonify({"error": "not_found"}), 404
+    m["state"].setdefault("ready", {})[side] = True
+    save_match(m)
+    return jsonify({"ok": True, "side": side})
 
 
 @app.post("/api/matches/<mid>/fire")
@@ -645,13 +745,32 @@ def match_leave(mid):
         return jsonify({"error": "not_found"}), 404
     if m["status"] == "active":
         other = "p2" if side == "p1" else "p1"
-        finalize_match(m, other)  # leaving counts as a loss
-        m["version"] += 1
-        save_match(m)
-        emit_events(mid, m["version"],
-                    [{"type": "match_end", "winner_side": other,
-                      "reason": "opponent_left"}])
+        ready = m["state"].get("ready", {})
+        shots = m["state"].get("last_shot_at", {})
+        # A client that never completed loading, or a match where neither side
+        # could make a move, is a technical abort - never a ranked loss.
+        technical_abort = not ready.get(side, False) or not ready.get(other, False)             or not any((shots.get(s) or 0) > m["state"].get("started_at", 0)
+                       for s in ("p1", "p2"))
+        if technical_abort:
+            m["status"] = "aborted"
+            m["winner"] = None
+            m["state"]["abort_reason"] = "technical_failure"
+            m["state"]["winner_side"] = None
+            m["state"]["results"] = {"p1": {"outcome": "void"},
+                                       "p2": {"outcome": "void"}}
+            m["version"] += 1
+            save_match(m)
+            emit_events(mid, m["version"],
+                        [{"type": "match_abort", "reason": "technical_failure"}])
+        else:
+            finalize_match(m, other)
+            m["version"] += 1
+            save_match(m)
+            emit_events(mid, m["version"],
+                        [{"type": "match_end", "winner_side": other,
+                          "reason": "opponent_left"}])
     elif m["status"] == "waiting":
+        execute("DELETE FROM match_offers WHERE match_id = ?", (mid,))
         execute("DELETE FROM matches WHERE id = ?", (mid,))
     return jsonify({"ok": True})
 
