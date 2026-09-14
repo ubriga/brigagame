@@ -17,10 +17,14 @@ GROUND_Y = 520
 BLOCK = 26
 TOWER_COLS = 4
 TOWER_ROWS = 6
-BLOCK_HP = 15
+BLOCK_HP = 18
 TOWER_X = {"p1": 140, "p2": 760}  # left edge of each tower
-GRAVITY = 260.0       # world-units / s^2
-POWER_SCALE = 6.2     # power 0-100 -> initial speed
+# Ballistics tuned so a comfortable mid-length drag at ~45 deg lands on the
+# enemy tower (muzzle-to-muzzle distance is 620 world units). With gravity
+# 700 and scale 10, power ~66 hits dead center at 45 deg; full power (100)
+# overshoots past the far edge, so drag length stays meaningful.
+GRAVITY = 700.0       # world-units / s^2
+POWER_SCALE = 10.0    # power 0-100 -> initial speed
 DT = 0.02
 MAX_FLIGHT = 20.0
 WIND_MAX = 40.0
@@ -64,6 +68,15 @@ def muzzle(side):
     return cx, cy
 
 
+def tower_hp(state, side):
+    """Current and max HP of one tower, for client HP bars."""
+    tw = state["towers"][side]
+    hp = sum(v for row in tw for v in row)
+    mult = hp_multiplier(state.get("mods", {}).get(side, {}).get("hp", 0))
+    return {"hp": round(hp, 1),
+            "max": round(BLOCK_HP * mult * TOWER_COLS * TOWER_ROWS, 1)}
+
+
 # a tower is "destroyed" when 75% of its blocks are rubble;
 # requiring every last block made matches unwinnable once a channel
 # was carved through the top (realistic, but bad gameplay)
@@ -76,62 +89,74 @@ def tower_alive(tower):
     return alive > total * (1.0 - DESTROY_FRACTION)
 
 
-def _explode(state, x, y, damage, radius, attacker, events):
-    """Apply blast damage to both towers; returns total damage dealt to enemy."""
+def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
+    """Apply blast damage to both towers; returns total damage dealt to enemy.
+
+    cosmetic=True marks a no-damage visual puff (shot left the world), so the
+    client still shows where the shell ended up instead of vanishing silently.
+    """
     enemy = "p2" if attacker == "p1" else "p1"
     dealt = 0.0
     destroyed = []
-    armor_lvl = state["mods"][enemy].get("armor", 0)
-    mult = armor_reduction(armor_lvl)
-    for r, c, cx, cy in tower_blocks(enemy):
-        hp = state["towers"][enemy][r][c]
-        if hp <= 0:
-            continue
-        dist = math.hypot(cx - x, cy - y)
-        if dist <= radius:
-            dmg = damage * (1.0 - dist / radius) * mult
-            if dmg <= 0:
+    if not cosmetic:
+        armor_lvl = state["mods"][enemy].get("armor", 0)
+        mult = armor_reduction(armor_lvl)
+        for r, c, cx, cy in tower_blocks(enemy):
+            hp = state["towers"][enemy][r][c]
+            if hp <= 0:
                 continue
-            new_hp = round(hp - dmg, 1)
-            dealt += min(hp, dmg)
-            state["towers"][enemy][r][c] = max(0.0, new_hp)
-            if new_hp <= 0:
-                destroyed.append({"r": r, "c": c})
-    # small splash to own tower keeps shots honest but is heavily reduced
-    for r, c, cx, cy in tower_blocks(attacker):
-        hp = state["towers"][attacker][r][c]
-        if hp <= 0:
-            continue
-        dist = math.hypot(cx - x, cy - y)
-        if dist <= radius * 0.7:
-            dmg = damage * 0.3 * (1.0 - dist / (radius * 0.7))
-            if dmg > 0:
-                state["towers"][attacker][r][c] = max(0.0, round(hp - dmg, 1))
-    state["damage_dealt"][attacker] = round(
-        state["damage_dealt"][attacker] + dealt, 1)
-    # structural collapse: a block with nothing below it crumbles,
-    # cascading down each column (undermining a tower works)
-    collapsed = []
-    for side in (enemy, attacker):
-        tw = state["towers"][side]
-        changed = True
-        while changed:
-            changed = False
-            for c in range(TOWER_COLS):
-                for r in range(TOWER_ROWS - 1):  # not the ground row
-                    if tw[r][c] > 0 and tw[r + 1][c] <= 0:
-                        tw[r][c] = 0.0
-                        collapsed.append({"side": side, "r": r, "c": c})
-                        changed = True
-    if collapsed:
-        events.append({"type": "collapse", "blocks": collapsed})
+            dist = math.hypot(cx - x, cy - y)
+            if dist <= radius:
+                dmg = damage * (1.0 - dist / radius) * mult
+                if dmg <= 0:
+                    continue
+                new_hp = round(hp - dmg, 1)
+                dealt += min(hp, dmg)
+                state["towers"][enemy][r][c] = max(0.0, new_hp)
+                if new_hp <= 0:
+                    destroyed.append({"r": r, "c": c})
+        # small splash to own tower keeps shots honest but is heavily reduced
+        for r, c, cx, cy in tower_blocks(attacker):
+            hp = state["towers"][attacker][r][c]
+            if hp <= 0:
+                continue
+            dist = math.hypot(cx - x, cy - y)
+            if dist <= radius * 0.7:
+                dmg = damage * 0.3 * (1.0 - dist / (radius * 0.7))
+                if dmg > 0:
+                    state["towers"][attacker][r][c] = max(0.0, round(hp - dmg, 1))
+        state["damage_dealt"][attacker] = round(
+            state["damage_dealt"][attacker] + dealt, 1)
+        # structural collapse: a block with nothing below it crumbles,
+        # cascading down each column (undermining a tower works)
+        collapsed = []
+        for side in (enemy, attacker):
+            tw = state["towers"][side]
+            changed = True
+            while changed:
+                changed = False
+                for c in range(TOWER_COLS):
+                    for r in range(TOWER_ROWS - 1):  # not the ground row
+                        if tw[r][c] > 0 and tw[r + 1][c] <= 0:
+                            tw[r][c] = 0.0
+                            collapsed.append({"side": side, "r": r, "c": c})
+                            changed = True
+        if collapsed:
+            events.append({"type": "collapse", "blocks": collapsed})
     events.append({"type": "explosion", "x": round(x, 1), "y": round(y, 1),
-                   "radius": radius, "destroyed": destroyed})
+                   "radius": radius, "destroyed": destroyed,
+                   "damage": round(dealt, 1), "attacker": attacker,
+                   "target": enemy, "cosmetic": cosmetic})
     return dealt
 
 
 def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
-    """Simulate one projectile. Returns impact point or None."""
+    """Simulate one projectile.
+
+    Returns (x, y, points, flew_off). Impact point is None only when the
+    shell left the world; in that case x/y are the clamped exit point so the
+    caller can still emit a visual puff there.
+    """
     enemy = "p2" if side == "p1" else "p1"
     facing = 1 if side == "p1" else -1
     angle = math.radians(angle_deg)
@@ -163,18 +188,20 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
             points.append([round(x, 1), round(y, 1)])
         if y >= GROUND_Y:
             points.append([round(x, 1), GROUND_Y])
-            return x, GROUND_Y, points
+            return x, GROUND_Y, points, False
         # tower collision
         for s in (enemy, side):
             for r, c, cx, cy in tower_blocks(s):
                 if state["towers"][s][r][c] > 0 and abs(x - cx) <= BLOCK / 2 \
                         and abs(y - cy) <= BLOCK / 2:
                     points.append([round(x, 1), round(y, 1)])
-                    return x, y, points
+                    return x, y, points, False
         if x < -80 or x > WORLD_W + 80:
-            points.append([round(x, 1), round(y, 1)])
-            return None, None, points  # flew off; no damage
-    return None, None, points
+            cx = max(10.0, min(WORLD_W - 10.0, x))
+            cy = max(40.0, min(GROUND_Y, y))
+            points.append([round(cx, 1), round(cy, 1)])
+            return cx, cy, points, True
+    return None, None, points, True
 
 
 def fire_weapon(state, side, angle, power, weapon):
@@ -190,17 +217,20 @@ def fire_weapon(state, side, angle, power, weapon):
     if weapon == "double_bomb":
         for i, p in enumerate((power, power * 0.85)):
             ev = []
-            x, y, pts = _simulate(state, side, angle + i * 6, p, "standard",
-                                  ev, enemy)
+            x, y, pts, off = _simulate(state, side, angle + i * 6, p,
+                                       "standard", ev, enemy)
             events.append({"type": "shot", "side": side, "weapon": weapon,
                            "angle": angle + i * 6, "power": p,
                            "points": pts})
             if x is not None:
-                _explode(state, x, y, w["damage"], w["radius"], side, ev)
+                if off:
+                    _explode(state, x, y, 0, 26, side, ev, cosmetic=True)
+                else:
+                    _explode(state, x, y, w["damage"], w["radius"], side, ev)
             events.extend(ev)
     elif weapon == "cluster_shell":
         ev = []
-        x, y, pts = _simulate(state, side, angle, power, weapon, ev, enemy)
+        x, y, pts, off = _simulate(state, side, angle, power, weapon, ev, enemy)
         events.append({"type": "shot", "side": side, "weapon": weapon,
                        "angle": angle, "power": power, "points": pts})
         apex = pts[len(pts) // 2] if pts else [x or 500, 150]
@@ -214,11 +244,14 @@ def fire_weapon(state, side, angle, power, weapon):
             events.extend(sub)
     else:
         ev = []
-        x, y, pts = _simulate(state, side, angle, power, weapon, ev, enemy)
+        x, y, pts, off = _simulate(state, side, angle, power, weapon, ev, enemy)
         events.append({"type": "shot", "side": side, "weapon": weapon,
                        "angle": angle, "power": power, "points": pts})
         if x is not None:
-            _explode(state, x, y, w["damage"], w["radius"], side, ev)
+            if off:
+                _explode(state, x, y, 0, 26, side, ev, cosmetic=True)
+            else:
+                _explode(state, x, y, w["damage"], w["radius"], side, ev)
         events.extend(ev)
 
     state["last_shot_at"][side] = time.time()
@@ -230,12 +263,28 @@ def cooldown_for(weapon):
 
 
 def ai_choose_shot(state, side="p2"):
-    """Heuristic shot with human-like noise for the single-player bot."""
+    """Heuristic shot with human-like noise for the single-player bot.
+
+    Aims at the center of the enemy's remaining tower mass (so carved gaps
+    don't make the bot shell the same hole forever) and solves the ballistic
+    equation for that point, then adds noise so it hits often but not always.
+    """
     enemy = "p1" if side == "p2" else "p2"
     sx, sy = muzzle(side)
-    tx, ty = muzzle(enemy)
-    dist = abs(tx - sx)
-    base_angle = 45 + random.uniform(-14, 14)
-    base_power = min(95.0, max(30.0, dist / 9.0 + 18 + random.uniform(-9, 9)))
+    blocks = [(cx, cy) for r, c, cx, cy in tower_blocks(enemy)
+              if state["towers"][enemy][r][c] > 0]
+    if blocks:
+        tx = sum(b[0] for b in blocks) / len(blocks)
+        ty = sum(b[1] for b in blocks) / len(blocks)
+    else:
+        tx, ty = muzzle(enemy)
+    dist = max(60.0, abs(tx - sx))
+    angle = 45 + random.uniform(-10, 10)
+    rad = math.radians(angle)
+    dy = ty - sy  # positive when target is lower (y grows downward)
+    denom = 2 * (math.cos(rad) ** 2) * (dy + dist * math.tan(rad))
+    v = math.sqrt(max(400.0, dist * GRAVITY * dist / max(200.0, denom)))
+    power = v / POWER_SCALE * random.uniform(0.88, 1.14)
+    power = min(96.0, max(30.0, power))
     weapon = "standard"
-    return base_angle, base_power, weapon
+    return angle, power, weapon

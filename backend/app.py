@@ -18,7 +18,8 @@ from db import execute, get_db, init_db, q
 from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
                      DAILY_BASE, DAILY_CAP, DAILY_STREAK_STEP, DEFAULT_SKIN,
                      MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
-from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state)
+from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
+                        tower_hp)
 from security import init_security, limited
 
 app = Flask(__name__)
@@ -179,6 +180,7 @@ def match_snapshot(m, user_id, since):
         "you": side_for(m, user_id),
         "players": players,
         "towers": state.get("towers"),
+        "tower_hp": {side: tower_hp(state, side) for side in ("p1", "p2")},
         "wind": state.get("wind"),
         "damage_dealt": state.get("damage_dealt"),
         "skins": {s: skin_colors(mods.get(s, {}).get("skin")) for s in ("p1", "p2")},
