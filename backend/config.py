@@ -34,7 +34,9 @@ class Config:
     # NEVER set in production.
     DEV_AUTH = os.environ.get("DEV_AUTH", "") == "1"
 
-    SESSION_TTL_DAYS = 30
+    SESSION_TTL_DAYS = 14
+    MAX_SESSIONS_PER_USER = 5
+    MAX_CONTENT_LENGTH = 32 * 1024
 
     # Rate limits (requests per window_seconds per key).
     RATE_LIMITS = {
@@ -42,5 +44,7 @@ class Config:
         "fire": (30, 60),          # shots
         "state": (240, 60),        # polling
         "store": (30, 60),
+        "admin": (120, 60),
+        "mutation": (90, 60),
         "default": (300, 60),
     }

@@ -1,5 +1,7 @@
 """Rate limiting (SQLite-backed) and HTTP security headers."""
 import time
+import hashlib
+import secrets
 
 from flask import request, jsonify
 
@@ -38,15 +40,40 @@ def limited(bucket):
     return None
 
 
+def request_ip_hash():
+    """Pseudonymous abuse signal; never store a raw IP address."""
+    ip = request.remote_addr or "unknown"
+    return hashlib.sha256((Config.SECRET_KEY + ":" + ip).encode()).hexdigest()[:24]
+
+
 def init_security(app):
+    @app.before_request
+    def reject_bad_requests():
+        # Flask enforces MAX_CONTENT_LENGTH while parsing; reject unexpected
+        # content types on state-changing API calls before route code runs.
+        if request.path.startswith("/api/") and request.method in ("POST", "PUT", "PATCH"):
+            if request.content_length and request.content_length > app.config["MAX_CONTENT_LENGTH"]:
+                return jsonify({"error": "request_too_large"}), 413
+            if request.content_length and not request.is_json:
+                return jsonify({"error": "json_required"}), 415
+        if request.method != "OPTIONS" and request.path.startswith("/api/"):
+            origin = request.headers.get("Origin")
+            if origin and origin not in Config.ALLOWED_ORIGINS:
+                return jsonify({"error": "origin_not_allowed"}), 403
+        return None
+
     @app.after_request
     def add_headers(resp):
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         resp.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
         resp.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
         resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        resp.headers["Cross-Origin-Resource-Policy"] = "same-site"
+        resp.headers["X-Request-ID"] = request.headers.get("X-Request-ID", "")[:64] or secrets.token_hex(12)
         # CORS: only the configured frontend origins may call the API.
         origin = request.headers.get("Origin")
         if origin and origin in Config.ALLOWED_ORIGINS:
