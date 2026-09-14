@@ -1,0 +1,70 @@
+// Thin API client. The server is authoritative for everything.
+const API = {
+  token: localStorage.getItem("bg_token") || null,
+  retryBaseMs: 450,
+
+  setToken(t) {
+    this.token = t;
+    if (t) localStorage.setItem("bg_token", t);
+    else localStorage.removeItem("bg_token");
+  },
+
+  setReconnecting(on) {
+    const el = document.getElementById("reconnect-indicator");
+    if (el) el.classList.toggle("hidden", !on);
+    window.dispatchEvent(new CustomEvent(on ? "brigagame:reconnecting" : "brigagame:reconnected"));
+  },
+
+  async call(method, path, body) {
+    // Only retry reads. Retrying a POST after an uncertain network failure can
+    // duplicate a purchase or other mutation even if the first request landed.
+    const attempts = method === "GET" ? 3 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const headers = { "Content-Type": "application/json" };
+      if (this.token) headers["Authorization"] = "Bearer " + this.token;
+      try {
+        const res = await fetch(CONFIG.API_BASE + path, {
+          method, headers, body: body ? JSON.stringify(body) : undefined,
+        });
+        let data = {};
+        try { data = await res.json(); } catch (e) { /* non-JSON */ }
+        const transient = [502, 503, 504].includes(res.status);
+        if (transient && attempt + 1 < attempts) {
+          this.setReconnecting(true);
+          await new Promise(r => setTimeout(r, this.retryBaseMs * (2 ** attempt)));
+          continue;
+        }
+        this.setReconnecting(false);
+        if (res.status === 401 && !path.startsWith("/api/auth")) {
+          this.setToken(null);
+          location.hash = "#/login";
+        }
+        return { status: res.status, data };
+      } catch (error) {
+        if (attempt + 1 < attempts) {
+          this.setReconnecting(true);
+          await new Promise(r => setTimeout(r, this.retryBaseMs * (2 ** attempt)));
+          continue;
+        }
+        this.setReconnecting(true);
+        return { status: 0, data: {}, networkError: true };
+      }
+    }
+  },
+  get(p) { return this.call("GET", p); },
+  post(p, b) { return this.call("POST", p, b || {}); },
+  del(p) { return this.call("DELETE", p); },
+};
+
+function toast(msg, ms = 3200) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.add("hidden"), ms);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
