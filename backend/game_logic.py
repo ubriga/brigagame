@@ -279,12 +279,12 @@ def ai_choose_shot(state, side="p2"):
     else:
         tx, ty = muzzle(enemy)
     dist = max(60.0, abs(tx - sx))
-    angle = 45 + random.uniform(-10, 10)
+    angle = 45 + random.uniform(-13, 13)
     rad = math.radians(angle)
     dy = ty - sy  # positive when target is lower (y grows downward)
     denom = 2 * (math.cos(rad) ** 2) * (dy + dist * math.tan(rad))
     v = math.sqrt(max(400.0, dist * GRAVITY * dist / max(200.0, denom)))
-    power = v / POWER_SCALE * random.uniform(0.88, 1.14)
+    power = v / POWER_SCALE * random.uniform(0.82, 1.20)
     power = min(96.0, max(30.0, power))
     weapon = "standard"
     return angle, power, weapon

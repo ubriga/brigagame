@@ -523,7 +523,7 @@ def match_state(mid):
     # AI opponent acts on poll when its cooldown has elapsed (+ reaction delay)
     if m["p2_ai"] and m["status"] == "active":
         last = m["state"]["last_shot_at"]["p2"]
-        if time.time() - last > cooldown_for("standard") + 1.2:
+        if time.time() - last > cooldown_for("standard") + 2.2:
             angle, power, weapon = ai_choose_shot(m["state"], "p2")
             events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
             m["version"] += 1
