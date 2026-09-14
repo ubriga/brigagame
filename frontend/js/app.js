@@ -43,7 +43,7 @@ const App = {
     else if (hash.startsWith("#/store")) this.vStore(view);
     else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view);
     else if (hash.startsWith("#/messages")) this.vMessages(view);
-    else if (hash.startsWith("#/admin")) this.vAdmin(view);
+    else if (hash.startsWith("#/admin")) this.vAdmin(view, hash.split("/")[2] || "stats");
     else if (hash.startsWith("#/login")) this.vLogin(view);
     else this.vLobby(view);
   },
