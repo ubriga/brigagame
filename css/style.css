@@ -146,3 +146,17 @@ tr:hover td { background: #ffffff08; }
 #game-overlay { background: rgba(15,23,42,.78); }
 .audit-details { max-width: 320px; overflow-wrap: anywhere; font-size: 12px; color: var(--muted); }
 footer { line-height: 1.8; }
+
+/* explicit quick-match consent */
+.match-offer {
+  position: fixed; inset: 0; z-index: 120; display: flex; align-items: center;
+  justify-content: center; padding: 20px; background: rgba(2,6,23,.82);
+  backdrop-filter: blur(5px);
+}
+.match-offer-card { width: min(420px, 100%); text-align: center; margin: 0; }
+.match-offer-card h2 { margin-top: 6px; }
+.match-offer-icon { font-size: 52px; }
+.match-offer-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+.ai-start { display: grid; grid-template-columns: 110px 1fr; gap: 8px; }
+.ai-start .btn { width: 100%; }
