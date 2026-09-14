@@ -8,7 +8,7 @@ const GameView = {
   anims: [], processing: false,
   serverOffset: 0, onExit: null,
   displayTowers: null, displayHp: null, pendingTowers: null,
-  shake: 0, endAt: null, ended: false,
+  shake: 0, endAt: null, ended: false, readySent: false,
 
   W: 1000, H: 560, GROUND: 520, BLOCK: 26, TROWS: 6, TCOLS: 4,
   TX: { p1: 140, p2: 760 },
@@ -17,7 +17,7 @@ const GameView = {
     this.matchId = matchId; this.onExit = onExit;
     this.anims = []; this.weapon = "standard"; this.snap = null;
     this.displayTowers = null; this.displayHp = null; this.pendingTowers = null;
-    this.shake = 0; this.endAt = null; this.ended = false;
+    this.shake = 0; this.endAt = null; this.ended = false; this.readySent = false;
     root.innerHTML = `
       <div id="game-hud">
         <div class="player-tag" id="tag-p1"></div>
@@ -111,13 +111,22 @@ const GameView = {
       `/api/matches/${this.matchId}/state?since=${since}`);
     if (status !== 200) { toast("בעיה בטעינת המשחק"); return; }
     this.applySnap(data);
+    this.sendReady();
   },
 
   async poll() {
     if (!this.snap) return;
     const { status, data } = await API.get(
       `/api/matches/${this.matchId}/state?since=${this.snap.version}`);
-    if (status === 200) this.applySnap(data);
+    if (status === 200) { this.applySnap(data); this.sendReady(); }
+  },
+
+
+  async sendReady() {
+    if (this.readySent || !this.snap || this.snap.status !== "active") return;
+    this.readySent = true;
+    const { status } = await API.post(`/api/matches/${this.matchId}/ready`);
+    if (status !== 200) this.readySent = false;
   },
 
   applySnap(s) {
@@ -126,6 +135,14 @@ const GameView = {
     const events = s.events || [];
     delete s.events;
     this.snap = s;
+    // Waiting snapshots deliberately have no battlefield. Keep the waiting
+    // overlay alive without trying to render null towers/HP (the black-screen
+    // crash reported on mobile).
+    if (s.status === "waiting" || !s.towers || !s.tower_hp) {
+      this.displayTowers = null; this.displayHp = null; this.pendingTowers = null;
+      this.renderHud();
+      return;
+    }
     const hasFx = s.version > prevV && events.length > 0;
     if (hasFx) {
       const impactIn = this.enqueue(events);  // seconds until the last impact
@@ -299,7 +316,7 @@ const GameView = {
 
   // ---------------- drawing ----------------
   draw() {
-    if (!this.ctx || !this.snap) return;
+    if (!this.ctx || !this.snap || !this.snap.towers) return;
     const c = this.ctx, now = performance.now();
     const dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
