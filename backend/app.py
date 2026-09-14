@@ -461,6 +461,9 @@ def match_ai():
     mid = secrets.token_hex(6)
     now = _now_iso()
     state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
+    # grace period: the bot's cooldown counts from match start, giving the
+    # player a few seconds to take in the field before the first incoming shell
+    state["last_shot_at"]["p2"] = time.time()
     execute("INSERT INTO matches (id, code, mode, status, p1, p2_ai, state,"
             " version, created_at, updated_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?)",
