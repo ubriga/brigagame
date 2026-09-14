@@ -1,0 +1,5 @@
+backend/brigagame.db*
+backend/__pycache__/
+*.pyc
+_preview*.html
+.DS_Store

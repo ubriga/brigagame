@@ -1,0 +1,777 @@
+"""Brigagame 2.0 by OrelAI - Flask backend.
+
+Server-authoritative multiplayer artillery game. The client renders only;
+every game rule, coin movement and validation happens here.
+"""
+import json
+import secrets
+import time
+from datetime import datetime, timezone
+
+from flask import Flask, g, jsonify, request
+
+from auth import (create_session, current_user, destroy_session,
+                  get_or_create_user, require_admin, require_auth,
+                  user_blocked_reason, verify_google_credential)
+from config import Config
+from db import execute, get_db, init_db, q
+from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
+                     DAILY_BASE, DAILY_CAP, DAILY_STREAK_STEP, DEFAULT_SKIN,
+                     MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
+from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state)
+from security import init_security, limited
+
+app = Flask(__name__)
+app.config.from_object(Config)
+init_security(app)
+
+
+@app.teardown_appcontext
+def _close(exc):
+    from db import close_db
+    close_db(exc)
+
+
+@app.cli.command("init-db")
+def _init_db_cmd():
+    init_db()
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _today():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def public_user(u):
+    return {
+        "id": u["id"], "name": u["name"], "picture": u["picture"],
+        "coins": u["coins"], "rating": u["rating"],
+        "rank": rank_for(u["rating"]),
+        "wins": u["wins"], "losses": u["losses"],
+        "matches_played": u["matches_played"],
+        "is_admin": u["email"].lower() == Config.ADMIN_EMAIL.lower(),
+    }
+
+
+def add_coins(user_id, delta, reason, ref=""):
+    """Single place where coins move. Writes the ledger row too."""
+    execute("UPDATE users SET coins = coins + ? WHERE id = ?", (delta, user_id))
+    execute("INSERT INTO transactions (user_id, delta, reason, ref, created_at)"
+            " VALUES (?,?,?,?,?)", (user_id, delta, reason, ref, _now_iso()))
+
+
+def user_mods(user_id):
+    rows = q("SELECT item_id, level, equipped FROM user_items WHERE user_id = ?",
+             (user_id,))
+    mods = {"armor": 0, "hp": 0, "skin": None}
+    for r in rows:
+        if r["item_id"] == "armor":
+            mods["armor"] = r["level"]
+        elif r["item_id"] == "reinforced_hp":
+            mods["hp"] = r["level"]
+        elif r["equipped"]:
+            mods["skin"] = r["item_id"]
+    return mods
+
+
+def skin_colors(skin_id):
+    if skin_id and skin_id in CATALOG:
+        return CATALOG[skin_id]["colors"]
+    return DEFAULT_SKIN["colors"]
+
+
+def emit_events(match_id, version, events):
+    now = _now_iso()
+    for ev in events:
+        execute("INSERT INTO match_events (match_id, version, type, data,"
+                " created_at) VALUES (?,?,?,?,?)",
+                (match_id, version, ev.get("type", "event"),
+                 json.dumps(ev), now))
+
+
+def load_match(mid):
+    m = q("SELECT * FROM matches WHERE id = ?", (mid,), one=True)
+    if m:
+        m = dict(m)
+        m["state"] = json.loads(m["state"] or "{}")
+    return m
+
+
+def save_match(m):
+    execute("UPDATE matches SET state = ?, version = ?, status = ?, winner = ?,"
+            " updated_at = ? WHERE id = ?",
+            (json.dumps(m["state"]), m["version"], m["status"], m.get("winner"),
+             _now_iso(), m["id"]))
+
+
+def finalize_match(m, winner_side):
+    """Apply win/loss rewards, hit coins and rating. Server-side only."""
+    loser_side = "p2" if winner_side == "p1" else "p1"
+    m["status"] = "finished"
+    m["winner"] = m[winner_side] if not (winner_side == "p2" and m["p2_ai"]) else None
+    m["state"]["winner_side"] = winner_side
+    results = {}
+    for side, outcome in ((winner_side, "win"), (loser_side, "loss")):
+        uid = m[side]
+        if uid is None or (side == "p2" and m["p2_ai"]):
+            results[side] = {"outcome": outcome, "ai": True}
+            continue
+        dmg = m["state"]["damage_dealt"][side]
+        hit_coins = min(MAX_HIT_COINS_PER_MATCH,
+                        int(dmg * COINS_PER_DAMAGE))
+        base = COINS_PER_WIN if outcome == "win" else COINS_PER_LOSS
+        total = base + hit_coins
+        add_coins(uid, total, f"match_{outcome}", m["id"])
+        other = m[loser_side if side == winner_side else winner_side]
+        u = q("SELECT rating FROM users WHERE id = ?", (uid,), one=True)
+        o = q("SELECT rating FROM users WHERE id = ?", (other,), one=True) \
+            if other else None
+        my_r, their_r = u["rating"], (o["rating"] if o else 1000)
+        if outcome == "win":
+            delta = elo_delta(my_r, their_r)
+            execute("UPDATE users SET rating = rating + ?, wins = wins + 1,"
+                    " matches_played = matches_played + 1 WHERE id = ?",
+                    (delta, uid))
+        else:
+            delta = elo_delta(their_r, my_r)
+            execute("UPDATE users SET rating = MAX(0, rating - ?),"
+                    " losses = losses + 1,"
+                    " matches_played = matches_played + 1 WHERE id = ?",
+                    (delta, uid))
+        results[side] = {"outcome": outcome, "coins": total,
+                         "hit_coins": hit_coins,
+                         "rating_delta": delta if outcome == "win" else -delta}
+    m["state"]["results"] = results
+
+
+def side_for(m, user_id):
+    if m["p1"] == user_id:
+        return "p1"
+    if m["p2"] == user_id:
+        return "p2"
+    return None
+
+
+def match_snapshot(m, user_id, since):
+    state = m["state"]
+    rows = q("SELECT version, data FROM match_events WHERE match_id = ?"
+             " AND version > ? ORDER BY version, id", (m["id"], since))
+    events = [json.loads(r["data"]) for r in rows]
+    players = {}
+    for side in ("p1", "p2"):
+        uid = m[side]
+        if uid:
+            u = q("SELECT id, name, picture, rating FROM users WHERE id = ?",
+                  (uid,), one=True)
+            players[side] = {"id": u["id"], "name": u["name"],
+                             "picture": u["picture"], "rating": u["rating"],
+                             "rank": rank_for(u["rating"])}
+        elif side == "p2" and m["p2_ai"]:
+            players[side] = {"id": None, "name": "OrelAI Bot", "picture": "",
+                             "rating": None, "rank": "AI"}
+    mods = state.get("mods", {})
+    return {
+        "id": m["id"], "code": m["code"], "mode": m["mode"],
+        "status": m["status"], "version": m["version"],
+        "you": side_for(m, user_id),
+        "players": players,
+        "towers": state.get("towers"),
+        "wind": state.get("wind"),
+        "damage_dealt": state.get("damage_dealt"),
+        "skins": {s: skin_colors(mods.get(s, {}).get("skin")) for s in ("p1", "p2")},
+        "last_shot_at": state.get("last_shot_at"),
+        "winner_side": state.get("winner_side"),
+        "results": state.get("results"),
+        "server_time": time.time(),
+        "events": events,
+    }
+
+
+def claim_waiting_match(match_id, user_id):
+    """Atomically claim a waiting match slot; returns True on success."""
+    cur = execute("UPDATE matches SET p2 = ?, status = 'active' WHERE id = ?"
+                  " AND status = 'waiting' AND p1 != ? AND p2 IS NULL",
+                  (user_id, match_id, user_id))
+    return cur.rowcount == 1
+
+
+# --------------------------------------------------------------- auth
+@app.post("/api/auth/google")
+def auth_google():
+    err = limited("auth")
+    if err:
+        return err
+    cred = (request.get_json(silent=True) or {}).get("credential", "")
+    if not cred:
+        return jsonify({"error": "missing_credential"}), 400
+    try:
+        info = verify_google_credential(cred)
+    except ValueError as exc:
+        return jsonify({"error": "invalid_credential", "detail": str(exc)}), 401
+    user = get_or_create_user(info["email"], info["name"], info["picture"])
+    blocked = user_blocked_reason(user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    token = create_session(user["id"])
+    return jsonify({"token": token, "user": public_user(user)})
+
+
+@app.post("/api/auth/dev")
+def auth_dev():
+    """Local development login only. Disabled unless DEV_AUTH=1."""
+    if not Config.DEV_AUTH:
+        return jsonify({"error": "disabled"}), 404
+    err = limited("auth")
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"error": "bad_email"}), 400
+    user = get_or_create_user(email, body.get("name", email.split("@")[0]), "")
+    token = create_session(user["id"])
+    return jsonify({"token": token, "user": public_user(user)})
+
+
+@app.post("/api/auth/logout")
+@require_auth
+def auth_logout():
+    auth = request.headers.get("Authorization", "")
+    destroy_session(auth[7:].strip())
+    return jsonify({"ok": True})
+
+
+@app.get("/api/me")
+@require_auth
+def me():
+    u = g.user
+    inv = {r["item_id"]: {"qty": r["qty"], "level": r["level"],
+                          "equipped": bool(r["equipped"])}
+           for r in q("SELECT item_id, qty, level, equipped FROM user_items"
+                      " WHERE user_id = ?", (u["id"],))}
+    today = _today()
+    return jsonify({"user": public_user(u), "inventory": inv,
+                    "daily_available": u["last_daily"] != today,
+                    "streak": u["streak"], "server_date": today})
+
+
+# --------------------------------------------------------------- store
+@app.get("/api/store")
+@require_auth
+def store_get():
+    err = limited("store")
+    if err:
+        return err
+    inv = {r["item_id"]: {"qty": r["qty"], "level": r["level"],
+                          "equipped": bool(r["equipped"])}
+           for r in q("SELECT item_id, qty, level, equipped FROM user_items"
+                      " WHERE user_id = ?", (g.user["id"],))}
+    return jsonify({"catalog": CATALOG, "inventory": inv,
+                    "coins": g.user["coins"]})
+
+
+@app.post("/api/store/buy")
+@require_auth
+def store_buy():
+    err = limited("store")
+    if err:
+        return err
+    blocked = user_blocked_reason(g.user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    item_id = (request.get_json(silent=True) or {}).get("item_id", "")
+    item = CATALOG.get(item_id)
+    if not item:
+        return jsonify({"error": "unknown_item"}), 400
+    uid = g.user["id"]
+    owned = q("SELECT * FROM user_items WHERE user_id = ? AND item_id = ?",
+              (uid, item_id), one=True)
+    if item["kind"] == "skin" and owned:
+        return jsonify({"error": "already_owned",
+                        "error_he": "כבר בבעלותך."}), 400
+    if item["kind"] == "upgrade":
+        level = owned["level"] if owned else 0
+        if level >= item["max_level"]:
+            return jsonify({"error": "max_level",
+                            "error_he": "רמה מקסימלית."}), 400
+        price = item["prices"][level]
+    else:
+        price = item["price"]
+    # atomic balance check: debit only if funds suffice
+    cur = execute("UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?",
+                  (price, uid, price))
+    if cur.rowcount != 1:
+        return jsonify({"error": "insufficient_funds",
+                        "error_he": "אין מספיק מטבעות."}), 400
+    execute("INSERT INTO transactions (user_id, delta, reason, ref, created_at)"
+            " VALUES (?,?,?,?,?)", (uid, -price, "purchase", item_id, _now_iso()))
+    if item["kind"] == "consumable":
+        execute("INSERT INTO user_items (user_id, item_id, qty) VALUES (?,?,?)"
+                " ON CONFLICT(user_id, item_id) DO UPDATE SET qty = qty + ?",
+                (uid, item_id, item["pack_shots"], item["pack_shots"]))
+    elif item["kind"] == "upgrade":
+        execute("INSERT INTO user_items (user_id, item_id, level) VALUES (?,?,1)"
+                " ON CONFLICT(user_id, item_id) DO UPDATE SET level = level + 1",
+                (uid, item_id))
+    else:  # skin
+        execute("INSERT INTO user_items (user_id, item_id, qty) VALUES (?,?,1)",
+                (uid, item_id))
+    u = q("SELECT coins FROM users WHERE id = ?", (uid,), one=True)
+    return jsonify({"ok": True, "coins": u["coins"], "spent": price})
+
+
+@app.post("/api/store/equip")
+@require_auth
+def store_equip():
+    item_id = (request.get_json(silent=True) or {}).get("item_id", "")
+    item = CATALOG.get(item_id)
+    if not item or item["kind"] != "skin":
+        return jsonify({"error": "unknown_item"}), 400
+    uid = g.user["id"]
+    owned = q("SELECT 1 FROM user_items WHERE user_id = ? AND item_id = ?",
+              (uid, item_id), one=True)
+    if not owned:
+        return jsonify({"error": "not_owned"}), 400
+    execute("UPDATE user_items SET equipped = 0 WHERE user_id = ? AND"
+            " item_id LIKE 'skin_%'", (uid,))
+    execute("UPDATE user_items SET equipped = 1 WHERE user_id = ? AND item_id = ?",
+            (uid, item_id))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/daily/claim")
+@require_auth
+def daily_claim():
+    uid = g.user["id"]
+    today = _today()
+    u = q("SELECT last_daily, streak FROM users WHERE id = ?", (uid,), one=True)
+    if u["last_daily"] == today:
+        return jsonify({"error": "already_claimed",
+                        "error_he": "כבר אספת היום. חזור מחר!"}), 400
+    from datetime import timedelta
+    yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    streak = u["streak"] + 1 if u["last_daily"] == yesterday else 1
+    amount = min(DAILY_BASE + (streak - 1) * DAILY_STREAK_STEP, DAILY_CAP)
+    execute("UPDATE users SET last_daily = ?, streak = ? WHERE id = ?",
+            (today, streak, uid))
+    add_coins(uid, amount, "daily_bonus")
+    return jsonify({"ok": True, "amount": amount, "streak": streak})
+
+
+# --------------------------------------------------------------- coupons
+@app.post("/api/coupons/redeem")
+@require_auth
+def coupon_redeem():
+    code = ((request.get_json(silent=True) or {}).get("code") or "").strip().upper()
+    if not code:
+        return jsonify({"error": "missing_code"}), 400
+    uid = g.user["id"]
+    c = q("SELECT * FROM coupons WHERE code = ?", (code,), one=True)
+    if not c:
+        return jsonify({"error": "invalid_code", "error_he": "קופון לא תקין."}), 400
+    if c["expires_at"] and c["expires_at"] < _now_iso():
+        return jsonify({"error": "expired", "error_he": "הקופון פג תוקף."}), 400
+    already = q("SELECT 1 FROM coupon_redemptions WHERE code = ? AND user_id = ?",
+                (code, uid), one=True)
+    if already:
+        return jsonify({"error": "already_redeemed",
+                        "error_he": "כבר מימשת את הקופון."}), 400
+    cur = execute("UPDATE coupons SET uses = uses + 1 WHERE code = ?"
+                  " AND uses < max_uses", (code,))
+    if cur.rowcount != 1:
+        return jsonify({"error": "exhausted",
+                        "error_he": "הקופון מוצה."}), 400
+    execute("INSERT INTO coupon_redemptions (code, user_id, redeemed_at)"
+            " VALUES (?,?,?)", (code, uid, _now_iso()))
+    if c["kind"] == "coins":
+        add_coins(uid, c["amount"], "coupon", code)
+        reward = f"{c['amount']} מטבעות"
+    else:
+        item = CATALOG.get(c["item_id"])
+        if not item:
+            return jsonify({"error": "invalid_code"}), 400
+        qty = item.get("pack_shots", 1)
+        execute("INSERT INTO user_items (user_id, item_id, qty) VALUES (?,?,?)"
+                " ON CONFLICT(user_id, item_id) DO UPDATE SET qty = qty + ?",
+                (uid, c["item_id"], qty, qty))
+        reward = item["name_he"]
+    u = q("SELECT coins FROM users WHERE id = ?", (uid,), one=True)
+    return jsonify({"ok": True, "reward": reward, "coins": u["coins"]})
+
+
+# --------------------------------------------------------------- messages
+@app.get("/api/messages")
+@require_auth
+def messages_get():
+    rows = q("SELECT m.*, r.read_at FROM messages m LEFT JOIN message_reads r"
+             " ON r.message_id = m.id AND r.user_id = ?"
+             " WHERE m.user_id IS NULL OR m.user_id = ?"
+             " ORDER BY m.id DESC LIMIT 50", (g.user["id"], g.user["id"]))
+    out = []
+    ids = []
+    for r in rows:
+        out.append({"id": r["id"], "title": r["title"], "body": r["body"],
+                    "created_at": r["created_at"], "read": bool(r["read_at"])})
+        if not r["read_at"]:
+            ids.append(r["id"])
+    for mid in ids:
+        execute("INSERT OR IGNORE INTO message_reads (message_id, user_id,"
+                " read_at) VALUES (?,?,?)", (mid, g.user["id"], _now_iso()))
+    return jsonify({"messages": out})
+
+
+# --------------------------------------------------------------- matchmaking
+@app.post("/api/matches/quick")
+@require_auth
+def match_quick():
+    blocked = user_blocked_reason(g.user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    uid = g.user["id"]
+    # join an existing waiting quick match if one exists
+    waiting = q("SELECT id FROM matches WHERE mode = 'quick' AND status = 'waiting'"
+                " AND p1 != ? ORDER BY created_at LIMIT 1", (uid,), one=True)
+    if waiting and claim_waiting_match(waiting["id"], uid):
+        m = load_match(waiting["id"])
+        m["state"] = new_state(user_mods(m["p1"]), user_mods(uid))
+        m["version"] += 1
+        save_match(m)
+        emit_events(m["id"], m["version"], [{"type": "match_start"}])
+        return jsonify({"match_id": m["id"], "status": "active"})
+    mid = secrets.token_hex(6)
+    now = _now_iso()
+    execute("INSERT INTO matches (id, code, mode, status, p1, state, version,"
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,0,?,?)",
+            (mid, None, "quick", "waiting", uid, "{}", now, now))
+    return jsonify({"match_id": mid, "status": "waiting"})
+
+
+@app.post("/api/matches/ai")
+@require_auth
+def match_ai():
+    blocked = user_blocked_reason(g.user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    uid = g.user["id"]
+    mid = secrets.token_hex(6)
+    now = _now_iso()
+    state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
+    execute("INSERT INTO matches (id, code, mode, status, p1, p2_ai, state,"
+            " version, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (mid, None, "ai", "active", uid, 1, json.dumps(state), 1, now, now))
+    emit_events(mid, 1, [{"type": "match_start"}])
+    return jsonify({"match_id": mid, "status": "active"})
+
+
+@app.post("/api/matches/friend")
+@require_auth
+def match_friend():
+    blocked = user_blocked_reason(g.user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    uid = g.user["id"]
+    mid = secrets.token_hex(6)
+    code = secrets.token_urlsafe(4).replace("-", "").replace("_", "")[:6].upper()
+    now = _now_iso()
+    execute("INSERT INTO matches (id, code, mode, status, p1, state, version,"
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,0,?,?)",
+            (mid, code, "friend", "waiting", uid, "{}", now, now))
+    return jsonify({"match_id": mid, "code": code, "status": "waiting"})
+
+
+@app.post("/api/matches/join")
+@require_auth
+def match_join():
+    blocked = user_blocked_reason(g.user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    code = ((request.get_json(silent=True) or {}).get("code") or "").strip().upper()
+    m = q("SELECT id, p1 FROM matches WHERE code = ?", (code,), one=True)
+    if not m:
+        return jsonify({"error": "not_found", "error_he": "קוד לא נמצא."}), 404
+    uid = g.user["id"]
+    if m["p1"] == uid:
+        return jsonify({"error": "own_match",
+                        "error_he": "זה המשחק שלך - שתף את הקוד עם חבר."}), 400
+    if not claim_waiting_match(m["id"], uid):
+        return jsonify({"error": "unavailable",
+                        "error_he": "המשחק כבר מלא או הסתיים."}), 400
+    mm = load_match(m["id"])
+    mm["state"] = new_state(user_mods(mm["p1"]), user_mods(uid))
+    mm["version"] += 1
+    save_match(mm)
+    emit_events(mm["id"], mm["version"], [{"type": "match_start"}])
+    return jsonify({"match_id": mm["id"], "status": "active"})
+
+
+@app.get("/api/matches/<mid>/state")
+@require_auth
+def match_state(mid):
+    err = limited("state")
+    if err:
+        return err
+    m = load_match(mid)
+    if not m or side_for(m, g.user["id"]) is None:
+        return jsonify({"error": "not_found"}), 404
+    since = int(request.args.get("since", 0))
+    # AI opponent acts on poll when its cooldown has elapsed (+ reaction delay)
+    if m["p2_ai"] and m["status"] == "active":
+        last = m["state"]["last_shot_at"]["p2"]
+        if time.time() - last > cooldown_for("standard") + 1.2:
+            angle, power, weapon = ai_choose_shot(m["state"], "p2")
+            events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
+            m["version"] += 1
+            if won:
+                finalize_match(m, "p2")
+                events.append({"type": "match_end", "winner_side": "p2"})
+            save_match(m)
+            emit_events(mid, m["version"], events)
+    return jsonify(match_snapshot(m, g.user["id"], since))
+
+
+@app.post("/api/matches/<mid>/fire")
+@require_auth
+def match_fire(mid):
+    err = limited("fire")
+    if err:
+        return err
+    blocked = user_blocked_reason(g.user)
+    if blocked:
+        return jsonify({"error": "blocked", "error_he": blocked}), 403
+    m = load_match(mid)
+    side = side_for(m, g.user["id"]) if m else None
+    if not m or side is None:
+        return jsonify({"error": "not_found"}), 404
+    if m["status"] != "active":
+        return jsonify({"error": "not_active",
+                        "error_he": "המשחק לא פעיל."}), 400
+    body = request.get_json(silent=True) or {}
+    try:
+        angle = float(body.get("angle"))
+        power = float(body.get("power"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_params"}), 400
+    weapon = body.get("weapon", "standard")
+    if weapon not in ("standard", "double_bomb", "homing_missile", "cluster_shell"):
+        return jsonify({"error": "bad_weapon"}), 400
+    # cooldown enforcement (server clock)
+    last = m["state"]["last_shot_at"][side]
+    cd = cooldown_for(weapon)
+    remaining = cd - (time.time() - last)
+    if remaining > 0.05:
+        return jsonify({"error": "reloading", "remaining": round(remaining, 2),
+                        "error_he": "התותח בטעינה."}), 429
+    # consumable ownership check + atomic decrement
+    if weapon != "standard":
+        cur = execute("UPDATE user_items SET qty = qty - 1 WHERE user_id = ?"
+                      " AND item_id = ? AND qty > 0", (g.user["id"], weapon))
+        if cur.rowcount != 1:
+            return jsonify({"error": "no_ammo",
+                            "error_he": "אין לך תחמושת מהסוג הזה."}), 400
+    events, won = fire_weapon(m["state"], side, angle, power, weapon)
+    m["version"] += 1
+    if won:
+        finalize_match(m, side)
+        events.append({"type": "match_end", "winner_side": side})
+    save_match(m)
+    emit_events(mid, m["version"], events)
+    snap = match_snapshot(m, g.user["id"], m["version"] - 1)
+    return jsonify(snap)
+
+
+@app.post("/api/matches/<mid>/leave")
+@require_auth
+def match_leave(mid):
+    m = load_match(mid)
+    side = side_for(m, g.user["id"]) if m else None
+    if not m or side is None:
+        return jsonify({"error": "not_found"}), 404
+    if m["status"] == "active":
+        other = "p2" if side == "p1" else "p1"
+        finalize_match(m, other)  # leaving counts as a loss
+        m["version"] += 1
+        save_match(m)
+        emit_events(mid, m["version"],
+                    [{"type": "match_end", "winner_side": other,
+                      "reason": "opponent_left"}])
+    elif m["status"] == "waiting":
+        execute("DELETE FROM matches WHERE id = ?", (mid,))
+    return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------- leaderboard
+@app.get("/api/leaderboard")
+@require_auth
+def leaderboard():
+    rows = q("SELECT id, name, picture, rating, wins, losses FROM users"
+             " WHERE matches_played > 0 ORDER BY rating DESC LIMIT 100")
+    return jsonify({"leaderboard": [
+        {"id": r["id"], "name": r["name"], "picture": r["picture"],
+         "rating": r["rating"], "rank": rank_for(r["rating"]),
+         "wins": r["wins"], "losses": r["losses"]} for r in rows],
+        "me": g.user["id"]})
+
+
+# --------------------------------------------------------------- admin
+@app.get("/api/admin/overview")
+@require_admin
+def admin_overview():
+    today = _today()
+    stats = {
+        "users_total": q("SELECT COUNT(*) c FROM users", one=True)["c"],
+        "users_today": q("SELECT COUNT(*) c FROM users WHERE last_login >= ?",
+                         (today,), one=True)["c"],
+        "matches_total": q("SELECT COUNT(*) c FROM matches", one=True)["c"],
+        "matches_active": q("SELECT COUNT(*) c FROM matches WHERE status IN"
+                            " ('active','waiting')", one=True)["c"],
+        "coins_issued": q("SELECT COALESCE(SUM(delta),0) c FROM transactions"
+                          " WHERE delta > 0", one=True)["c"],
+        "coins_spent": q("SELECT COALESCE(-SUM(delta),0) c FROM transactions"
+                         " WHERE delta < 0", one=True)["c"],
+        "purchases": q("SELECT COUNT(*) c FROM transactions WHERE reason ="
+                       " 'purchase'", one=True)["c"],
+        "banned": q("SELECT COUNT(*) c FROM users WHERE suspended = 1 OR"
+                    " (banned_until IS NOT NULL AND banned_until > ?)",
+                    (_now_iso(),), one=True)["c"],
+    }
+    recent = q("SELECT t.created_at, u.email, t.delta, t.reason, t.ref"
+               " FROM transactions t JOIN users u ON u.id = t.user_id"
+               " ORDER BY t.id DESC LIMIT 30")
+    return jsonify({"stats": stats, "recent_transactions": [dict(r) for r in recent]})
+
+
+@app.get("/api/admin/users")
+@require_admin
+def admin_users():
+    term = f"%{request.args.get('q', '').strip()}%"
+    rows = q("SELECT * FROM users WHERE email LIKE ? OR name LIKE ?"
+             " ORDER BY id DESC LIMIT 100", (term, term))
+    return jsonify({"users": [
+        {"id": r["id"], "email": r["email"], "name": r["name"],
+         "coins": r["coins"], "rating": r["rating"], "wins": r["wins"],
+         "losses": r["losses"], "suspended": bool(r["suspended"]),
+         "banned_until": r["banned_until"], "created_at": r["created_at"],
+         "last_login": r["last_login"]} for r in rows]})
+
+
+@app.post("/api/admin/users/<int:uid>/moderate")
+@require_admin
+def admin_moderate(uid):
+    body = request.get_json(silent=True) or {}
+    action = body.get("action")
+    target = q("SELECT * FROM users WHERE id = ?", (uid,), one=True)
+    if not target:
+        return jsonify({"error": "not_found"}), 404
+    if target["email"].lower() == Config.ADMIN_EMAIL.lower():
+        return jsonify({"error": "cannot_moderate_admin"}), 400
+    if action == "ban":
+        hours = max(1, min(24 * 365, int(body.get("hours", 24))))
+        until = datetime.fromtimestamp(
+            time.time() + hours * 3600, tz=timezone.utc).isoformat()
+        execute("UPDATE users SET banned_until = ? WHERE id = ?", (until, uid))
+        msg = f"banned until {until}"
+    elif action == "suspend":
+        execute("UPDATE users SET suspended = 1 WHERE id = ?", (uid,))
+        msg = "suspended"
+    elif action == "lift":
+        execute("UPDATE users SET suspended = 0, banned_until = NULL WHERE id = ?",
+                (uid,))
+        msg = "restrictions lifted"
+    else:
+        return jsonify({"error": "bad_action"}), 400
+    execute("INSERT INTO messages (user_id, title, body, created_at)"
+            " VALUES (?,?,?,?)",
+            (uid, "עדכון מהנהלת Brigagame",
+             f"סטטוס החשבון שלך עודכן: {msg}.", _now_iso()))
+    return jsonify({"ok": True, "result": msg})
+
+
+@app.post("/api/admin/users/<int:uid>/coins")
+@require_admin
+def admin_coins(uid):
+    body = request.get_json(silent=True) or {}
+    delta = int(body.get("delta", 0))
+    reason = (body.get("reason") or "admin_adjustment")[:120]
+    if delta == 0 or abs(delta) > 100000:
+        return jsonify({"error": "bad_delta"}), 400
+    if not q("SELECT 1 FROM users WHERE id = ?", (uid,), one=True):
+        return jsonify({"error": "not_found"}), 404
+    add_coins(uid, delta, reason)
+    u = q("SELECT coins FROM users WHERE id = ?", (uid,), one=True)
+    return jsonify({"ok": True, "coins": u["coins"]})
+
+
+@app.post("/api/admin/broadcast")
+@require_admin
+def admin_broadcast():
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()[:120]
+    text = (body.get("body") or "").strip()[:2000]
+    if not title or not text:
+        return jsonify({"error": "missing_fields"}), 400
+    execute("INSERT INTO messages (user_id, title, body, created_at)"
+            " VALUES (NULL,?,?,?)", (title, text, _now_iso()))
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/coupons")
+@require_admin
+def admin_coupons_list():
+    rows = q("SELECT * FROM coupons ORDER BY created_at DESC LIMIT 100")
+    return jsonify({"coupons": [dict(r) for r in rows]})
+
+
+@app.post("/api/admin/coupons")
+@require_admin
+def admin_coupons_create():
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind", "coins")
+    code = (body.get("code") or secrets.token_urlsafe(4)[:6].upper()).strip().upper()
+    if kind == "coins":
+        amount = max(1, min(100000, int(body.get("amount", 100))))
+        item_id = None
+    elif kind == "item" and body.get("item_id") in CATALOG:
+        amount, item_id = 0, body["item_id"]
+    else:
+        return jsonify({"error": "bad_kind"}), 400
+    max_uses = max(1, min(100000, int(body.get("max_uses", 1))))
+    expires_at = body.get("expires_at") or None
+    try:
+        execute("INSERT INTO coupons (code, kind, amount, item_id, max_uses,"
+                " expires_at, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                (code, kind, amount, item_id, max_uses, expires_at,
+                 g.user["id"], _now_iso()))
+    except Exception:
+        return jsonify({"error": "code_exists"}), 400
+    return jsonify({"ok": True, "code": code})
+
+
+@app.delete("/api/admin/coupons/<code>")
+@require_admin
+def admin_coupons_delete(code):
+    execute("DELETE FROM coupons WHERE code = ?", (code.upper(),))
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/matches")
+@require_admin
+def admin_matches():
+    rows = q("SELECT id, mode, status, version, created_at, updated_at FROM matches"
+             " ORDER BY updated_at DESC LIMIT 50")
+    return jsonify({"matches": [dict(r) for r in rows]})
+
+
+@app.get("/api/health")
+def health():
+    return jsonify({"ok": True, "service": "Brigagame 2.0 by OrelAI"})
+
+
+with app.app_context():
+    init_db()
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=False)
