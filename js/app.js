@@ -315,9 +315,9 @@ const App = {
     view.innerHTML = `
       <h1>🛠️ ניהול</h1>
       <div class="tabs">
-        ${["stats", "users", "broadcast", "coupons", "matches"].map(t =>
+        ${["stats", "users", "audit", "broadcast", "coupons", "matches"].map(t =>
           `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-            stats: "סטטיסטיקות", users: "משתמשים", broadcast: "שידור הודעה",
+            stats: "סטטיסטיקות", users: "משתמשים", audit: "יומן פעילות", broadcast: "שידור הודעה",
             coupons: "קופונים", matches: "משחקים" }[t]}</button>`).join("")}
       </div>
       <div id="admin-body"></div>`;
@@ -381,6 +381,16 @@ const App = {
       };
       document.getElementById("uq").oninput = () => load();
       load();
+    } else if (tab === "audit") {
+      const { status, data } = await API.get("/api/admin/audit");
+      if (status !== 200) { body.innerHTML = `<p>שגיאה בטעינת היומן.</p>`; return; }
+      body.innerHTML = `<div class="card"><p class="sub">${esc(data.notice || "")}</p><table>
+        <tr><th>זמן</th><th>מנהל/משתמש</th><th>פעולה</th><th>יעד</th><th>פרטים</th></tr>
+        ${(data.audit || []).map(a => `<tr><td>${esc(a.created_at.slice(0, 16).replace("T", " "))}</td>
+          <td>${esc(a.actor_email || "מערכת")}</td><td>${esc(a.action)}</td>
+          <td>${esc((a.target_type || "") + (a.target_id ? ":" + a.target_id : ""))}</td>
+          <td class="audit-details">${esc(a.details || "")}</td></tr>`).join("")}
+        </table></div>`;
     } else if (tab === "broadcast") {
       body.innerHTML = `<div class="card">
         <label>כותרת</label><input id="bc-title">
