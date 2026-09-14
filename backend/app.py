@@ -62,6 +62,9 @@ def public_user(u):
 def audit(action, target_type="", target_id="", details=None, actor_id=None):
     """Append-only, privacy-minimized operator/security activity record."""
     safe = details if isinstance(details, dict) else {}
+    # Keep the operational log bounded while meeting the two-year benchmark
+    # in the Israeli Privacy Protection Authority's Reg. 10 guidance.
+    execute("DELETE FROM audit_logs WHERE created_at < datetime('now', '-2 years')")
     execute("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id,"
             " details, ip_hash, user_agent, created_at) VALUES (?,?,?,?,?,?,?,?)",
             (actor_id if actor_id is not None else (getattr(g, "user", {}) or {}).get("id"),
