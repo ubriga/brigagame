@@ -55,6 +55,15 @@ def level_for_wins(wins: int) -> int:
     return lvl
 
 
+def rank_for_level(level: int) -> dict:
+    """Public rank descriptor for a validated/clamped ladder level."""
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        level = 1
+    return _entry(max(1, min(MAX_LEVEL, level)))
+
+
 def _entry(level: int) -> dict:
     lvl, key, name_he, abbr_he, group, req = RANK_LEVELS[level - 1]
     return {"level": lvl, "key": key, "name_he": name_he,

@@ -20,7 +20,7 @@ from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
                      MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
 from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
                         tower_hp)
-from ranks import rank_payload, rank_up_info
+from ranks import MAX_LEVEL, rank_for_level, rank_payload, rank_up_info
 from security import init_security, limited, request_ip_hash
 
 app = Flask(__name__)
@@ -131,6 +131,23 @@ def save_match(m):
 RANK_POINTS_BOT_WIN = 0.5
 
 
+def rank_loss_points(current_points, versus_ai=False, ai_rank_level=None):
+    """Server-side rank loss: higher ranks stake more, but never below zero.
+
+    Human losses scale 0.5 -> 2.2 points across the 18 ranks. Ranked-bot
+    losses are gentler and also account for opponent strength: losing to the
+    minimum same-rank bot costs 0.25 -> 1.1; choosing a stronger bot reduces
+    that deduction by 5% per rank above the player, to a 50% floor.
+    """
+    player_level = rank_payload(current_points)["level"]
+    human_loss = round(0.5 + 1.7 * ((player_level - 1) / (MAX_LEVEL - 1)), 1)
+    if not versus_ai:
+        return min(float(current_points), human_loss)
+    bot_level = max(player_level, min(MAX_LEVEL, int(ai_rank_level or player_level)))
+    stronger_discount = max(0.5, 1.0 - 0.05 * (bot_level - player_level))
+    return min(float(current_points), round(human_loss * 0.5 * stronger_discount, 1))
+
+
 def finalize_match(m, winner_side):
     """Apply win/loss rewards, hit coins and rating. Server-side only."""
     loser_side = "p2" if winner_side == "p1" else "p1"
@@ -168,11 +185,16 @@ def finalize_match(m, winner_side):
             up = rank_up_info(u["rank_points"], u["rank_points"] + pts)
         else:
             delta = elo_delta(their_r, my_r)
+            practice = bool(m["p2_ai"] and m["state"].get("ai_difficulty") == "easy")
+            loss_pts = (0.0 if practice else rank_loss_points(
+                u["rank_points"], versus_ai=bool(m["p2_ai"]),
+                ai_rank_level=m["state"].get("ai_rank_level")))
             execute("UPDATE users SET rating = MAX(0, rating - ?),"
+                    " rank_points = MAX(0, rank_points - ?),"
                     " losses = losses + 1,"
                     " matches_played = matches_played + 1 WHERE id = ?",
-                    (delta, uid))
-            idf_r = rank_payload(u["rank_points"])
+                    (delta, loss_pts, uid))
+            idf_r = rank_payload(max(0, u["rank_points"] - loss_pts))
             up = None
         results[side] = {"outcome": outcome, "coins": total,
                          "hit_coins": hit_coins,
@@ -180,6 +202,8 @@ def finalize_match(m, winner_side):
                          "idf_rank": idf_r}
         if outcome == "win":
             results[side]["rank_points_awarded"] = pts
+        else:
+            results[side]["rank_points_lost"] = loss_pts
         if m["p2_ai"] and m["state"].get("ai_difficulty") == "easy":
             results[side]["practice"] = True
         if up:
@@ -211,8 +235,12 @@ def match_snapshot(m, user_id, since):
                              "rank": rank_for(u["rating"]),
                              "idf_rank": rank_payload(u["rank_points"])}
         elif side == "p2" and m["p2_ai"]:
+            bot_rank = (rank_for_level(state.get("ai_rank_level", 1))
+                        if state.get("ai_difficulty") == "ranked" else None)
             players[side] = {"id": None, "name": "OrelAI Bot", "picture": "",
-                             "rating": None, "rank": "AI"}
+                             "rating": None,
+                             "rank": (bot_rank["abbr_he"] if bot_rank else "AI"),
+                             "idf_rank": bot_rank}
     mods = state.get("mods", {})
     return {
         "id": m["id"], "code": m["code"], "mode": m["mode"],
@@ -232,6 +260,7 @@ def match_snapshot(m, user_id, since):
         "results": state.get("results"),
         "ready": state.get("ready", {}),
         "ai_difficulty": state.get("ai_difficulty"),
+        "ai_rank_level": state.get("ai_rank_level"),
         # Easy-bot games are practice matches: they never advance rank.
         "practice": bool(m["p2_ai"] and state.get("ai_difficulty") == "easy"),
         "server_time": time.time(),
@@ -778,14 +807,32 @@ def match_ai():
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     uid = g.user["id"]
-    difficulty = (request.get_json(silent=True) or {}).get("difficulty", "normal")
-    if difficulty not in ("easy", "normal", "hard"):
+    body = request.get_json(silent=True) or {}
+    difficulty = body.get("difficulty", "ranked")
+    user_rank_level = rank_payload(g.user["rank_points"])["level"]
+    ai_rank_level = None
+    if difficulty == "easy":
+        pass  # separate unranked practice mode
+    elif difficulty == "ranked":
+        try:
+            ai_rank_level = int(body.get("bot_rank_level", user_rank_level))
+        except (TypeError, ValueError):
+            ai_rank_level = user_rank_level
+        # Enforce the floor server-side so stale/forged clients cannot pick low.
+        ai_rank_level = max(user_rank_level, min(MAX_LEVEL, ai_rank_level))
+    elif difficulty in ("normal", "hard"):
+        # Backward compatibility for a client open during deployment.
+        difficulty = "ranked"
+        ai_rank_level = min(MAX_LEVEL, user_rank_level + (3 if body.get("difficulty") == "hard" else 0))
+    else:
         return jsonify({"error": "bad_difficulty",
                         "error_he": "רמת הקושי אינה תקינה."}), 400
     mid = secrets.token_hex(6)
     now = _now_iso()
     state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
     state["ai_difficulty"] = difficulty
+    if ai_rank_level is not None:
+        state["ai_rank_level"] = ai_rank_level
     state["ready"] = {"p1": False, "p2": True}
     # grace period: the bot's cooldown counts from match start, giving the
     # player a few seconds to take in the field before the first incoming shell
@@ -869,9 +916,14 @@ def match_state(mid):
     if m["p2_ai"] and m["status"] == "active":
         last = m["state"]["last_shot_at"]["p2"]
         difficulty = m["state"].get("ai_difficulty", "normal")
-        reaction = {"easy": 4.2, "normal": 2.2, "hard": 0.8}.get(difficulty, 2.2)
+        if difficulty == "ranked":
+            lvl = max(1, min(MAX_LEVEL, int(m["state"].get("ai_rank_level", 1))))
+            reaction = 3.2 - 2.7 * ((lvl - 1) / (MAX_LEVEL - 1))
+        else:
+            reaction = {"easy": 4.2, "normal": 2.2, "hard": 0.8}.get(difficulty, 2.2)
         if time.time() - last > cooldown_for("standard") + reaction:
-            angle, power, weapon = ai_choose_shot(m["state"], "p2", difficulty)
+            angle, power, weapon = ai_choose_shot(
+                m["state"], "p2", difficulty, m["state"].get("ai_rank_level"))
             events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
             m["version"] += 1
             if won:

@@ -820,6 +820,7 @@ const GameView = {
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
       ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
+      ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} נקודות דרגה</p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         <button class="btn" id="again-btn">עוד משחק</button>
@@ -856,15 +857,16 @@ const GameView = {
   // instead of dumping the player back at the lobby.
   showAiRematch() {
     const ov = document.getElementById("game-overlay");
-    const prev = (this.snap && this.snap.ai_difficulty) || "normal";
-    const opts = [["easy", "קל"], ["normal", "רגיל"], ["hard", "קשה"]];
+    const practice = this.snap && this.snap.practice;
+    const minLevel = (this.snap && this.snap.players && this.snap.players[this.snap.you] && this.snap.players[this.snap.you].idf_rank || {}).level || 1;
+    const prevLevel = (this.snap && this.snap.ai_rank_level) || minLevel;
     ov.innerHTML = `
       <div class="end-emoji">🤖⚔️</div>
       <h2>ריבאנץ' נגד OrelAI Bot</h2>
       <p class="end-sub">אותו יריב, משחק חדש - אפשר לשנות רמת קושי</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center">
         <select id="rematch-diff" aria-label="רמת קושי">
-          ${opts.map(([v, l]) => `<option value="${v}" ${v === prev ? "selected" : ""}>${l}</option>`).join("")}
+          ${practice ? `<option value="easy">משחק תרגול</option>` : App.botRankOptions(minLevel, prevLevel)}
         </select>
         <button class="btn" id="rematch-go">עוד משחק</button>
         <button class="btn secondary" id="rematch-lobby">חזרה ללובי</button>
@@ -873,8 +875,9 @@ const GameView = {
       Sfx.play("click");
       const btn = e.target;
       btn.disabled = true; btn.textContent = "יוצר משחק...";
-      const difficulty = document.getElementById("rematch-diff").value;
-      const { status, data } = await API.post("/api/matches/ai", { difficulty });
+      const value = document.getElementById("rematch-diff").value;
+      const body = practice ? { difficulty: "easy" } : { difficulty: "ranked", bot_rank_level: Number(value) };
+      const { status, data } = await API.post("/api/matches/ai", body);
       if (status === 200 && data.match_id) {
         location.hash = "#/game/" + data.match_id;
       } else {

@@ -240,9 +240,23 @@ check("match players expose idf_rank with insignia path",
 s, r = call("POST", "/api/matches/ai", token=tb)
 aid = r["match_id"]
 check("ai match active", s == 200 and r["status"] == "active")
-check("ai difficulty selected", call("GET", f"/api/matches/{aid}/state?since=0", token=tb)[1]["ai_difficulty"] == "normal")
+check("ai defaults to ranked floor", call("GET", f"/api/matches/{aid}/state?since=0", token=tb)[1]["ai_difficulty"] == "ranked")
 s, st = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 check("ai opponent named", st["players"]["p2"]["name"] == "OrelAI Bot")
+check("ranked bot floor and displayed insignia match player",
+      st["ai_rank_level"] == st["players"]["p1"]["idf_rank"]["level"]
+      and st["players"]["p2"]["idf_rank"]["level"] == st["players"]["p1"]["idf_rank"]["level"])
+s, harder = call("POST", "/api/matches/ai", token=tb,
+                 body={"difficulty": "ranked", "bot_rank_level": 18})
+_, harder_st = call("GET", f"/api/matches/{harder['match_id']}/state?since=0", token=tb)
+check("player can choose a harder rank-18 bot",
+      s == 200 and harder_st["ai_rank_level"] == 18
+      and harder_st["players"]["p2"]["idf_rank"]["level"] == 18)
+s, floored = call("POST", "/api/matches/ai", token=tb,
+                  body={"difficulty": "ranked", "bot_rank_level": 1})
+_, floored_st = call("GET", f"/api/matches/{floored['match_id']}/state?since=0", token=tb)
+check("server rejects downgrade by flooring at player rank",
+      s == 200 and floored_st["ai_rank_level"] == floored_st["players"]["p1"]["idf_rank"]["level"])
 time.sleep(9)
 s, st2 = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 ai_shot = any(e["type"] == "shot" and e.get("side") == "p2" for e in st2["events"])
@@ -268,7 +282,7 @@ check("practice win awards 0 rank points",
 _, mb2 = call("GET", "/api/me", token=tb)
 check("practice win left rank untouched",
       mb2["user"]["idf_rank"]["level"] == 1
-      and mb2["user"]["idf_rank"]["wins"] == 2,
+      and mb2["user"]["idf_rank"]["wins"] == 1.5,
       json.dumps(mb2["user"]["idf_rank"]))
 
 _, gc = call("POST", "/api/auth/dev",
@@ -293,6 +307,27 @@ check("half point reflected in rank progress",
       and mc["user"]["idf_rank"]["level"] == 1
       and mc["user"]["idf_rank"]["next"]["wins_to_go"] == 2.5,
       json.dumps(mc["user"]["idf_rank"]))
+
+# --- rank-point deductions: practice exempt; ranked bots and humans scale
+with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db")) as loss_db:
+    loss_db.execute("UPDATE users SET rank_points = 55 WHERE id = ?", (bid_,))
+s, r = call("POST", "/api/matches/ai", token=tb,
+            body={"difficulty": "ranked", "bot_rank_level": 10})
+loss_id = r["match_id"]
+zero_tower(loss_id, "p1")
+# Let the bot finish the already-rubbled player tower on state polling.
+with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db")) as loss_db:
+    row = loss_db.execute("SELECT state FROM matches WHERE id = ?", (loss_id,)).fetchone()
+    loss_state = json.loads(row[0]); loss_state["last_shot_at"]["p2"] = 0
+    loss_db.execute("UPDATE matches SET state = ? WHERE id = ?", (json.dumps(loss_state), loss_id))
+_, loss_st = call("GET", f"/api/matches/{loss_id}/state?since=0", token=tb)
+check("ranked same-rank bot loss deducts scaled points",
+      loss_st["status"] == "finished"
+      and loss_st["results"]["p1"].get("rank_points_lost") == 0.7,
+      json.dumps(loss_st.get("results")))
+_, after_loss = call("GET", "/api/me", token=tb)
+check("rank points reduced server-side", after_loss["user"]["idf_rank"]["wins"] == 54.3,
+      json.dumps(after_loss["user"]["idf_rank"]))
 
 # --- quick match consent + two-way real-time sync
 s, r1 = call("POST", "/api/matches/quick", token=ta)
@@ -367,7 +402,7 @@ tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlo
 # carol is simply present in the app - she never clicks quick match.
 s, hb = call("POST", "/api/presence/ping", token=tc)
 check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
-check("presence ping carries server_version", hb.get("server_version") == "6", str(hb.get("server_version")))
+check("presence ping carries server_version", hb.get("server_version") == "7", str(hb.get("server_version")))
 
 # --- maintenance flag (D1): admin toggle carried in the presence pulse
 s, r = call("GET", "/api/admin/maintenance", token=ta)
