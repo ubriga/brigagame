@@ -221,12 +221,14 @@ const App = {
           <div class="grid">
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
             <div class="ai-start">
-              <select id="ai-rank" aria-label="דרגת הבוט">
-                ${this.botRankOptions(u.idf_rank && u.idf_rank.level)}
+              <select id="ai-tier" aria-label="רמת קושי">
+                <option value="easy">קל - תרגול, ללא נקודות או מטבעות</option>
+                <option value="medium" selected>בינוני</option>
+                <option value="hard">קשה</option>
+                <option value="ultra">אולטרה קשה</option>
               </select>
-              <button class="btn secondary" id="ai-btn">🤖 משחק מדורג מול בוט</button>
+              <button class="btn secondary" id="ai-btn">🤖 משחק מול בוט</button>
             </div>
-            <button class="btn secondary" id="practice-btn">🎯 משחק תרגול (לא מדורג)</button>
             <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
             <div style="display:flex;gap:8px">
               <input id="join-code" placeholder="קוד משחק" maxlength="6" style="text-transform:uppercase">
@@ -269,13 +271,8 @@ const App = {
     };
     document.getElementById("ai-btn").onclick = async () => {
       Sfx.play("click");
-      const bot_rank_level = Number(document.getElementById("ai-rank").value);
-      const { data } = await API.post("/api/matches/ai", { difficulty: "ranked", bot_rank_level });
-      if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
-    };
-    document.getElementById("practice-btn").onclick = async () => {
-      Sfx.play("click");
-      const { data } = await API.post("/api/matches/ai", { difficulty: "easy" });
+      const difficulty = document.getElementById("ai-tier").value;
+      const { data } = await API.post("/api/matches/ai", { difficulty });
       if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
     };
     document.getElementById("friend-btn").onclick = async () => {
