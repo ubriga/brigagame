@@ -76,10 +76,10 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 .code-box { font-size: 30px; letter-spacing: 6px; font-weight: 800; color: var(--gold); text-align: center; padding: 12px; background: var(--panel2); border-radius: 12px; direction: ltr; }
 
 /* game */
-#game-stage { position: relative; width: 100%; }
+#game-stage { position: relative; width: 100%; animation: stage-in .28s ease-out; }
 #game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: none; background: #0b1220; }
 #game-hud { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.player-tag { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 6px 12px; border-radius: 12px; font-size: 14px; }
+.player-tag { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 6px 12px; border-radius: 12px; font-size: 14px; transition: outline-color .2s ease, transform .2s ease; }
 .player-tag img { width: 26px; height: 26px; border-radius: 50%; }
 .player-tag.me { outline: 2px solid var(--accent); }
 #match-info { display:flex; align-items:center; gap:6px; }
@@ -91,11 +91,13 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
   #game-hud .player-tag { flex:1 1 0; min-width:0; padding:6px 8px; }
 }
 #weapon-bar { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.wpn { background: var(--panel2); border: 2px solid transparent; color: var(--text); border-radius: 12px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
+.wpn { background: var(--panel2); border: 2px solid transparent; color: var(--text); border-radius: 12px; padding: 8px 12px; cursor: pointer; font-size: 13px; transition: transform .16s ease, border-color .2s ease, opacity .2s ease; }
+.wpn:not(:disabled):hover { transform: translateY(-2px); }
+.wpn:not(:disabled):active { transform: translateY(0) scale(.97); }
 .wpn.sel { border-color: var(--accent); }
 .wpn:disabled { opacity: .4; cursor: not-allowed; }
 #reload-wrap { height: 8px; background: var(--panel2); border-radius: 99px; margin-top: 10px; overflow: hidden; }
-#reload-bar { height: 100%; width: 100%; background: linear-gradient(90deg, var(--ok), var(--accent)); transition: width .1s linear; }
+#reload-bar { height: 100%; width: 100%; background: linear-gradient(90deg, var(--ok), var(--accent)); transition: width .12s ease-out; }
 #aim-info { color: var(--muted); font-size: 13px; margin-top: 6px; direction: ltr; text-align: right; }
 #game-overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
@@ -224,3 +226,9 @@ footer { line-height: 1.8; }
 .rank-progress-track { height:9px; margin:10px 0 7px; overflow:hidden; border-radius:999px; background:#334155; }
 .rank-progress-track > div { height:100%; background:linear-gradient(90deg,#f59e0b,#fbbf24); transition:width .25s; }
 .rank-progress-card p { margin:0; color:var(--muted); font-size:13px; }
+
+@keyframes stage-in { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  #game-stage { animation: none; }
+  .wpn, .player-tag, #reload-bar { transition: none; }
+}

@@ -7,6 +7,9 @@ const GameView = {
   aiming: false, aimAngle: 45, aimPower: 50,
   _rankImgs: {},
   anims: [], processing: false,
+  // Small pooled FX budget keeps impact effects smooth on mobile. Particles
+  // are recycled instead of allocating new objects during every hit.
+  particles: [], particlePool: [], MAX_PARTICLES: 96, MAX_DEBRIS: 48,
   serverOffset: 0, onExit: null,
   displayTowers: null, displayHp: null, pendingTowers: null,
   shake: 0, endAt: null, ended: false, readySent: false,
@@ -18,7 +21,8 @@ const GameView = {
   async init(root, matchId, onExit) {
     this.matchId = matchId; this.onExit = onExit;
     this.firing = false; this.localLastShot = 0;
-    this.anims = []; this.weapon = "standard"; this.snap = null;
+    this.anims = []; this.particles = []; this.particlePool = [];
+    this.weapon = "standard"; this.snap = null;
     this.displayTowers = null; this.displayHp = null; this.pendingTowers = null;
     this.shake = 0; this.endAt = null; this.ended = false; this.readySent = false;
     this.reconnectFailures = 0;
@@ -440,12 +444,15 @@ const GameView = {
         this.anims.push({ kind: "explosion", x: ev.x, y: ev.y, r: ev.radius,
                           t: -delay, dur: 0.85, damage: dmg,
                           target: ev.target, cosmetic: !!ev.cosmetic,
-                          sparks: this.makeSparks(ev.x, ev.y, ev.cosmetic ? 5 : 12),
-                          smoke: this.makeSmoke(ev.x, ev.y, ev.cosmetic ? 2 : 5) });
+                          particlesStarted: false });
         lastImpact = Math.max(lastImpact, delay);
         if (!ev.cosmetic) {
-          this.shakeAt = performance.now() / 1000 + delay;
-          this.shakeAmp = Math.min(16, 3 + dmg / 8);
+          // Separate impact animations let several cluster hits overlap
+          // without one hit overwriting another's shake or tower flash.
+          this.anims.push({ kind: "impact", t: -delay, dur: 0.34,
+                            amp: Math.min(16, 3 + dmg / 8) });
+          this.anims.push({ kind: "hitflash", target: ev.target,
+                            t: -delay, dur: 0.24 });
           this.anims.push({ kind: "dmgnum", x: ev.x, y: Math.max(60, ev.y - 46),
                             t: -delay, dur: 1.3, damage: dmg });
           if (ev.destroyed) for (const b of ev.destroyed)
@@ -459,28 +466,47 @@ const GameView = {
     return lastImpact;
   },
 
-  makeSparks(x, y, n) {
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, sp = 150 + Math.random() * 300;
-      out.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120 });
-    }
-    return out;
+  takeParticle() {
+    return this.particlePool.pop() || {};
   },
 
-  makeSmoke(x, y, n) {
-    const out = [];
-    for (let i = 0; i < n; i++)
-      out.push({ x: x + (Math.random() - 0.5) * 30, y: y + (Math.random() - 0.5) * 16,
-                 drift: (Math.random() - 0.5) * 30, r: 10 + Math.random() * 14 });
-    return out;
+  releaseParticle(p) {
+    // Retain only a bounded warm pool. All fields are overwritten on reuse.
+    if (this.particlePool.length < this.MAX_PARTICLES) this.particlePool.push(p);
+  },
+
+  spawnImpactParticles(x, y, cosmetic) {
+    const room = this.MAX_PARTICLES - this.particles.length;
+    if (room <= 0) return;
+    const sparks = Math.min(cosmetic ? 5 : 18, room);
+    const smoke = Math.min(cosmetic ? 2 : 7, room - sparks);
+    for (let i = 0; i < sparks; i++) {
+      const p = this.takeParticle(), a = Math.random() * Math.PI * 2;
+      const speed = 160 + Math.random() * 330;
+      Object.assign(p, { type: "spark", x, y,
+        vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 110,
+        age: 0, life: 0.38 + Math.random() * 0.32,
+        size: 1.5 + Math.random() * 2.2 });
+      this.particles.push(p);
+    }
+    for (let i = 0; i < smoke; i++) {
+      const p = this.takeParticle();
+      Object.assign(p, { type: "smoke",
+        x: x + (Math.random() - 0.5) * 28,
+        y: y + (Math.random() - 0.5) * 14,
+        vx: (Math.random() - 0.5) * 32, vy: -35 - Math.random() * 35,
+        age: 0, life: 0.65 + Math.random() * 0.4,
+        size: 9 + Math.random() * 14 });
+      this.particles.push(p);
+    }
   },
 
   spawnDebris(side, r, c, delay) {
     const p = this.blockCenter(side, r, c);
+    let debrisCount = this.anims.reduce((n, a) => n + (a.kind === "debris" ? 1 : 0), 0);
     const skin = (this.snap && this.snap.skins[side]) || {};
     const cols = skin.debris || skin.colors || (Array.isArray(skin) ? skin : ["#3b82f6", "#1e3a8a"]);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3 && debrisCount < this.MAX_DEBRIS; i++, debrisCount++) {
       this.anims.push({ kind: "debris", x: p.x, y: p.y,
         vx: (Math.random() - 0.5) * 340, vy: -80 - Math.random() * 260,
         rot: Math.random() * 6.28, vrot: (Math.random() - 0.5) * 12,
@@ -490,25 +516,41 @@ const GameView = {
   },
 
   stepAnims(dt) {
-    let boom = false;
+    // A suspended tab must not inject a multi-second physics step on resume.
+    dt = Math.min(dt, 1 / 30);
+    let shakeKick = 0;
     for (const a of this.anims) {
       const prev = a.t;
       a.t += dt / (a.dur || 1);
-      if (a.kind === "explosion" && prev < 0.06 && a.t >= 0.06 && !a.cosmetic) boom = true;
-      if (a.kind === "confetti" && a.t > 0) { a.y += a.vy * dt; }
+      if (a.kind === "explosion" && prev < 0.02 && a.t >= 0.02) {
+        if (!a.cosmetic) Sfx.play("explosion");
+        if (!a.particlesStarted) {
+          a.particlesStarted = true;
+          this.spawnImpactParticles(a.x, a.y, a.cosmetic);
+        }
+      }
+      if (a.kind === "impact" && prev <= 0 && a.t > 0) shakeKick = Math.max(shakeKick, a.amp);
+      if (a.kind === "confetti" && a.t > 0) a.y += a.vy * dt;
       if (a.kind === "debris" && a.t > 0) {
-        const step = dt / (a.dur || 1) * (a.dur || 1); // real seconds
         a.vy += 900 * dt; a.x += a.vx * dt; a.y += a.vy * dt; a.rot += a.vrot * dt;
-        if (a.y > this.GROUND - 4 && a.vy > 0) { a.y = this.GROUND - 4; a.vy *= -0.35; a.vx *= 0.6; }
+        if (a.y > this.GROUND - 4 && a.vy > 0) {
+          a.y = this.GROUND - 4; a.vy *= -0.35; a.vx *= 0.6; a.vrot *= 0.72;
+        }
       }
     }
-    if (boom) Sfx.play("explosion");
-    // screen shake fires exactly at impact time
-    const now = performance.now() / 1000;
-    if (this.shakeAt && now >= this.shakeAt) {
-      this.shake = this.shakeAmp; this.shakeAt = null;
-    }
+    this.shake = Math.max(this.shake, shakeKick);
     this.shake = Math.max(0, this.shake - dt * 34);
+
+    const alive = [];
+    for (const p of this.particles) {
+      p.age += dt;
+      if (p.age >= p.life) { this.releaseParticle(p); continue; }
+      p.vy += (p.type === "spark" ? 720 : -8) * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.type === "smoke") { p.vx *= 0.985; p.size += 13 * dt; }
+      alive.push(p);
+    }
+    this.particles = alive;
     this.anims = this.anims.filter(a => a.t < 1);
   },
 
@@ -555,6 +597,8 @@ const GameView = {
 
     // towers + HP bars
     for (const side of ["p1", "p2"]) { this.drawTower(side); this.drawHpBar(side); this.drawRankBadge(side); }
+    // A struck tower flashes as a whole, independently of the blast glow.
+    for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
     // cannons
     for (const side of ["p1", "p2"]) this.drawCannon(side);
     // aim arrow
@@ -569,6 +613,7 @@ const GameView = {
       else if (a.kind === "dmgnum") this.drawDmgNum(a);
       else if (a.kind === "confetti") this.drawConfetti(a, now / 1000);
     }
+    this.drawParticles();
     c.restore();
 
     // reload bar
@@ -589,7 +634,10 @@ const GameView = {
       c.restore();
     }
     const n = a.points.length;
-    const fi = Math.min(n - 1, a.t * n), i = Math.floor(fi), f = fi - i;
+    // Smoothstep removes the hard launch/landing snap while preserving the
+    // authoritative path and impact point.
+    const eased = a.t * a.t * (3 - 2 * a.t);
+    const fi = Math.min(n - 1, eased * n), i = Math.floor(fi), f = fi - i;
     const p0 = a.points[i], p1 = a.points[Math.min(n - 1, i + 1)];
     const x = p0[0] + (p1[0] - p0[0]) * f, y = p0[1] + (p1[1] - p0[1]) * f;
     // trail
@@ -639,21 +687,46 @@ const GameView = {
     c.strokeStyle = `rgba(254,215,170,${0.7 * (1 - t)})`;
     c.lineWidth = 5 * (1 - t) + 1;
     c.beginPath(); c.arc(a.x, a.y, a.r * (0.4 + 1.7 * t), 0, 7); c.stroke();
-    // sparks
-    c.strokeStyle = `rgba(253,186,116,${1 - t})`; c.lineWidth = 3;
-    for (const s of a.sparks) {
-      const sx = s.x + s.vx * t * 0.8, sy2 = s.y + s.vy * t * 0.8 + 300 * t * t * 0.32;
-      c.beginPath(); c.moveTo(sx, sy2);
-      c.lineTo(sx - s.vx * 0.03, sy2 - s.vy * 0.03); c.stroke();
-    }
-    // smoke
-    for (const m of a.smoke) {
-      c.globalAlpha = 0.28 * (1 - t);
-      c.fillStyle = "#64748b";
-      c.beginPath();
-      c.arc(m.x + m.drift * t, m.y - 46 * t, m.r * (0.7 + t), 0, 7); c.fill();
-    }
     c.globalAlpha = 1;
+  },
+
+  drawParticles() {
+    const c = this.ctx;
+    c.save(); c.lineCap = "round";
+    for (const p of this.particles) {
+      const q = Math.max(0, 1 - p.age / p.life);
+      if (p.type === "spark") {
+        c.globalAlpha = q;
+        c.strokeStyle = p.age < p.life * 0.45 ? "#fff7b2" : "#fb923c";
+        c.lineWidth = p.size;
+        c.beginPath(); c.moveTo(p.x, p.y);
+        c.lineTo(p.x - p.vx * 0.026, p.y - p.vy * 0.026); c.stroke();
+      } else {
+        c.globalAlpha = 0.3 * q;
+        c.fillStyle = "#94a3b8";
+        c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
+      }
+    }
+    c.restore();
+  },
+
+  drawTowerFlash(side) {
+    let alpha = 0;
+    for (const a of this.anims) {
+      if (a.kind === "hitflash" && a.target === side && a.t >= 0 && a.t < 1)
+        alpha = Math.max(alpha, Math.sin(Math.PI * a.t) * 0.9);
+    }
+    if (alpha <= 0) return;
+    const tower = (this.displayTowers || this.snap.towers)[side], c = this.ctx;
+    c.save(); c.globalAlpha = alpha; c.fillStyle = "#fff";
+    c.shadowColor = "#fff"; c.shadowBlur = 20;
+    for (let r = 0; r < this.TROWS; r++) for (let col = 0; col < this.TCOLS; col++) {
+      if (tower[r][col] <= 0) continue;
+      const x = this.TX[side] + col * this.BLOCK;
+      const y = this.GROUND - (this.TROWS - r) * this.BLOCK;
+      c.fillRect(x + 1, y + 1, this.BLOCK - 2, this.BLOCK - 2);
+    }
+    c.restore();
   },
 
   drawDebris(a) {
@@ -670,7 +743,8 @@ const GameView = {
 
   drawDmgNum(a) {
     const c = this.ctx;
-    const rise = a.t * 46;
+    const eased = 1 - Math.pow(1 - a.t, 3);
+    const rise = eased * 46;
     c.save();
     c.globalAlpha = a.t < 0.7 ? 1 : 1 - (a.t - 0.7) / 0.3;
     c.font = "800 30px system-ui, sans-serif";
