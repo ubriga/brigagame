@@ -82,7 +82,14 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 .player-tag { display: flex; align-items: center; gap: 8px; background: var(--panel); padding: 6px 12px; border-radius: 12px; font-size: 14px; }
 .player-tag img { width: 26px; height: 26px; border-radius: 50%; }
 .player-tag.me { outline: 2px solid var(--accent); }
-#wind-ind { background: var(--panel); border-radius: 12px; padding: 6px 12px; font-size: 14px; }
+#match-info { display:flex; align-items:center; gap:6px; }
+#wind-ind, #match-timer { background: var(--panel); border-radius: 12px; padding: 6px 12px; font-size: 14px; }
+#match-timer { direction:ltr; font-weight:800; color:var(--accent); }
+#match-timer.urgent { color:var(--danger); animation:pulse .8s infinite alternate; }
+@media (max-width: 600px) {
+  #match-info { order:-1; width:100%; justify-content:center; }
+  #game-hud .player-tag { flex:1 1 0; min-width:0; padding:6px 8px; }
+}
 #weapon-bar { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .wpn { background: var(--panel2); border: 2px solid transparent; color: var(--text); border-radius: 12px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .wpn.sel { border-color: var(--accent); }
