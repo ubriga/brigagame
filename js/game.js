@@ -25,7 +25,7 @@ const GameView = {
     root.innerHTML = `
       <div id="game-hud">
         <div class="player-tag" id="tag-p1"></div>
-        <div id="wind-ind">💨 ...</div>
+        <div id="match-info"><div id="match-timer">⏱️ 03:00</div><div id="wind-ind">💨 ...</div></div>
         <div class="player-tag" id="tag-p2"></div>
       </div>
       <div id="practice-ind" class="hidden">🎯 משחק תרגול - לא נספר לדרגה</div>
@@ -302,6 +302,22 @@ const GameView = {
       const v = s.wind || 0;
       w.textContent = `💨 ${v === 0 ? "ללא רוח" : (v > 0 ? "→" : "←") + " " + Math.abs(v)}`;
     }
+    this.renderTimer();
+  },
+
+  renderTimer() {
+    const el = document.getElementById("match-timer");
+    if (!el || !this.snap) return;
+    if (this.snap.status !== "active" || !this.snap.match_ends_at) {
+      el.textContent = this.snap.status === "finished" ? "⏱️ 00:00" : "⏱️ --:--";
+      return;
+    }
+    const left = Math.max(0, Math.ceil(this.snap.match_ends_at -
+      (Date.now() / 1000 + this.serverOffset)));
+    const min = Math.floor(left / 60);
+    const sec = String(left % 60).padStart(2, "0");
+    el.textContent = `⏱️ ${String(min).padStart(2, "0")}:${sec}`;
+    el.classList.toggle("urgent", left <= 30);
   },
 
   renderWeapons() {
@@ -503,6 +519,7 @@ const GameView = {
     const dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
     this.stepAnims(dt);
+    this.renderTimer();
 
     // swap in crumbled tower state at the moment of impact
     if (this.pendingTowers && now / 1000 >= this.pendingTowers.at) {
@@ -808,15 +825,22 @@ const GameView = {
   showEnd() {
     this.stopPoll();
     const s = this.snap, ov = document.getElementById("game-overlay");
+    const isDraw = !s.winner_side && ((s.results || {})[s.you] || {}).outcome === "draw";
     const iWon = s.winner_side === s.you;
     const res = (s.results || {})[s.you] || {};
-    if (iWon) { Sfx.play("win"); this.spawnConfetti(); } else Sfx.play("lose");
+    if (isDraw) Sfx.play("click");
+    else if (iWon) { Sfx.play("win"); this.spawnConfetti(); } else Sfx.play("lose");
+    const timed = s.finish_reason === "time_limit";
+    const reason = timed
+      ? (isDraw ? "הזמן נגמר - לשני המגדלים אותה שלמות."
+                : `הזמן נגמר - למגדל ${iWon ? "שלך" : "היריב"} נשארה יותר שלמות.`)
+      : (iWon ? "מגדל היריב הושמד!" : "המגדל שלך הושמד.");
     ov.classList.remove("hidden");
-    ov.classList.toggle("lost", !iWon);
+    ov.classList.toggle("lost", !iWon && !isDraw);
     ov.innerHTML = `
-      <div class="end-emoji">${iWon ? "🏆🎉" : "💥"}</div>
-      <h2>${iWon ? "ניצחת!" : "הפסדת"}</h2>
-      <p class="end-sub">${iWon ? "מגדל היריב הושמד!" : "המגדל שלך הושמד."}</p>
+      <div class="end-emoji">${isDraw ? "🤝" : (iWon ? "🏆🎉" : "💥")}</div>
+      <h2>${isDraw ? "תיקו" : (iWon ? "ניצחת!" : "הפסדת")}</h2>
+      <p class="end-sub">${reason}</p>
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
       ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
