@@ -52,7 +52,7 @@ def public_user(u):
         "id": u["id"], "name": u["name"], "picture": u["picture"],
         "coins": u["coins"], "rating": u["rating"],
         "rank": rank_for(u["rating"]),
-        "idf_rank": rank_payload(u["wins"]),
+        "idf_rank": rank_payload(u["rank_points"]),
         "wins": u["wins"], "losses": u["losses"],
         "matches_played": u["matches_played"],
         "is_admin": u["email"].lower() == Config.ADMIN_EMAIL.lower(),
@@ -126,6 +126,11 @@ def save_match(m):
              _now_iso(), m["id"]))
 
 
+# Win vs a normal/hard bot counts at reduced weight toward the IDF rank
+# ladder; easy-bot games are practice (0 points). Human wins count full.
+RANK_POINTS_BOT_WIN = 0.5
+
+
 def finalize_match(m, winner_side):
     """Apply win/loss rewards, hit coins and rating. Server-side only."""
     loser_side = "p2" if winner_side == "p1" else "p1"
@@ -145,30 +150,38 @@ def finalize_match(m, winner_side):
         total = base + hit_coins
         add_coins(uid, total, f"match_{outcome}", m["id"])
         other = m[loser_side if side == winner_side else winner_side]
-        u = q("SELECT rating, wins FROM users WHERE id = ?", (uid,), one=True)
+        u = q("SELECT rating, wins, rank_points FROM users WHERE id = ?",
+              (uid,), one=True)
         o = q("SELECT rating FROM users WHERE id = ?", (other,), one=True) \
             if other else None
         my_r, their_r = u["rating"], (o["rating"] if o else 1000)
         if outcome == "win":
             delta = elo_delta(my_r, their_r)
+            pts = (0.0 if m["state"].get("ai_difficulty") == "easy"
+                   else RANK_POINTS_BOT_WIN) if m["p2_ai"] else 1.0
             execute("UPDATE users SET rating = rating + ?, wins = wins + 1,"
+                    " rank_points = rank_points + ?,"
                     " matches_played = matches_played + 1 WHERE id = ?",
-                    (delta, uid))
+                    (delta, pts, uid))
             # wins-only IDF rank ladder: detect promotion server-side
-            idf_r = rank_payload(u["wins"] + 1)
-            up = rank_up_info(u["wins"], u["wins"] + 1)
+            idf_r = rank_payload(u["rank_points"] + pts)
+            up = rank_up_info(u["rank_points"], u["rank_points"] + pts)
         else:
             delta = elo_delta(their_r, my_r)
             execute("UPDATE users SET rating = MAX(0, rating - ?),"
                     " losses = losses + 1,"
                     " matches_played = matches_played + 1 WHERE id = ?",
                     (delta, uid))
-            idf_r = rank_payload(u["wins"])
+            idf_r = rank_payload(u["rank_points"])
             up = None
         results[side] = {"outcome": outcome, "coins": total,
                          "hit_coins": hit_coins,
                          "rating_delta": delta if outcome == "win" else -delta,
                          "idf_rank": idf_r}
+        if outcome == "win":
+            results[side]["rank_points_awarded"] = pts
+        if m["p2_ai"] and m["state"].get("ai_difficulty") == "easy":
+            results[side]["practice"] = True
         if up:
             results[side]["rank_up"] = up
     m["state"]["results"] = results
@@ -191,12 +204,12 @@ def match_snapshot(m, user_id, since):
     for side in ("p1", "p2"):
         uid = m[side]
         if uid:
-            u = q("SELECT id, name, picture, rating, wins FROM users WHERE id = ?",
-                  (uid,), one=True)
+            u = q("SELECT id, name, picture, rating, wins, rank_points"
+                  " FROM users WHERE id = ?", (uid,), one=True)
             players[side] = {"id": u["id"], "name": u["name"],
                              "picture": u["picture"], "rating": u["rating"],
                              "rank": rank_for(u["rating"]),
-                             "idf_rank": rank_payload(u["wins"])}
+                             "idf_rank": rank_payload(u["rank_points"])}
         elif side == "p2" and m["p2_ai"]:
             players[side] = {"id": None, "name": "OrelAI Bot", "picture": "",
                              "rating": None, "rank": "AI"}
@@ -219,6 +232,8 @@ def match_snapshot(m, user_id, since):
         "results": state.get("results"),
         "ready": state.get("ready", {}),
         "ai_difficulty": state.get("ai_difficulty"),
+        # Easy-bot games are practice matches: they never advance rank.
+        "practice": bool(m["p2_ai"] and state.get("ai_difficulty") == "easy"),
         "server_time": time.time(),
         "events": events,
     }
@@ -978,12 +993,13 @@ def match_leave(mid):
 @app.get("/api/leaderboard")
 @require_auth
 def leaderboard():
-    rows = q("SELECT id, name, picture, rating, wins, losses FROM users"
+    rows = q("SELECT id, name, picture, rating, wins, losses, rank_points"
+             " FROM users"
              " WHERE matches_played > 0 ORDER BY rating DESC LIMIT 100")
     return jsonify({"leaderboard": [
         {"id": r["id"], "name": r["name"], "picture": r["picture"],
          "rating": r["rating"], "rank": rank_for(r["rating"]),
-         "idf_rank": rank_payload(r["wins"]),
+         "idf_rank": rank_payload(r["rank_points"]),
          "wins": r["wins"], "losses": r["losses"]} for r in rows],
         "me": g.user["id"]})
 
@@ -1031,7 +1047,7 @@ def admin_users():
     return jsonify({"users": [
         {"id": r["id"], "email": r["email"], "name": r["name"],
          "coins": r["coins"], "rating": r["rating"], "wins": r["wins"],
-         "idf_rank": rank_payload(r["wins"]),
+         "idf_rank": rank_payload(r["rank_points"]),
          "losses": r["losses"], "suspended": bool(r["suspended"]),
          "banned_until": r["banned_until"], "created_at": r["created_at"],
          "last_login": r["last_login"]} for r in rows]})

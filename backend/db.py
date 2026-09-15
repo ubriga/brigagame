@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     coins INTEGER NOT NULL DEFAULT 0,
     rating INTEGER NOT NULL DEFAULT 1000,
     wins INTEGER NOT NULL DEFAULT 0,
+    rank_points REAL NOT NULL DEFAULT 0,
     losses INTEGER NOT NULL DEFAULT 0,
     matches_played INTEGER NOT NULL DEFAULT 0,
     streak INTEGER NOT NULL DEFAULT 0,
@@ -156,10 +157,32 @@ def close_db(_exc=None):
 
 def migrate_db():
     """Idempotent schema additions for databases created by older versions."""
+    import json as _json
     db = get_db()
     cols = {r[1] for r in db.execute("PRAGMA table_info(users)")}
     if "last_seen" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_seen TEXT")
+        db.commit()
+    if "rank_points" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN rank_points REAL NOT NULL DEFAULT 0")
+        # Rebuild rank points from finished-match history: human win = 1,
+        # normal/hard bot win = 0.5, easy bot win = 0 (practice).
+        pts = {}
+        rows = db.execute("SELECT winner, p2_ai, state FROM matches"
+                          " WHERE status = 'finished' AND winner IS NOT NULL").fetchall()
+        for r in rows:
+            uid, is_ai, state_json = r[0], r[1], r[2]
+            if is_ai:
+                try:
+                    diff = _json.loads(state_json).get("ai_difficulty", "normal")
+                except Exception:
+                    diff = "normal"
+                p = 0.0 if diff == "easy" else 0.5
+            else:
+                p = 1.0
+            pts[uid] = pts.get(uid, 0.0) + p
+        for uid, p in pts.items():
+            db.execute("UPDATE users SET rank_points = ? WHERE id = ?", (p, uid))
         db.commit()
 
 

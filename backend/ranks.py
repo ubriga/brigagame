@@ -1,12 +1,15 @@
 """Brigagame 2.0 by OrelAI - IDF-style player rank ladder (wins-only).
 
-Single source of truth for the 19-level rank system. Progression is derived
-purely from users.wins (server-side counter, incremented only in
+Single source of truth for the 18-level rank system. Progression is derived
+from users.rank_points (server-side counter, incremented only in
 finalize_match) - the client NEVER sends a level, so ranks cannot be forged.
 
-Design decisions (relayed by the main agent from Orel's 2026-09-15 pick):
+Design decisions (relayed by the main agent from Orel's 2026-09-15 picks):
 - Progression by WINS ONLY. No XP, no damage points.
-- Level is computed from the wins counter, not stored, so admin coin grants,
+- Win weighting (Orel's call): human-vs-human win = 1 rank point;
+  win vs normal/hard bot = 0.5; win vs EASY bot = 0 - easy-bot games are
+  practice matches ("משחק תרגול") and do not advance rank.
+- Level is computed from the points counter, not stored, so admin coin grants,
   imports or any other DB edits cannot fake a rank without real wins.
 - Curve: fast early promotions (hook), then a widening gap; top rank (רא"ל)
   at 350 wins ~= 1.5-2 months of active play (~7 wins/day).
@@ -59,20 +62,25 @@ def _entry(level: int) -> dict:
             "insignia": f"assets/ranks/rank-{lvl:02d}-{key}.svg"}
 
 
-def rank_payload(wins: int) -> dict:
-    """Full rank state for API payloads (me, players, leaderboard)."""
-    level = level_for_wins(wins)
+def rank_payload(points: float) -> dict:
+    """Full rank state for API payloads (me, players, leaderboard).
+
+    `points` is the weighted rank-points counter (human win = 1, harder bots
+    = 0.5, easy bot = 0); thresholds are whole numbers so halves just mean
+    "one more bot win"."""
+    points = round(float(points), 1)
+    level = level_for_wins(points)
     cur = _entry(level)
     out = dict(cur)
-    out["wins"] = wins
+    out["wins"] = points
     if level < MAX_LEVEL:
         nxt = _entry(level + 1)
         span = nxt["wins_required"] - cur["wins_required"]
-        done = wins - cur["wins_required"]
+        done = points - cur["wins_required"]
         out["next"] = {"level": nxt["level"], "name_he": nxt["name_he"],
                        "abbr_he": nxt["abbr_he"],
                        "wins_required": nxt["wins_required"],
-                       "wins_to_go": nxt["wins_required"] - wins}
+                       "wins_to_go": round(nxt["wins_required"] - points, 1)}
         out["progress_pct"] = round(100 * done / span) if span else 100
     else:
         out["next"] = None
