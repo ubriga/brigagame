@@ -186,6 +186,28 @@ check("rating moved", ma["user"]["rating"] != 1000 or mb["user"]["rating"] != 10
       f'a={ma["user"]["rating"]} b={mb["user"]["rating"]}')
 
 # --- IDF rank ladder (wins-only, 18 levels, no turar)
+# Source/deploy encoding regression: every label must survive as the exact
+# Hebrew rank text, especially geresh/gershayim punctuation.
+_expected_rank_labels = [
+    ("טוראי", "טור׳"), ("רב טוראי", "רב״ט"), ("סמל", "סמל"),
+    ("סמל ראשון", "סמ״ר"), ("רב סמל", "רס״ל"),
+    ("רב סמל ראשון", "רס״ר"), ("רב סמל מתקדם", "רס״ם"),
+    ("רב סמל בכיר", "רס״ב"), ("רב נגד", "רנ״ג"),
+    ("סגן משנה", "סג״מ"), ("סגן", "סגן"), ("סרן", "סרן"),
+    ("רב סרן", "רס״ן"), ("סגן אלוף", "סא״ל"),
+    ("אלוף משנה", "אל״ם"), ("תת אלוף", "תא״ל"),
+    ("אלוף", "אלוף"), ("רב אלוף", "רא״ל"),
+]
+_actual_rank_labels = [(rank_payload(p)["name_he"], rank_payload(p)["abbr_he"])
+                       for p in (0, 6, 12, 20, 30, 42, 56, 72, 90, 110,
+                                 140, 180, 230, 290, 360, 450, 560, 700)]
+check("all Hebrew rank names and abbreviations are exact",
+      _actual_rank_labels == _expected_rank_labels,
+      json.dumps(_actual_rank_labels, ensure_ascii=False))
+check("rank API JSON round-trip preserves geresh and gershayim",
+      json.loads(json.dumps(rank_payload(6)))["abbr_he"] == "רב״ט"
+      and json.loads(json.dumps(rank_payload(0)))["abbr_he"] == "טור׳")
+
 winner_side = st["winner_side"]
 wres = st["results"][winner_side]
 lres = st["results"]["p2" if winner_side == "p1" else "p1"]
@@ -425,7 +447,7 @@ tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlo
 # carol is simply present in the app - she never clicks quick match.
 s, hb = call("POST", "/api/presence/ping", token=tc)
 check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
-check("presence ping carries server_version", hb.get("server_version") == "7", str(hb.get("server_version")))
+check("presence ping carries server_version", hb.get("server_version") == "8", str(hb.get("server_version")))
 
 # --- maintenance flag (D1): admin toggle carried in the presence pulse
 s, r = call("GET", "/api/admin/maintenance", token=ta)
