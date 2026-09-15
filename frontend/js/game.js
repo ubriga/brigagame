@@ -457,10 +457,16 @@ const GameView = {
                             t: -delay, dur: 1.3, damage: dmg });
           if (ev.destroyed) for (const b of ev.destroyed)
             this.spawnDebris(ev.target, b.r, b.c, delay);
+          if (ev.destroyed && ev.destroyed.length)
+            // Tower blocks break: rubble lands just after the boom starts.
+            this.anims.push({ kind: "sound", name: "crumble",
+                              t: -(delay + 0.08), dur: 0.1 });
         }
         delay += ev.cosmetic ? 0.2 : 0.45;
       } else if (ev.type === "collapse" && ev.blocks) {
         for (const b of ev.blocks) this.spawnDebris(b.side, b.r, b.c, delay);
+        if (ev.blocks.length)
+          this.anims.push({ kind: "sound", name: "crumble", t: -delay, dur: 0.1 });
       }
     }
     return lastImpact;
@@ -522,6 +528,7 @@ const GameView = {
     for (const a of this.anims) {
       const prev = a.t;
       a.t += dt / (a.dur || 1);
+      if (a.kind === "sound" && prev < 0 && a.t >= 0) Sfx.play(a.name);
       if (a.kind === "explosion" && prev < 0.02 && a.t >= 0.02) {
         if (!a.cosmetic) Sfx.play("explosion");
         if (!a.particlesStarted) {
