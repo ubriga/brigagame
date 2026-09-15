@@ -170,6 +170,58 @@ check("matches_played incremented",
 check("rating moved", ma["user"]["rating"] != 1000 or mb["user"]["rating"] != 1000,
       f'a={ma["user"]["rating"]} b={mb["user"]["rating"]}')
 
+# --- IDF rank ladder (wins-only, 18 levels, no turar)
+winner_side = st["winner_side"]
+wres = st["results"][winner_side]
+lres = st["results"]["p2" if winner_side == "p1" else "p1"]
+check("me exposes idf_rank (level 1 turai at start)",
+      "idf_rank" in ma["user"] and "idf_rank" in mb["user"])
+check("1 win does not promote (rabat needs 3)",
+      wres["idf_rank"]["level"] == 1 and wres["idf_rank"]["abbr_he"] == "טור׳"
+      and "rank_up" not in wres, json.dumps(wres.get("idf_rank")))
+check("loser stays turai with progress",
+      lres["idf_rank"]["level"] == 1 and lres["idf_rank"]["next"]["wins_to_go"] >= 2)
+
+# force both players to 2 wins; a quick second match (alice fires, bob leaves)
+# makes alice's 3rd win -> promotion to rabat. Leave-win avoids a full match.
+aid_, bid_ = ma["user"]["id"], mb["user"]["id"]
+_db = sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db"), timeout=15)
+_db.execute("UPDATE users SET wins = 2 WHERE id IN (?, ?)", (aid_, bid_))
+_db.commit(); _db.close()
+s, r = call("POST", "/api/matches/friend", token=ta)
+code2 = r["code"]; mid2 = r["match_id"]
+call("POST", "/api/matches/join", token=tb, body={"code": code2})
+call("POST", f"/api/matches/{mid2}/ready", token=ta)
+call("POST", f"/api/matches/{mid2}/ready", token=tb)
+s, r = call("POST", f"/api/matches/{mid2}/fire", token=ta,
+            body={"angle": 45, "power": 64, "weapon": "standard"})
+check("alice fires in promotion match", s == 200)
+s, r = call("POST", f"/api/matches/{mid2}/leave", token=tb)
+check("bob concedes promotion match", s == 200)
+s, st2x = call("GET", f"/api/matches/{mid2}/state?since=0", token=ta)
+check("promotion match finished for alice",
+      st2x["status"] == "finished" and st2x["winner_side"] == "p1", str(st2x.get("status")))
+w2res = st2x["results"]["p1"]
+check("3rd win promotes to rabat (level 2)",
+      w2res["idf_rank"]["level"] == 2 and w2res["idf_rank"]["abbr_he"] == "רב״ט",
+      json.dumps(w2res.get("idf_rank")))
+check("rank_up event on promotion",
+      w2res.get("rank_up", {}).get("from_level") == 1
+      and w2res.get("rank_up", {}).get("to_level") == 2
+      and w2res.get("rank_up", {}).get("abbr_he") == "רב״ט", json.dumps(w2res.get("rank_up")))
+_, mw = call("GET", "/api/me", token=ta)
+check("winner me shows level 2 with next threshold",
+      mw["user"]["idf_rank"]["level"] == 2
+      and mw["user"]["idf_rank"]["next"]["wins_required"] == 6,
+      json.dumps(mw["user"]["idf_rank"]))
+s, lb = call("GET", "/api/leaderboard", token=ta)
+check("leaderboard exposes idf_rank",
+      s == 200 and all("idf_rank" in r for r in lb["leaderboard"]))
+s, st3 = call("GET", f"/api/matches/{mid2}/state?since=0", token=ta)
+check("match players expose idf_rank with insignia path",
+      st3["players"]["p1"]["idf_rank"]["level"] == 2
+      and st3["players"]["p1"]["idf_rank"]["insignia"].startswith("assets/ranks/rank-"))
+
 # --- AI match
 s, r = call("POST", "/api/matches/ai", token=tb)
 aid = r["match_id"]
@@ -255,7 +307,7 @@ tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlo
 # carol is simply present in the app - she never clicks quick match.
 s, hb = call("POST", "/api/presence/ping", token=tc)
 check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
-check("presence ping carries server_version", hb.get("server_version") == "5", str(hb.get("server_version")))
+check("presence ping carries server_version", hb.get("server_version") == "6", str(hb.get("server_version")))
 
 # --- maintenance flag (D1): admin toggle carried in the presence pulse
 s, r = call("GET", "/api/admin/maintenance", token=ta)
@@ -353,6 +405,12 @@ check("leaderboard", s == 200 and len(r["leaderboard"]) >= 1)
 DB_FILE = os.environ.get(
     "DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db"))
 
+def set_wins(user_id, wins):
+    db = sqlite3.connect(DB_FILE, timeout=15)
+    db.execute("UPDATE users SET wins = ? WHERE id = ?", (wins, user_id))
+    db.commit()
+    db.close()
+
 def backdate(match_id, seconds):
     db = sqlite3.connect(DB_FILE, timeout=15)
     old = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
@@ -375,8 +433,7 @@ s, r = call("POST", "/api/matches/ai", token=tg)
 smid = r["match_id"]
 check("ai match created for stale test", s == 200 and r["status"] == "active")
 backdate(smid, 3 * 3600)
-time.sleep(1.2)                    # let the sweep interval elapse
-trigger_sweep()
+trigger_sweep()   # dev mode bypasses the sweep throttle, so this runs now
 s, st = call("GET", f"/api/matches/{smid}/state?since=0", token=tg)
 check("stale active match auto-aborted",
       s == 200 and st["status"] == "aborted", str(st.get("status")))

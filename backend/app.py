@@ -20,6 +20,7 @@ from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
                      MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
 from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
                         tower_hp)
+from ranks import rank_payload, rank_up_info
 from security import init_security, limited, request_ip_hash
 
 app = Flask(__name__)
@@ -51,6 +52,7 @@ def public_user(u):
         "id": u["id"], "name": u["name"], "picture": u["picture"],
         "coins": u["coins"], "rating": u["rating"],
         "rank": rank_for(u["rating"]),
+        "idf_rank": rank_payload(u["wins"]),
         "wins": u["wins"], "losses": u["losses"],
         "matches_played": u["matches_played"],
         "is_admin": u["email"].lower() == Config.ADMIN_EMAIL.lower(),
@@ -143,7 +145,7 @@ def finalize_match(m, winner_side):
         total = base + hit_coins
         add_coins(uid, total, f"match_{outcome}", m["id"])
         other = m[loser_side if side == winner_side else winner_side]
-        u = q("SELECT rating FROM users WHERE id = ?", (uid,), one=True)
+        u = q("SELECT rating, wins FROM users WHERE id = ?", (uid,), one=True)
         o = q("SELECT rating FROM users WHERE id = ?", (other,), one=True) \
             if other else None
         my_r, their_r = u["rating"], (o["rating"] if o else 1000)
@@ -152,15 +154,23 @@ def finalize_match(m, winner_side):
             execute("UPDATE users SET rating = rating + ?, wins = wins + 1,"
                     " matches_played = matches_played + 1 WHERE id = ?",
                     (delta, uid))
+            # wins-only IDF rank ladder: detect promotion server-side
+            idf_r = rank_payload(u["wins"] + 1)
+            up = rank_up_info(u["wins"], u["wins"] + 1)
         else:
             delta = elo_delta(their_r, my_r)
             execute("UPDATE users SET rating = MAX(0, rating - ?),"
                     " losses = losses + 1,"
                     " matches_played = matches_played + 1 WHERE id = ?",
                     (delta, uid))
+            idf_r = rank_payload(u["wins"])
+            up = None
         results[side] = {"outcome": outcome, "coins": total,
                          "hit_coins": hit_coins,
-                         "rating_delta": delta if outcome == "win" else -delta}
+                         "rating_delta": delta if outcome == "win" else -delta,
+                         "idf_rank": idf_r}
+        if up:
+            results[side]["rank_up"] = up
     m["state"]["results"] = results
 
 
@@ -181,11 +191,12 @@ def match_snapshot(m, user_id, since):
     for side in ("p1", "p2"):
         uid = m[side]
         if uid:
-            u = q("SELECT id, name, picture, rating FROM users WHERE id = ?",
+            u = q("SELECT id, name, picture, rating, wins FROM users WHERE id = ?",
                   (uid,), one=True)
             players[side] = {"id": u["id"], "name": u["name"],
                              "picture": u["picture"], "rating": u["rating"],
-                             "rank": rank_for(u["rating"])}
+                             "rank": rank_for(u["rating"]),
+                             "idf_rank": rank_payload(u["wins"])}
         elif side == "p2" and m["p2_ai"]:
             players[side] = {"id": None, "name": "OrelAI Bot", "picture": "",
                              "rating": None, "rank": "AI"}
@@ -247,7 +258,9 @@ def sweep_stale_matches():
     run per STALE_SWEEP_INTERVAL_SECONDS per worker."""
     global _sweep_last_run
     now = time.time()
-    if now - _sweep_last_run < Config.STALE_SWEEP_INTERVAL_SECONDS:
+    # Dev/test runs bypass the throttle so tests can force a sweep on demand;
+    # production keeps the one-run-per-interval limit.
+    if not Config.DEV_AUTH and now - _sweep_last_run < Config.STALE_SWEEP_INTERVAL_SECONDS:
         return
     _sweep_last_run = now
     active_cutoff = datetime.fromtimestamp(
@@ -970,6 +983,7 @@ def leaderboard():
     return jsonify({"leaderboard": [
         {"id": r["id"], "name": r["name"], "picture": r["picture"],
          "rating": r["rating"], "rank": rank_for(r["rating"]),
+         "idf_rank": rank_payload(r["wins"]),
          "wins": r["wins"], "losses": r["losses"]} for r in rows],
         "me": g.user["id"]})
 
@@ -1017,6 +1031,7 @@ def admin_users():
     return jsonify({"users": [
         {"id": r["id"], "email": r["email"], "name": r["name"],
          "coins": r["coins"], "rating": r["rating"], "wins": r["wins"],
+         "idf_rank": rank_payload(r["wins"]),
          "losses": r["losses"], "suspended": bool(r["suspended"]),
          "banned_until": r["banned_until"], "created_at": r["created_at"],
          "last_login": r["last_login"]} for r in rows]})
