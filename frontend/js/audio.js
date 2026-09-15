@@ -1,10 +1,27 @@
-// Original WebAudio-synthesized SFX + music loop. No external assets,
-// so there are no licensing concerns at all.
+// Brigagame audio: real CC0 samples (see assets/sfx/CREDITS.md) through Web
+// Audio, with the original code-synthesized sounds as fallback if a sample
+// cannot be decoded. Samples preload at page load; the AudioContext is
+// created lazily and resumed on the first user gesture so mobile autoplay
+// policy never blocks us. Mute persists in localStorage.
 const Sfx = {
   ctx: null,
   muted: localStorage.getItem("bg_muted") === "1",
   musicOn: false,
   _musicTimer: null,
+  _buffers: {},   // name -> AudioBuffer | "error"
+  _loading: null, // shared preload promise
+
+  FILES: {
+    shot: "assets/sfx/shot.mp3",
+    explosion: "assets/sfx/explosion.mp3",
+    crumble: "assets/sfx/crumble.mp3",
+    click: "assets/sfx/click.mp3",
+    coin: "assets/sfx/coin.mp3",
+    win: "assets/sfx/win.mp3",
+    lose: "assets/sfx/lose.mp3",
+  },
+  // Per-sound loudness trim on top of the normalized files.
+  GAIN: { shot: 0.9, explosion: 1, crumble: 0.85, click: 0.45, coin: 0.7, win: 0.9, lose: 0.9 },
 
   ensure() {
     if (!this.ctx) {
@@ -15,11 +32,61 @@ const Sfx = {
     return this.ctx;
   },
 
+  // Called from the first pointer/key gesture anywhere in the app (mobile
+  // autoplay unlock). Harmless to call often.
+  unlock() {
+    const ctx = this.ensure();
+    if (ctx && ctx.state === "suspended") ctx.resume();
+  },
+
+  // Fetch + decode every sample once. Decoding works even while the context
+  // is still suspended, so this can start before the first gesture.
+  preload() {
+    if (this._loading) return this._loading;
+    const ctx = this.ensure();
+    if (!ctx) return Promise.resolve();
+    this._loading = Promise.all(Object.entries(this.FILES).map(async ([name, url]) => {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("http " + r.status);
+        const raw = await r.arrayBuffer();
+        this._buffers[name] = await ctx.decodeAudioData(raw);
+      } catch (e) {
+        this._buffers[name] = "error"; // synth fallback covers this sound
+      }
+    }));
+    return this._loading;
+  },
+
   toggleMute() {
     this.muted = !this.muted;
     localStorage.setItem("bg_muted", this.muted ? "1" : "0");
     if (this.muted) this.stopMusic(); else this.startMusic();
     return this.muted;
+  },
+
+  play(type) {
+    if (this.muted || !this.ensure()) return;
+    const ctx = this.ctx;
+    const buf = this._buffers[type];
+    if (buf === "error") { this._synth(type); return; }
+    if (!buf) {
+      // Not decoded yet: fall back to the synth for this play and make sure
+      // the preload is running so the next one is the real sample.
+      this._synth(type);
+      this.preload();
+      return;
+    }
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    // Slight pitch wobble keeps repeated artillery sounds from going stale.
+    if (type === "shot" || type === "explosion" || type === "crumble")
+      src.playbackRate.value = 0.94 + Math.random() * 0.12;
+    const g = ctx.createGain();
+    g.gain.value = this.GAIN[type] != null ? this.GAIN[type] : 0.8;
+    src.connect(g).connect(ctx.destination);
+    src.start(t);
   },
 
   _env(gainNode, t0, a, peak, d) {
@@ -29,8 +96,8 @@ const Sfx = {
     g.exponentialRampToValueAtTime(0.0001, t0 + a + d);
   },
 
-  play(type) {
-    if (this.muted || !this.ensure()) return;
+  // Original WebAudio-synthesized SFX, kept as the per-sound fallback.
+  _synth(type) {
     const ctx = this.ctx, t = ctx.currentTime;
     if (type === "shot") {
       const o = ctx.createOscillator(), g = ctx.createGain();
@@ -40,7 +107,7 @@ const Sfx = {
       this._env(g, t, 0.01, 0.25, 0.25);
       o.connect(g).connect(ctx.destination);
       o.start(t); o.stop(t + 0.3);
-    } else if (type === "explosion") {
+    } else if (type === "explosion" || type === "crumble") {
       const len = ctx.sampleRate * 0.5;
       const buf = ctx.createBuffer(1, len, ctx.sampleRate);
       const d = buf.getChannelData(0);

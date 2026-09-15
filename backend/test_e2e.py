@@ -506,7 +506,7 @@ tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlo
 # carol is simply present in the app - she never clicks quick match.
 s, hb = call("POST", "/api/presence/ping", token=tc)
 check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
-check("presence ping carries server_version", hb.get("server_version") == "9", str(hb.get("server_version")))
+check("presence ping carries server_version", hb.get("server_version") == "10", str(hb.get("server_version")))
 
 # --- maintenance flag (D1): admin toggle carried in the presence pulse
 s, r = call("GET", "/api/admin/maintenance", token=ta)
