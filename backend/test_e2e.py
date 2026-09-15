@@ -301,6 +301,40 @@ for tier in ("easy", "medium", "hard", "ultra"):
           any(e["type"] == "shot" and e.get("side") == "p2"
               for e in active_state["events"]))
 
+# --- a broken bot-match state must never 500 the state endpoint.
+# Regression for the 2026-09-15 production incident: a bot match whose state
+# cannot be simulated (here: towers missing) permanently 500'd every poll,
+# wedging the client on "reconnecting". The endpoint must keep serving 200,
+# defer the bot's retry, and leave the stored match consistent.
+_, broken = call("POST", "/api/matches/ai", token=tb, body={"difficulty": "medium"})
+broken_id = broken["match_id"]
+with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "brigagame.db")) as bdb:
+    row = bdb.execute("SELECT state, version FROM matches WHERE id = ?",
+                      (broken_id,)).fetchone()
+    bst = json.loads(row[0])
+    bver = row[1]
+    del bst["towers"]                 # corrupt: the bot cannot aim or fire
+    bst["last_shot_at"]["p2"] = 0     # ...and its turn is already due
+    bdb.execute("UPDATE matches SET state = ? WHERE id = ?",
+                (json.dumps(bst), broken_id))
+s, r = call("GET", f"/api/matches/{broken_id}/state?since=0", token=tb)
+check("broken bot-match state still returns 200", s == 200, str(s)[:120])
+check("broken match snapshot stays consistent",
+      r.get("id") == broken_id and r.get("status") == "active"
+      and r.get("towers") is None, json.dumps(r)[:120])
+# No half-written bot turn: the failed attempt only defers the next one.
+check("failed bot turn does not bump match version",
+      r.get("version") == bver, f'{r.get("version")} vs {bver}')
+s, r = call("GET", f"/api/matches/{broken_id}/state?since=0", token=tb)
+check("broken match keeps serving 200 on repeat polls", s == 200, str(s)[:120])
+# The player is not trapped: leaving the broken match is a clean void abort.
+s, r = call("POST", f"/api/matches/{broken_id}/leave", token=tb)
+check("broken match can be left cleanly", s == 200, str(s)[:120])
+s, r = call("GET", f"/api/matches/{broken_id}/state?since=0", token=tb)
+check("abandoned broken match state returns 200 after leave",
+      s == 200 and r.get("status") == "aborted", str(s)[:120])
+
 # --- bot-win rank weighting: easy = practice (0 pts), normal/hard = 0.5
 _, practice_before = call("GET", "/api/me", token=tb)
 s, r = call("POST", "/api/matches/ai", token=tb, body={"difficulty": "easy"})
