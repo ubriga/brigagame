@@ -94,14 +94,23 @@ const App = {
     this._unread = n;
   },
 
-  // Maintenance banner (D1): global strip visible on every screen,
-  // including in-game. Driven by the presence pulse and /api/me.
+  // Maintenance notice: dismissible to a small side chip per browser. A new
+  // notice text expands again so users do not miss a changed announcement.
   setMaintenance(m) {
     const el = document.getElementById("maintenance-banner");
     if (!el) return;
-    const txt = m && m.on ? ("🚧 " + (m.message || "המשחק בתחזוקה זמנית")) : "";
-    el.textContent = txt;
-    el.classList.toggle("hidden", !txt);
+    const message = m && m.on ? (m.message || "המשחק בתחזוקה זמנית") : "";
+    if (!message) { el.className = "hidden"; el.innerHTML = ""; return; }
+    const key = "bg_maintenance_collapsed_" + message;
+    const collapsed = localStorage.getItem(key) === "1";
+    el.className = collapsed ? "maintenance-collapsed" : "maintenance-expanded";
+    el.innerHTML = collapsed
+      ? `<button class="maintenance-chip" title="${esc(message)}" aria-label="הצג הודעת תחזוקה">🚧 תחזוקה</button>`
+      : `<span>🚧 ${esc(message)}</span><button class="maintenance-close" aria-label="סגירת הודעת תחזוקה">×</button>`;
+    const close = el.querySelector(".maintenance-close");
+    if (close) close.onclick = () => { localStorage.setItem(key, "1"); this.setMaintenance(m); };
+    const chip = el.querySelector(".maintenance-chip");
+    if (chip) chip.onclick = () => { localStorage.removeItem(key); this.setMaintenance(m); };
   },
 
   setMe(data) {
@@ -187,6 +196,18 @@ const App = {
     else window.addEventListener("load", renderGsi);
   },
 
+  botRankOptions(minLevel = 1, selectedLevel = null) {
+    const names = ["טוראי", "רב טוראי", "סמל", "סמל ראשון", "רב סמל",
+      "רב סמל ראשון", "רב סמל מתקדם", "רב סמל בכיר", "רב נגד", "סגן משנה",
+      "סגן", "סרן", "רב סרן", "סגן אלוף", "אלוף משנה", "תת אלוף", "אלוף", "רב אלוף"];
+    minLevel = Math.max(1, Math.min(18, Number(minLevel) || 1));
+    selectedLevel = Math.max(minLevel, Math.min(18, Number(selectedLevel) || minLevel));
+    return names.map((name, i) => {
+      const level = i + 1;
+      return level < minLevel ? "" : `<option value="${level}" ${level === selectedLevel ? "selected" : ""}>${name}${level === minLevel ? " (הדרגה שלך)" : ""}</option>`;
+    }).join("");
+  },
+
   // ---------------- lobby ----------------
   async vLobby(view) {
     if (!this.me) { location.hash = "#/login"; return; }
@@ -200,13 +221,12 @@ const App = {
           <div class="grid">
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
             <div class="ai-start">
-              <select id="ai-difficulty" aria-label="רמת קושי">
-                <option value="easy">קל (משחק תרגול)</option>
-                <option value="normal" selected>רגיל</option>
-                <option value="hard">קשה</option>
+              <select id="ai-rank" aria-label="דרגת הבוט">
+                ${this.botRankOptions(u.idf_rank && u.idf_rank.level)}
               </select>
-              <button class="btn secondary" id="ai-btn">🤖 נגד המחשב</button>
+              <button class="btn secondary" id="ai-btn">🤖 משחק מדורג מול בוט</button>
             </div>
+            <button class="btn secondary" id="practice-btn">🎯 משחק תרגול (לא מדורג)</button>
             <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
             <div style="display:flex;gap:8px">
               <input id="join-code" placeholder="קוד משחק" maxlength="6" style="text-transform:uppercase">
@@ -241,8 +261,13 @@ const App = {
     };
     document.getElementById("ai-btn").onclick = async () => {
       Sfx.play("click");
-      const difficulty = document.getElementById("ai-difficulty").value;
-      const { data } = await API.post("/api/matches/ai", { difficulty });
+      const bot_rank_level = Number(document.getElementById("ai-rank").value);
+      const { data } = await API.post("/api/matches/ai", { difficulty: "ranked", bot_rank_level });
+      if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
+    };
+    document.getElementById("practice-btn").onclick = async () => {
+      Sfx.play("click");
+      const { data } = await API.post("/api/matches/ai", { difficulty: "easy" });
       if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
     };
     document.getElementById("friend-btn").onclick = async () => {

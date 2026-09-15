@@ -263,7 +263,7 @@ def cooldown_for(weapon):
     return WEAPONS.get(weapon, WEAPONS["standard"])["cooldown"]
 
 
-def ai_choose_shot(state, side="p2", difficulty="normal"):
+def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     """Heuristic shot with human-like noise for the single-player bot.
 
     Aims at the center of the enemy's remaining tower mass (so carved gaps
@@ -285,7 +285,18 @@ def ai_choose_shot(state, side="p2", difficulty="normal"):
         "normal": {"angle_noise": 13, "power_min": 0.82, "power_max": 1.20},
         "hard": {"angle_noise": 6, "power_min": 0.93, "power_max": 1.08},
     }
-    profile = profiles.get(difficulty, profiles["normal"])
+    if difficulty == "ranked":
+        # The 18 bot ranks form a real expertise ladder. Rank 1 is forgiving
+        # but still stronger than unranked practice; rank 18 is the sharpest.
+        lvl = max(1, min(18, int(rank_level or 1)))
+        t = (lvl - 1) / 17
+        profile = {
+            "angle_noise": 16 - 12.5 * t,
+            "power_min": 0.80 + 0.16 * t,
+            "power_max": 1.22 - 0.18 * t,
+        }
+    else:
+        profile = profiles.get(difficulty, profiles["normal"])
     angle = 45 + random.uniform(-profile["angle_noise"], profile["angle_noise"])
     rad = math.radians(angle)
     dy = ty - sy  # positive when target is lower (y grows downward)
