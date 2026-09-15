@@ -190,3 +190,8 @@ footer { line-height: 1.8; }
 .custom-item { cursor: pointer; transition: border-color .15s; }
 .custom-item:hover { border-color: var(--gold); }
 @media (max-width:640px) { .custom-wrap { grid-template-columns: 1fr; } }
+
+/* IDF rank insignia (server-provided assets/ranks/*.svg) */
+.rank-badge { width: 26px; height: 26px; border-radius: 6px; flex: 0 0 auto; }
+.rank-badge-big { width: 34px; height: 34px; border-radius: 8px; vertical-align: middle; margin-inline-end: 6px; }
+.rank-up { color: var(--gold, #fbbf24); font-weight: 700; }
