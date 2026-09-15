@@ -20,25 +20,29 @@ drawn to match the real IDF insignia system; see asset generator notes).
 """
 
 # (level, key, name_he, abbr_he, group, cumulative wins required)
+# Keep rank labels ASCII-safe in source. Python decodes these escapes to the
+# exact Hebrew strings at runtime; this prevents host editors/deploy copy paths
+# from corrupting Hebrew punctuation such as geresh (U+05F3) and gershayim
+# (U+05F4) before the API serializes it.
 RANK_LEVELS = [
-    (1,  "turai", "טוראי",       "טור׳",  "hogrim",  0),
-    (2,  "rabat", "רב טוראי",    "רב״ט",  "hogrim",  6),
-    (3,  "samal", "סמל",         "סמל",   "hogrim",  12),
-    (4,  "samar", "סמל ראשון",   "סמ״ר",  "hogrim",  20),
-    (5,  "rasal", "רב סמל",      "רס״ל",  "nagadim", 30),
-    (6,  "rasar", "רב סמל ראשון","רס״ר",  "nagadim", 42),
-    (7,  "rasam", "רב סמל מתקדם","רס״ם",  "nagadim", 56),
-    (8,  "rasab", "רב סמל בכיר", "רס״ב",  "nagadim", 72),
-    (9,  "ranag", "רב נגד",      "רנ״ג",  "nagadim", 90),
-    (10, "sagam", "סגן משנה",    "סג״מ",  "ktzinim", 110),
-    (11, "segen", "סגן",         "סגן",   "ktzinim", 140),
-    (12, "seren", "סרן",         "סרן",   "ktzinim", 180),
-    (13, "rasan", "רב סרן",      "רס״ן",  "ktzinim", 230),
-    (14, "saal",  "סגן אלוף",    "סא״ל",  "ktzinim", 290),
-    (15, "alam",  "אלוף משנה",   "אל״ם",  "ktzinim", 360),
-    (16, "taal",  "תת אלוף",     "תא״ל",  "ktzinim", 450),
-    (17, "aluf",  "אלוף",        "אלוף",  "ktzinim", 560),
-    (18, "raal",  "רב אלוף",     "רא״ל",  "ktzinim", 700),
+    (1 , "turai", "\u05d8\u05d5\u05e8\u05d0\u05d9", "\u05d8\u05d5\u05e8\u05f3", "hogrim", 0),
+    (2 , "rabat", "\u05e8\u05d1\u0020\u05d8\u05d5\u05e8\u05d0\u05d9", "\u05e8\u05d1\u05f4\u05d8", "hogrim", 6),
+    (3 , "samal", "\u05e1\u05de\u05dc", "\u05e1\u05de\u05dc", "hogrim", 12),
+    (4 , "samar", "\u05e1\u05de\u05dc\u0020\u05e8\u05d0\u05e9\u05d5\u05df", "\u05e1\u05de\u05f4\u05e8", "hogrim", 20),
+    (5 , "rasal", "\u05e8\u05d1\u0020\u05e1\u05de\u05dc", "\u05e8\u05e1\u05f4\u05dc", "nagadim", 30),
+    (6 , "rasar", "\u05e8\u05d1\u0020\u05e1\u05de\u05dc\u0020\u05e8\u05d0\u05e9\u05d5\u05df", "\u05e8\u05e1\u05f4\u05e8", "nagadim", 42),
+    (7 , "rasam", "\u05e8\u05d1\u0020\u05e1\u05de\u05dc\u0020\u05de\u05ea\u05e7\u05d3\u05dd", "\u05e8\u05e1\u05f4\u05dd", "nagadim", 56),
+    (8 , "rasab", "\u05e8\u05d1\u0020\u05e1\u05de\u05dc\u0020\u05d1\u05db\u05d9\u05e8", "\u05e8\u05e1\u05f4\u05d1", "nagadim", 72),
+    (9 , "ranag", "\u05e8\u05d1\u0020\u05e0\u05d2\u05d3", "\u05e8\u05e0\u05f4\u05d2", "nagadim", 90),
+    (10, "sagam", "\u05e1\u05d2\u05df\u0020\u05de\u05e9\u05e0\u05d4", "\u05e1\u05d2\u05f4\u05de", "ktzinim", 110),
+    (11, "segen", "\u05e1\u05d2\u05df", "\u05e1\u05d2\u05df", "ktzinim", 140),
+    (12, "seren", "\u05e1\u05e8\u05df", "\u05e1\u05e8\u05df", "ktzinim", 180),
+    (13, "rasan", "\u05e8\u05d1\u0020\u05e1\u05e8\u05df", "\u05e8\u05e1\u05f4\u05df", "ktzinim", 230),
+    (14, "saal", "\u05e1\u05d2\u05df\u0020\u05d0\u05dc\u05d5\u05e3", "\u05e1\u05d0\u05f4\u05dc", "ktzinim", 290),
+    (15, "alam", "\u05d0\u05dc\u05d5\u05e3\u0020\u05de\u05e9\u05e0\u05d4", "\u05d0\u05dc\u05f4\u05dd", "ktzinim", 360),
+    (16, "taal", "\u05ea\u05ea\u0020\u05d0\u05dc\u05d5\u05e3", "\u05ea\u05d0\u05f4\u05dc", "ktzinim", 450),
+    (17, "aluf", "\u05d0\u05dc\u05d5\u05e3", "\u05d0\u05dc\u05d5\u05e3", "ktzinim", 560),
+    (18, "raal", "\u05e8\u05d1\u0020\u05d0\u05dc\u05d5\u05e3", "\u05e8\u05d0\u05f4\u05dc", "ktzinim", 700),
 ]
 
 MAX_LEVEL = RANK_LEVELS[-1][0]
