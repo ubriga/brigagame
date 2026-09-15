@@ -258,10 +258,15 @@ def match_snapshot(m, user_id, since):
         if uid:
             u = q("SELECT id, name, picture, rating, wins, rank_points"
                   " FROM users WHERE id = ?", (uid,), one=True)
-            players[side] = {"id": u["id"], "name": u["name"],
-                             "picture": u["picture"], "rating": u["rating"],
-                             "rank": rank_for(u["rating"]),
-                             "idf_rank": rank_payload(u["rank_points"])}
+            if u:
+                players[side] = {"id": u["id"], "name": u["name"],
+                                 "picture": u["picture"], "rating": u["rating"],
+                                 "rank": rank_for(u["rating"]),
+                                 "idf_rank": rank_payload(u["rank_points"])}
+            else:
+                players[side] = {"id": uid, "name": "שחקן לשעבר",
+                                 "picture": "", "rating": None,
+                                 "rank": None, "idf_rank": None}
         elif side == "p2" and m["p2_ai"]:
             bot_rank = (rank_for_level(state.get("ai_rank_level", 1))
                         if state.get("ai_difficulty") == "ranked" else None)
@@ -943,22 +948,33 @@ def match_state(mid):
         return jsonify({"error": "bad_since"}), 400
     # AI opponent acts on poll when its cooldown has elapsed (+ reaction delay)
     if m["p2_ai"] and m["status"] == "active":
-        last = m["state"]["last_shot_at"]["p2"]
+        last = (m["state"].get("last_shot_at") or {}).get("p2") or 0.0
         difficulty = m["state"].get("ai_difficulty", "normal")
         tier = m["state"].get("ai_tier", difficulty)
         reaction = {"easy": 2.8, "medium": 1.8, "hard": 1.1, "ultra": 0.5}.get(tier, 1.8)
         if time.time() - last > cooldown_for("standard") + reaction:
-            # Ranked tiers use the mapped rank for accuracy; easy remains the
-            # deliberately forgiving practice profile.
-            angle, power, weapon = ai_choose_shot(
-                m["state"], "p2", difficulty, m["state"].get("ai_rank_level"))
-            events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
-            m["version"] += 1
-            if won:
-                finalize_match(m, "p2")
-                events.append({"type": "match_end", "winner_side": "p2"})
-            save_match(m)
-            emit_events(mid, m["version"], events)
+            # A failed bot turn must never wedge the match on permanent 500s:
+            # log it, defer the retry by one cooldown, and still serve a
+            # healthy snapshot so the client stays connected and recovers.
+            try:
+                # Ranked tiers use the mapped rank for accuracy; easy remains
+                # the deliberately forgiving practice profile.
+                angle, power, weapon = ai_choose_shot(
+                    m["state"], "p2", difficulty, m["state"].get("ai_rank_level"))
+                events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
+                m["version"] += 1
+                if won:
+                    finalize_match(m, "p2")
+                    events.append({"type": "match_end", "winner_side": "p2"})
+                save_match(m)
+                emit_events(mid, m["version"], events)
+            except Exception:
+                app.logger.exception("bot_turn_failed match=%s", mid)
+                # Discard any half-mutated in-memory state; only defer the
+                # bot's next attempt, leaving the stored match untouched.
+                m = load_match(mid)
+                m["state"].setdefault("last_shot_at", {})["p2"] = time.time()
+                save_match(m)
     return jsonify(match_snapshot(m, g.user["id"], since))
 
 
