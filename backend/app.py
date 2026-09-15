@@ -75,7 +75,14 @@ def audit(action, target_type="", target_id="", details=None, actor_id=None):
              request.headers.get("User-Agent", "")[:300], _now_iso()))
 
 def add_coins(user_id, delta, reason, ref=""):
-    """Single place where coins move. Writes the ledger row too."""
+    """Single place where coins move. Writes the ledger row too.
+
+    Match-win rewards are clamped here as a final economy invariant, not only
+    in ``finalize_match``. That keeps every current or future win component
+    (base, damage, streak, bonus, consolation) inside the owner's 50-coin cap.
+    """
+    if reason == "match_win":
+        delta = max(0, min(MAX_COINS_PER_WIN, int(delta)))
     execute("UPDATE users SET coins = coins + ? WHERE id = ?", (delta, user_id))
     execute("INSERT INTO transactions (user_id, delta, reason, ref, created_at)"
             " VALUES (?,?,?,?,?)", (user_id, delta, reason, ref, _now_iso()))
@@ -149,11 +156,12 @@ def rank_loss_points(current_points, versus_ai=False, ai_rank_level=None):
 
 
 def finalize_match(m, winner_side):
-    """Apply win/loss rewards, hit coins and rating. Server-side only."""
+    """Apply server-authoritative match results and economy rules."""
     loser_side = "p2" if winner_side == "p1" else "p1"
     m["status"] = "finished"
     m["winner"] = m[winner_side] if not (winner_side == "p2" and m["p2_ai"]) else None
     m["state"]["winner_side"] = winner_side
+    practice = bool(m["p2_ai"] and m["state"].get("ai_difficulty") == "easy")
     results = {}
     for side, outcome in ((winner_side, "win"), (loser_side, "loss")):
         uid = m[side]
@@ -161,12 +169,13 @@ def finalize_match(m, winner_side):
             results[side] = {"outcome": outcome, "ai": True}
             continue
         dmg = m["state"]["damage_dealt"][side]
-        hit_coins = min(MAX_HIT_COINS_PER_MATCH,
-                        int(dmg * COINS_PER_DAMAGE))
-        base = COINS_PER_WIN if outcome == "win" else COINS_PER_LOSS
+        # Practice is fully outside the economy: no base reward, damage coins,
+        # consolation coins, rating movement, or IDF rank movement.
+        hit_coins = 0 if practice else min(MAX_HIT_COINS_PER_MATCH,
+                                            int(dmg * COINS_PER_DAMAGE))
+        base = 0 if practice else (COINS_PER_WIN if outcome == "win" else COINS_PER_LOSS)
         total = base + hit_coins
         if outcome == "win":
-            # Hard global economy ceiling: no match type can award >50 on a win.
             total = min(MAX_COINS_PER_WIN, total)
         add_coins(uid, total, f"match_{outcome}", m["id"])
         other = m[loser_side if side == winner_side else winner_side]
@@ -176,27 +185,25 @@ def finalize_match(m, winner_side):
             if other else None
         my_r, their_r = u["rating"], (o["rating"] if o else 1000)
         if outcome == "win":
-            delta = elo_delta(my_r, their_r)
-            pts = (0.0 if m["state"].get("ai_difficulty") == "easy"
-                   else RANK_POINTS_BOT_WIN) if m["p2_ai"] else 1.0
-            execute("UPDATE users SET rating = rating + ?, wins = wins + 1,"
+            delta = 0 if practice else elo_delta(my_r, their_r)
+            pts = (0.0 if practice else
+                   (RANK_POINTS_BOT_WIN if m["p2_ai"] else 1.0))
+            execute("UPDATE users SET rating = rating + ?, wins = wins + ?,"
                     " rank_points = rank_points + ?,"
                     " matches_played = matches_played + 1 WHERE id = ?",
-                    (delta, pts, uid))
-            # wins-only IDF rank ladder: detect promotion server-side
+                    (delta, 0 if practice else 1, pts, uid))
             idf_r = rank_payload(u["rank_points"] + pts)
-            up = rank_up_info(u["rank_points"], u["rank_points"] + pts)
+            up = None if practice else rank_up_info(u["rank_points"], u["rank_points"] + pts)
         else:
-            delta = elo_delta(their_r, my_r)
-            practice = bool(m["p2_ai"] and m["state"].get("ai_difficulty") == "easy")
+            delta = 0 if practice else elo_delta(their_r, my_r)
             loss_pts = (0.0 if practice else rank_loss_points(
                 u["rank_points"], versus_ai=bool(m["p2_ai"]),
                 ai_rank_level=m["state"].get("ai_rank_level")))
             execute("UPDATE users SET rating = MAX(0, rating - ?),"
                     " rank_points = MAX(0, rank_points - ?),"
-                    " losses = losses + 1,"
+                    " losses = losses + ?,"
                     " matches_played = matches_played + 1 WHERE id = ?",
-                    (delta, loss_pts, uid))
+                    (delta, loss_pts, 0 if practice else 1, uid))
             idf_r = rank_payload(max(0, u["rank_points"] - loss_pts))
             up = None
         results[side] = {"outcome": outcome, "coins": total,
@@ -207,7 +214,7 @@ def finalize_match(m, winner_side):
             results[side]["rank_points_awarded"] = pts
         else:
             results[side]["rank_points_lost"] = loss_pts
-        if m["p2_ai"] and m["state"].get("ai_difficulty") == "easy":
+        if practice:
             results[side]["practice"] = True
         if up:
             results[side]["rank_up"] = up
@@ -811,22 +818,21 @@ def match_ai():
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     uid = g.user["id"]
     body = request.get_json(silent=True) or {}
-    difficulty = body.get("difficulty", "ranked")
+    tier = str(body.get("difficulty", "medium")).lower()
+    # The client chooses only a difficulty tier. The server privately maps it
+    # to a bot rank at or above the player's rank; client-supplied rank is
+    # deliberately ignored so it cannot select or forge the opponent rank.
     user_rank_level = rank_payload(g.user["rank_points"])["level"]
-    ai_rank_level = None
-    if difficulty == "easy":
-        pass  # separate unranked practice mode
-    elif difficulty == "ranked":
-        try:
-            ai_rank_level = int(body.get("bot_rank_level", user_rank_level))
-        except (TypeError, ValueError):
-            ai_rank_level = user_rank_level
-        # Enforce the floor server-side so stale/forged clients cannot pick low.
-        ai_rank_level = max(user_rank_level, min(MAX_LEVEL, ai_rank_level))
-    elif difficulty in ("normal", "hard"):
-        # Backward compatibility for a client open during deployment.
+    tier_offsets = {"medium": 0, "normal": 0, "ranked": 0,
+                    "hard": 3, "ultra": 6}
+    if tier == "easy":
+        difficulty = "easy"
+        ai_rank_level = None
+        ai_tier = "easy"
+    elif tier in tier_offsets:
         difficulty = "ranked"
-        ai_rank_level = min(MAX_LEVEL, user_rank_level + (3 if body.get("difficulty") == "hard" else 0))
+        ai_rank_level = min(MAX_LEVEL, user_rank_level + tier_offsets[tier])
+        ai_tier = "medium" if tier in ("medium", "normal", "ranked") else tier
     else:
         return jsonify({"error": "bad_difficulty",
                         "error_he": "רמת הקושי אינה תקינה."}), 400
@@ -834,6 +840,7 @@ def match_ai():
     now = _now_iso()
     state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
     state["ai_difficulty"] = difficulty
+    state["ai_tier"] = ai_tier
     if ai_rank_level is not None:
         state["ai_rank_level"] = ai_rank_level
     state["ready"] = {"p1": False, "p2": True}

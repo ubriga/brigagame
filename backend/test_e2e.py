@@ -250,23 +250,25 @@ check("ai opponent named", st["players"]["p2"]["name"] == "OrelAI Bot")
 check("ranked bot floor and displayed insignia match player",
       st["ai_rank_level"] == st["players"]["p1"]["idf_rank"]["level"]
       and st["players"]["p2"]["idf_rank"]["level"] == st["players"]["p1"]["idf_rank"]["level"])
-s, harder = call("POST", "/api/matches/ai", token=tb,
-                 body={"difficulty": "ranked", "bot_rank_level": 18})
-_, harder_st = call("GET", f"/api/matches/{harder['match_id']}/state?since=0", token=tb)
-check("player can choose a harder rank-18 bot",
-      s == 200 and harder_st["ai_rank_level"] == 18
-      and harder_st["players"]["p2"]["idf_rank"]["level"] == 18)
-s, floored = call("POST", "/api/matches/ai", token=tb,
-                  body={"difficulty": "ranked", "bot_rank_level": 1})
-_, floored_st = call("GET", f"/api/matches/{floored['match_id']}/state?since=0", token=tb)
-check("server rejects downgrade by flooring at player rank",
-      s == 200 and floored_st["ai_rank_level"] == floored_st["players"]["p1"]["idf_rank"]["level"])
+tier_levels = {}
+for tier in ("medium", "hard", "ultra"):
+    s, tier_match = call("POST", "/api/matches/ai", token=tb,
+                         body={"difficulty": tier, "bot_rank_level": 18})
+    _, tier_st = call("GET", f"/api/matches/{tier_match['match_id']}/state?since=0", token=tb)
+    tier_levels[tier] = tier_st["ai_rank_level"]
+    check(f"{tier} bot tier starts ranked match",
+          s == 200 and tier_st["ai_difficulty"] == "ranked"
+          and tier_st["ai_rank_level"] >= tier_st["players"]["p1"]["idf_rank"]["level"])
+check("server maps tiers automatically and ignores client bot rank",
+      tier_levels["medium"] < tier_levels["hard"] <= tier_levels["ultra"]
+      and tier_levels["medium"] != 18, json.dumps(tier_levels))
 time.sleep(9)
 s, st2 = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 ai_shot = any(e["type"] == "shot" and e.get("side") == "p2" for e in st2["events"])
 check("AI fires back on poll", ai_shot)
 
 # --- bot-win rank weighting: easy = practice (0 pts), normal/hard = 0.5
+_, practice_before = call("GET", "/api/me", token=tb)
 s, r = call("POST", "/api/matches/ai", token=tb, body={"difficulty": "easy"})
 easy_id = r["match_id"]
 s, st = call("GET", f"/api/matches/{easy_id}/state?since=0", token=tb)
@@ -278,17 +280,22 @@ check("kill shot ends practice match", s == 200, str(r))
 s, st = call("GET", f"/api/matches/{easy_id}/state?since=0", token=tb)
 check("practice match won by player",
       st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
-check("practice win reward capped at 50", st["results"]["p1"]["coins"] <= 50)
+check("practice win awards exactly zero coins",
+      st["results"]["p1"]["coins"] == 0 and st["results"]["p1"]["hit_coins"] == 0,
+      json.dumps(st["results"]["p1"]))
 check("practice results marked",
       st["results"]["p1"].get("practice") is True)
 check("practice win awards 0 rank points",
       st["results"]["p1"].get("rank_points_awarded") == 0,
       json.dumps(st["results"]["p1"]))
 _, mb2 = call("GET", "/api/me", token=tb)
-check("practice win left rank untouched",
-      mb2["user"]["idf_rank"]["level"] == 1
-      and mb2["user"]["idf_rank"]["wins"] == 4.5,
-      json.dumps(mb2["user"]["idf_rank"]))
+check("practice win leaves coins, rating, record and rank untouched",
+      mb2["user"]["coins"] == practice_before["user"]["coins"]
+      and mb2["user"]["rating"] == practice_before["user"]["rating"]
+      and mb2["user"]["wins"] == practice_before["user"]["wins"]
+      and mb2["user"]["losses"] == practice_before["user"]["losses"]
+      and mb2["user"]["idf_rank"]["wins"] == practice_before["user"]["idf_rank"]["wins"],
+      json.dumps({"before": practice_before["user"], "after": mb2["user"]}))
 
 _, gc = call("POST", "/api/auth/dev",
              body={"email": f"carol-{int(time.time())}@example.com", "name": "Carol"})
@@ -297,13 +304,23 @@ s, r = call("POST", "/api/matches/ai", token=tc, body={"difficulty": "normal"})
 nid = r["match_id"]
 s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
 check("normal bot match is not practice", st.get("practice") is False)
+with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db")) as cap_db:
+    cap_row = cap_db.execute("SELECT state FROM matches WHERE id = ?", (nid,)).fetchone()
+    cap_state = json.loads(cap_row[0])
+    cap_state["damage_dealt"]["p1"] = 5000
+    cap_db.execute("UPDATE matches SET state = ? WHERE id = ?", (json.dumps(cap_state), nid))
+_, cap_before = call("GET", "/api/me", token=tc)
 zero_tower(nid, "p2")
 s, r = call("POST", f"/api/matches/{nid}/fire", token=tc,
             body={"angle": 45, "power": 60, "weapon": "standard"})
 s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
 check("normal bot match won by player",
       st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
-check("ranked bot win reward capped at 50", st["results"]["p1"]["coins"] <= 50)
+_, cap_after = call("GET", "/api/me", token=tc)
+check("ranked win hard-capped at exactly 50 across base and damage paths",
+      st["results"]["p1"]["coins"] == 50
+      and cap_after["user"]["coins"] - cap_before["user"]["coins"] == 50,
+      json.dumps(st["results"]["p1"]))
 check("normal bot win awards half a rank point",
       st["results"]["p1"].get("rank_points_awarded") == 0.5,
       json.dumps(st["results"]["p1"]))
@@ -318,7 +335,7 @@ check("half point reflected in rank progress",
 with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db")) as loss_db:
     loss_db.execute("UPDATE users SET rank_points = 55 WHERE id = ?", (bid_,))
 s, r = call("POST", "/api/matches/ai", token=tb,
-            body={"difficulty": "ranked", "bot_rank_level": 10})
+            body={"difficulty": "hard"})
 loss_id = r["match_id"]
 zero_tower(loss_id, "p1")
 # Let the bot finish the already-rubbled player tower on state polling.
