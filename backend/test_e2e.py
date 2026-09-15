@@ -506,7 +506,7 @@ tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlo
 # carol is simply present in the app - she never clicks quick match.
 s, hb = call("POST", "/api/presence/ping", token=tc)
 check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
-check("presence ping carries server_version", hb.get("server_version") == "8", str(hb.get("server_version")))
+check("presence ping carries server_version", hb.get("server_version") == "9", str(hb.get("server_version")))
 
 # --- maintenance flag (D1): admin toggle carried in the presence pulse
 s, r = call("GET", "/api/admin/maintenance", token=ta)
@@ -622,16 +622,105 @@ def trigger_sweep():
     # presence heartbeat.
     call("GET", "/api/me")
 
+def set_match_age(match_id, seconds, updated_too=False):
+    db = sqlite3.connect(DB_FILE, timeout=15)
+    row = db.execute("SELECT state FROM matches WHERE id = ?", (match_id,)).fetchone()
+    st = json.loads(row[0])
+    st["started_at"] = time.time() - seconds
+    if updated_too:
+        old = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+        db.execute("UPDATE matches SET state = ?, updated_at = ? WHERE id = ?",
+                   (json.dumps(st), old, match_id))
+    else:
+        db.execute("UPDATE matches SET state = ? WHERE id = ?",
+                   (json.dumps(st), match_id))
+    db.commit(); db.close()
+
+def set_tower_fraction(match_id, side, fraction):
+    db = sqlite3.connect(DB_FILE, timeout=15)
+    row = db.execute("SELECT state FROM matches WHERE id = ?", (match_id,)).fetchone()
+    st = json.loads(row[0])
+    for r, vals in enumerate(st["towers"][side]):
+        for c, hp in enumerate(vals):
+            st["towers"][side][r][c] = round(hp * fraction, 3)
+    db.execute("UPDATE matches SET state = ? WHERE id = ?", (json.dumps(st), match_id))
+    db.commit(); db.close()
+
 _, g = call("POST", "/api/auth/dev",
             body={"email": f"stale-{run_tag}@example.com", "name": "Stale"})
 tg = g["token"]
 _, me0 = call("GET", "/api/me", token=tg)
 
-# An AI match abandoned for 3h (past the 2h active-match stale window).
+# --- three-minute server clock: integrity winner, exact tie, and bot coverage
+_, timer_a = call("POST", "/api/auth/dev",
+                  body={"email": f"timer-a-{run_tag}@example.com", "name": "Timer A"})
+_, timer_b = call("POST", "/api/auth/dev",
+                  body={"email": f"timer-b-{run_tag}@example.com", "name": "Timer B"})
+tta, ttb = timer_a["token"], timer_b["token"]
+_, before_ta = call("GET", "/api/me", token=tta)
+_, before_tb = call("GET", "/api/me", token=ttb)
+s, r = call("POST", "/api/matches/friend", token=tta)
+tmid, tcode = r["match_id"], r["code"]
+call("POST", "/api/matches/join", token=ttb, body={"code": tcode})
+s, active_clock = call("GET", f"/api/matches/{tmid}/state?since=0", token=tta)
+check("active snapshot exposes three-minute deadline",
+      s == 200 and 178 <= active_clock["match_ends_at"] - active_clock["server_time"] <= 181,
+      str(active_clock.get("match_ends_at")))
+set_tower_fraction(tmid, "p2", .75)
+set_match_age(tmid, 180)
+s, timed = call("GET", f"/api/matches/{tmid}/state?since=0", token=tta)
+check("three-minute integrity lead decides human match",
+      s == 200 and timed["status"] == "finished" and timed["winner_side"] == "p1"
+      and timed["finish_reason"] == "time_limit"
+      and timed["time_limit_integrity"]["p1"] > timed["time_limit_integrity"]["p2"],
+      json.dumps(timed))
+check("timed winner uses normal economy",
+      timed["results"]["p1"]["outcome"] == "win"
+      and timed["results"]["p2"]["outcome"] == "loss"
+      and timed["results"]["p1"]["rank_points_awarded"] == 1.0,
+      json.dumps(timed.get("results")))
+# Re-polling cannot apply the timed economy twice.
+call("GET", f"/api/matches/{tmid}/state?since=0", token=ttb)
+_, after_ta = call("GET", "/api/me", token=tta)
+_, after_tb = call("GET", "/api/me", token=ttb)
+check("timed economy applies exactly once",
+      after_ta["user"]["matches_played"] == before_ta["user"]["matches_played"] + 1
+      and after_tb["user"]["matches_played"] == before_tb["user"]["matches_played"] + 1)
+
+# Equal integrity is a neutral draw: no coins, rating, rank or match stats.
+_, draw0 = call("GET", "/api/me", token=tta)
+s, r = call("POST", "/api/matches/friend", token=tta)
+dmid, dcode = r["match_id"], r["code"]
+call("POST", "/api/matches/join", token=ttb, body={"code": dcode})
+set_match_age(dmid, 180)
+s, draw = call("GET", f"/api/matches/{dmid}/state?since=0", token=tta)
+_, draw1 = call("GET", "/api/me", token=tta)
+check("equal tower integrity ends as draw",
+      s == 200 and draw["status"] == "finished" and draw["winner_side"] is None
+      and draw["finish_reason"] == "time_limit"
+      and draw["results"]["p1"]["outcome"] == draw["results"]["p2"]["outcome"] == "draw")
+check("draw is economy-neutral",
+      draw0["user"]["coins"] == draw1["user"]["coins"]
+      and draw0["user"]["rating"] == draw1["user"]["rating"]
+      and draw0["user"]["matches_played"] == draw1["user"]["matches_played"]
+      and draw0["user"]["idf_rank"]["wins"] == draw1["user"]["idf_rank"]["wins"])
+
+# The same clock applies to bot matches and resolves before the bot can fire.
+s, r = call("POST", "/api/matches/ai", token=tta, body={"difficulty": "easy"})
+btmid = r["match_id"]
+set_tower_fraction(btmid, "p1", .7)
+set_match_age(btmid, 180)
+s, bot_timed = call("GET", f"/api/matches/{btmid}/state?since=0", token=tta)
+check("three-minute integrity rule covers bot matches",
+      s == 200 and bot_timed["status"] == "finished"
+      and bot_timed["winner_side"] == "p2" and bot_timed["finish_reason"] == "time_limit",
+      json.dumps(bot_timed))
+
+# An AI match abandoned for >5m (the universal open-match stale window).
 s, r = call("POST", "/api/matches/ai", token=tg)
 smid = r["match_id"]
 check("ai match created for stale test", s == 200 and r["status"] == "active")
-backdate(smid, 3 * 3600)
+backdate(smid, 6 * 60)
 trigger_sweep()   # dev mode bypasses the sweep throttle, so this runs now
 s, st = call("GET", f"/api/matches/{smid}/state?since=0", token=tg)
 check("stale active match auto-aborted",
@@ -647,11 +736,11 @@ check("stale abort moves no rating/coins/stats",
       and me0["user"]["matches_played"] == me1["user"]["matches_played"],
       f'before={me0["user"]} after={me1["user"]}')
 
-# A waiting quick match whose owner vanished 25h ago (past the 24h window).
+# A waiting quick match whose owner vanished for >5m.
 s, r = call("POST", "/api/matches/quick", token=tg)
 wmid = r["match_id"]
 check("waiting match created for stale test", s == 200 and r["status"] == "waiting")
-backdate(wmid, 25 * 3600)
+backdate(wmid, 6 * 60)
 time.sleep(1.2)
 trigger_sweep()
 s, st = call("GET", f"/api/matches/{wmid}/state?since=0", token=tg)
@@ -673,7 +762,7 @@ imid = r["match_id"]
 s, hb = call("POST", "/api/presence/ping", token=tg)
 check("no invite while stuck in an active match",
       s == 200 and hb.get("offer") is None, str(hb))
-backdate(smid2, 3 * 3600)
+backdate(smid2, 6 * 60)
 time.sleep(1.2)
 trigger_sweep()                    # frees tg
 s, hb = call("POST", "/api/presence/ping", token=tg)

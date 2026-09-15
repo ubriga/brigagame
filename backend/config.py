@@ -39,17 +39,17 @@ class Config:
     OFFER_TTL_SECONDS = int(os.environ.get("OFFER_TTL_SECONDS", "20"))
     INVITE_COOLDOWN_SECONDS = int(os.environ.get("INVITE_COOLDOWN_SECONDS", "120"))
 
-    # Stale-match housekeeping. The free tier has no always-on task runner, so
-    # API traffic carries a throttled sweep: active matches with no state
-    # change for this long are voided, waiting matches this old are purged.
-    ACTIVE_MATCH_STALE_SECONDS = int(os.environ.get("ACTIVE_MATCH_STALE_SECONDS", str(2 * 3600)))
-    WAITING_MATCH_STALE_SECONDS = int(os.environ.get("WAITING_MATCH_STALE_SECONDS", str(24 * 3600)))
+    # Match clocks. API traffic carries both the server-authoritative 3-minute
+    # result decision and a throttled 5-minute abandoned/open-match sweep.
+    ACTIVE_MATCH_STALE_SECONDS = int(os.environ.get("ACTIVE_MATCH_STALE_SECONDS", str(5 * 60)))
+    WAITING_MATCH_STALE_SECONDS = int(os.environ.get("WAITING_MATCH_STALE_SECONDS", str(5 * 60)))
+    MATCH_DURATION_SECONDS = int(os.environ.get("MATCH_DURATION_SECONDS", str(3 * 60)))
     STALE_SWEEP_INTERVAL_SECONDS = int(os.environ.get("STALE_SWEEP_INTERVAL_SECONDS", "60"))
 
     # Deploy version for the client handshake. Bump together with the
     # frontend CONFIG.CLIENT_VERSION on every deploy; the client reloads
     # itself in the lobby when they diverge (never mid-game).
-    SERVER_VERSION = os.environ.get("SERVER_VERSION", "8")
+    SERVER_VERSION = os.environ.get("SERVER_VERSION", "9")
 
     SESSION_TTL_DAYS = 14
     MAX_SESSIONS_PER_USER = 5
