@@ -5,6 +5,7 @@ const GameView = {
   canvas: null, ctx: null, scale: 1,
   weapon: "standard", ammo: {},
   aiming: false, aimAngle: 45, aimPower: 50,
+  _rankImgs: {},
   anims: [], processing: false,
   serverOffset: 0, onExit: null,
   displayTowers: null, displayHp: null, pendingTowers: null,
@@ -27,6 +28,7 @@ const GameView = {
         <div id="wind-ind">💨 ...</div>
         <div class="player-tag" id="tag-p2"></div>
       </div>
+      <div id="practice-ind" class="hidden">🎯 משחק תרגול - לא נספר לדרגה</div>
       <div id="game-stage">
         <canvas id="game-canvas" width="1000" height="560"></canvas>
         <div id="game-overlay" class="hidden"></div>
@@ -285,6 +287,7 @@ const GameView = {
       const pct = Math.round(frac * 100);
       const col = frac > 0.5 ? "var(--ok)" : frac > 0.25 ? "var(--gold)" : "var(--danger)";
       el.innerHTML = `${p.picture ? `<img src="${esc(p.picture)}" alt="">` : "🤖"}
+        ${p.idf_rank && p.idf_rank.insignia ? `<img class="rank-badge" src="${esc(p.idf_rank.insignia)}" alt="${esc(p.idf_rank.abbr_he || "")}" title="${esc(p.idf_rank.name_he || "")}">` : ""}
         <div class="tag-mid">
           <div class="tag-line"><span>${esc(p.name || "?")}</span>
           <span class="rank">${esc(p.rank || "")}</span></div>
@@ -292,6 +295,8 @@ const GameView = {
           <div class="hp-num" style="color:${col}">${pct}%</div>
         </div>`;
     }
+    const pi = document.getElementById("practice-ind");
+    if (pi) pi.classList.toggle("hidden", !s.practice);
     const w = document.getElementById("wind-ind");
     if (w) {
       const v = s.wind || 0;
@@ -532,7 +537,7 @@ const GameView = {
     c.fillStyle = g; c.fillRect(-20, this.GROUND, this.W + 40, this.H - this.GROUND + 20);
 
     // towers + HP bars
-    for (const side of ["p1", "p2"]) { this.drawTower(side); this.drawHpBar(side); }
+    for (const side of ["p1", "p2"]) { this.drawTower(side); this.drawHpBar(side); this.drawRankBadge(side); }
     // cannons
     for (const side of ["p1", "p2"]) this.drawCannon(side);
     // aim arrow
@@ -673,6 +678,33 @@ const GameView = {
     c.restore();
   },
 
+  rankImg(path) {
+    let img = this._rankImgs[path];
+    if (!img) {
+      img = new Image();
+      img.src = path;
+      this._rankImgs[path] = img;
+    }
+    return img;
+  },
+
+  // IDF rank insignia plaque mounted on the tower front, just under the top row.
+  // Rank data always comes from the server snapshot (players[side].idf_rank).
+  drawRankBadge(side) {
+    const p = (this.snap.players || {})[side] || {};
+    const rank = p.idf_rank;
+    if (!rank || !rank.insignia) return;
+    const img = this.rankImg(rank.insignia);
+    if (!img.complete || !img.naturalWidth) return;
+    const c = this.ctx, size = 40;
+    const x = this.TX[side] + this.TCOLS * this.BLOCK / 2 - size / 2;
+    const y = this.GROUND - this.TROWS * this.BLOCK + 4;
+    c.save();
+    c.shadowColor = "rgba(0,0,0,.5)"; c.shadowBlur = 6;
+    c.drawImage(img, x, y, size, size);
+    c.restore();
+  },
+
   drawTower(side) {
     const c = this.ctx, tower = (this.displayTowers || this.snap.towers)[side];
     const rawSkin = this.snap.skins[side] || {};
@@ -787,6 +819,8 @@ const GameView = {
       <p class="end-sub">${iWon ? "מגדל היריב הושמד!" : "המגדל שלך הושמד."}</p>
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
+      ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
+      ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         <button class="btn" id="again-btn">עוד משחק</button>
         <button class="btn secondary" id="lobby-btn">חזרה ללובי</button>
