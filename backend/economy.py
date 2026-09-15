@@ -10,8 +10,12 @@ Tank Stars and Worms-style economies).
 
 # ---------------------------------------------------------------- currency
 STARTING_COINS = 200          # welcome grant so a new player can try the store
-COINS_PER_WIN = 50
+# A win scales with how much of the opposing tower was actually destroyed.
+# Difficulty/rank set the ceiling; 50 is always a cap, never a fixed award.
+COINS_PER_WIN = 42             # full-destruction ceiling vs a baseline opponent
 MAX_COINS_PER_WIN = 50
+BOT_TIER_WIN_BONUS = {"medium": 0, "hard": 3, "ultra": 6}
+MAX_WIN_RANK_BONUS = 2
 COINS_PER_LOSS = 20           # consolation so playing never feels punished
 COINS_PER_DAMAGE = 0.1        # 1 coin per 10 damage dealt...
 MAX_HIT_COINS_PER_MATCH = 40  # ...capped to stop farming/stalling abuse
@@ -20,6 +24,28 @@ MAX_HIT_COINS_PER_MATCH = 40  # ...capped to stop farming/stalling abuse
 DAILY_BASE = 50
 DAILY_STREAK_STEP = 10
 DAILY_CAP = 150
+
+
+def win_reward_coins(damage_dealt, tower_max_hp, opponent_rank_level=1, bot_tier=None):
+    """Reward a win by destruction completeness, difficulty and opponent rank.
+
+    A 75%-destroyed tower can end the match, but it earns only about 75% of the
+    available reward. Destroying every HP earns the difficulty/rank ceiling.
+    """
+    try:
+        level = max(1, min(18, int(opponent_rank_level or 1)))
+    except (TypeError, ValueError):
+        level = 1
+    try:
+        destroyed = max(0.0, min(1.0, float(damage_dealt) / float(tower_max_hp)))
+    except (TypeError, ValueError, ZeroDivisionError):
+        destroyed = 0.0
+    rank_bonus = min(MAX_WIN_RANK_BONUS, (level - 1) // 6)
+    ceiling = min(MAX_COINS_PER_WIN, COINS_PER_WIN
+                  + BOT_TIER_WIN_BONUS.get(str(bot_tier or "medium"), 0)
+                  + rank_bonus)
+    return min(MAX_COINS_PER_WIN, max(0, int(round(ceiling * destroyed))))
+
 
 # ---------------------------------------------------------------- ranking
 ELO_K = 32

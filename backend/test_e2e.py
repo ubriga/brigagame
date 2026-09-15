@@ -284,10 +284,22 @@ for tier in ("medium", "hard", "ultra"):
 check("server maps tiers automatically and ignores client bot rank",
       tier_levels["medium"] < tier_levels["hard"] <= tier_levels["ultra"]
       and tier_levels["medium"] != 18, json.dumps(tier_levels))
-time.sleep(9)
-s, st2 = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
-ai_shot = any(e["type"] == "shot" and e.get("side") == "p2" for e in st2["events"])
-check("AI fires back on poll", ai_shot)
+# Backdate each bot cooldown, then poll once: every public tier must react.
+for tier in ("easy", "medium", "hard", "ultra"):
+    _, active = call("POST", "/api/matches/ai", token=tb, body={"difficulty": tier})
+    active_id = active["match_id"]
+    with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "brigagame.db")) as ai_db:
+        row = ai_db.execute("SELECT state FROM matches WHERE id = ?",
+                            (active_id,)).fetchone()
+        ai_state = json.loads(row[0])
+        ai_state["last_shot_at"]["p2"] = 0
+        ai_db.execute("UPDATE matches SET state = ? WHERE id = ?",
+                      (json.dumps(ai_state), active_id))
+    _, active_state = call("GET", f"/api/matches/{active_id}/state?since=0", token=tb)
+    check(f"{tier} bot fires and reacts on poll",
+          any(e["type"] == "shot" and e.get("side") == "p2"
+              for e in active_state["events"]))
 
 # --- bot-win rank weighting: easy = practice (0 pts), normal/hard = 0.5
 _, practice_before = call("GET", "/api/me", token=tb)
@@ -339,10 +351,23 @@ s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
 check("normal bot match won by player",
       st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
 _, cap_after = call("GET", "/api/me", token=tc)
-check("ranked win hard-capped at exactly 50 across base and damage paths",
-      st["results"]["p1"]["coins"] == 50
-      and cap_after["user"]["coins"] - cap_before["user"]["coins"] == 50,
+check("ranked win reward varies by destruction and stays below hard cap",
+      0 < st["results"]["p1"]["coins"] <= 50
+      and cap_after["user"]["coins"] - cap_before["user"]["coins"]
+          == st["results"]["p1"]["coins"],
       json.dumps(st["results"]["p1"]))
+
+# Reward completeness regression: a minimum winning destruction pays less than
+# full destruction; stronger tiers/ranks can raise the full-destruction ceiling.
+from economy import win_reward_coins
+base_hp = 18 * 4 * 6
+minimum_win = win_reward_coins(base_hp * .75, base_hp, 1, "medium")
+full_medium = win_reward_coins(base_hp, base_hp, 1, "medium")
+full_ultra = win_reward_coins(base_hp, base_hp, 18, "ultra")
+check("win reward varies by destruction completeness and bot strength",
+      0 < minimum_win < full_medium < full_ultra <= 50,
+      json.dumps({"minimum_win": minimum_win, "full_medium": full_medium,
+                  "full_ultra": full_ultra}))
 check("normal bot win awards half a rank point",
       st["results"]["p1"].get("rank_points_awarded") == 0.5,
       json.dumps(st["results"]["p1"]))

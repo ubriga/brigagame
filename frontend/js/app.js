@@ -223,7 +223,7 @@ const App = {
             <div class="ai-start">
               <select id="ai-tier" aria-label="רמת קושי">
                 <option value="easy">קל - תרגול, ללא נקודות או מטבעות</option>
-                <option value="medium" selected>בינוני</option>
+                <option value="medium">בינוני</option>
                 <option value="hard">קשה</option>
                 <option value="ultra">אולטרה קשה</option>
               </select>
@@ -269,9 +269,15 @@ const App = {
       } else if (data.match_id) go(data.match_id);
       else toast(data.error_he || "שגיאה");
     };
+    const aiTier = document.getElementById("ai-tier");
+    const savedAiTier = localStorage.getItem("brigagame.aiTier");
+    if (["easy", "medium", "hard", "ultra"].includes(savedAiTier)) aiTier.value = savedAiTier;
+    else aiTier.value = "medium";
+    aiTier.onchange = () => localStorage.setItem("brigagame.aiTier", aiTier.value);
     document.getElementById("ai-btn").onclick = async () => {
       Sfx.play("click");
-      const difficulty = document.getElementById("ai-tier").value;
+      const difficulty = aiTier.value;
+      localStorage.setItem("brigagame.aiTier", difficulty);
       const { data } = await API.post("/api/matches/ai", { difficulty });
       if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
     };
