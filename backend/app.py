@@ -17,7 +17,7 @@ from config import Config
 from db import execute, get_db, init_db, q
 from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
                      DAILY_BASE, DAILY_CAP, DAILY_STREAK_STEP, DEFAULT_SKIN,
-                     MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
+                     MAX_COINS_PER_WIN, MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
 from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
                         tower_hp)
 from ranks import MAX_LEVEL, rank_for_level, rank_payload, rank_up_info
@@ -165,6 +165,9 @@ def finalize_match(m, winner_side):
                         int(dmg * COINS_PER_DAMAGE))
         base = COINS_PER_WIN if outcome == "win" else COINS_PER_LOSS
         total = base + hit_coins
+        if outcome == "win":
+            # Hard global economy ceiling: no match type can award >50 on a win.
+            total = min(MAX_COINS_PER_WIN, total)
         add_coins(uid, total, f"match_{outcome}", m["id"])
         other = m[loser_side if side == winner_side else winner_side]
         u = q("SELECT rating, wins, rank_points FROM users WHERE id = ?",
