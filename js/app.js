@@ -14,6 +14,12 @@ const App = {
       App.me = null; location.hash = "#/login";
     };
     document.getElementById("mute-btn").textContent = Sfx.muted ? "🔇" : "🔊";
+    // Mobile autoplay: resume the AudioContext on the first gesture anywhere;
+    // start decoding samples right away (decode works while suspended).
+    const unlockAudio = () => Sfx.unlock();
+    ["pointerdown", "touchstart", "keydown"].forEach((ev) =>
+      window.addEventListener(ev, unlockAudio, { passive: true }));
+    Sfx.preload();
     if (API.token) {
       // Bounded retries: a busy/down server must show the reconnect indicator
       // and then an honest offline screen - never a silent endless "connecting".
