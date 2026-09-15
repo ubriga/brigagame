@@ -15,9 +15,10 @@ from auth import (create_session, current_user, destroy_session,
                   user_blocked_reason, verify_google_credential)
 from config import Config
 from db import execute, get_db, init_db, q
-from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, COINS_PER_WIN,
+from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS,
                      DAILY_BASE, DAILY_CAP, DAILY_STREAK_STEP, DEFAULT_SKIN,
-                     MAX_COINS_PER_WIN, MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for)
+                     MAX_COINS_PER_WIN, MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for,
+                     win_reward_coins)
 from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
                         tower_hp)
 from ranks import MAX_LEVEL, rank_for_level, rank_payload, rank_up_info
@@ -173,8 +174,25 @@ def finalize_match(m, winner_side):
         # consolation coins, rating movement, or IDF rank movement.
         hit_coins = 0 if practice else min(MAX_HIT_COINS_PER_MATCH,
                                             int(dmg * COINS_PER_DAMAGE))
-        base = 0 if practice else (COINS_PER_WIN if outcome == "win" else COINS_PER_LOSS)
-        total = base + hit_coins
+        if practice:
+            base = 0
+            total = 0
+        elif outcome == "win":
+            opponent_uid = m[loser_side if side == winner_side else winner_side]
+            opponent = (q("SELECT rank_points FROM users WHERE id = ?",
+                          (opponent_uid,), one=True) if opponent_uid else None)
+            opponent_level = (m["state"].get("ai_rank_level") if m["p2_ai"]
+                              else rank_payload(opponent["rank_points"])["level"])
+            enemy_side = loser_side if side == winner_side else winner_side
+            total = win_reward_coins(
+                dmg, tower_hp(m["state"], enemy_side)["max"], opponent_level,
+                m["state"].get("ai_tier"))
+            # Preserve the result field used by the client/tests: for wins it
+            # is the performance-derived portion rather than an extra payout.
+            hit_coins = total
+        else:
+            base = COINS_PER_LOSS
+            total = base + hit_coins
         if outcome == "win":
             total = min(MAX_COINS_PER_WIN, total)
         add_coins(uid, total, f"match_{outcome}", m["id"])
@@ -270,6 +288,7 @@ def match_snapshot(m, user_id, since):
         "results": state.get("results"),
         "ready": state.get("ready", {}),
         "ai_difficulty": state.get("ai_difficulty"),
+        "ai_tier": state.get("ai_tier"),
         "ai_rank_level": state.get("ai_rank_level"),
         # Easy-bot games are practice matches: they never advance rank.
         "practice": bool(m["p2_ai"] and state.get("ai_difficulty") == "easy"),
@@ -844,9 +863,9 @@ def match_ai():
     if ai_rank_level is not None:
         state["ai_rank_level"] = ai_rank_level
     state["ready"] = {"p1": False, "p2": True}
-    # grace period: the bot's cooldown counts from match start, giving the
-    # player a few seconds to take in the field before the first incoming shell
-    state["last_shot_at"]["p2"] = time.time()
+    # The first shot waits only for the tier's reaction delay, not a full
+    # reload as well. This makes it obvious that the bot is alive.
+    state["last_shot_at"]["p2"] = time.time() - cooldown_for("standard")
     execute("INSERT INTO matches (id, code, mode, status, p1, p2_ai, state,"
             " version, created_at, updated_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -926,12 +945,11 @@ def match_state(mid):
     if m["p2_ai"] and m["status"] == "active":
         last = m["state"]["last_shot_at"]["p2"]
         difficulty = m["state"].get("ai_difficulty", "normal")
-        if difficulty == "ranked":
-            lvl = max(1, min(MAX_LEVEL, int(m["state"].get("ai_rank_level", 1))))
-            reaction = 3.2 - 2.7 * ((lvl - 1) / (MAX_LEVEL - 1))
-        else:
-            reaction = {"easy": 4.2, "normal": 2.2, "hard": 0.8}.get(difficulty, 2.2)
+        tier = m["state"].get("ai_tier", difficulty)
+        reaction = {"easy": 2.8, "medium": 1.8, "hard": 1.1, "ultra": 0.5}.get(tier, 1.8)
         if time.time() - last > cooldown_for("standard") + reaction:
+            # Ranked tiers use the mapped rank for accuracy; easy remains the
+            # deliberately forgiving practice profile.
             angle, power, weapon = ai_choose_shot(
                 m["state"], "p2", difficulty, m["state"].get("ai_rank_level"))
             events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
