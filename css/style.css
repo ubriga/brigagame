@@ -173,14 +173,24 @@ footer { line-height: 1.8; }
 @keyframes reconnect-pulse { to { opacity: .3; } }
 @media (max-width:640px) { #reconnect-indicator { top: 104px; } }
 
-/* maintenance banner (D1): fixed strip over every screen incl. in-game */
-#maintenance-banner {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 120;
-  pointer-events: none; text-align: center;
-  background: rgba(120, 53, 15, .97); color: #fde68a;
-  border-bottom: 1px solid #f59e0b;
-  padding: 7px 14px; font-size: 13px; font-weight: 600;
+/* maintenance notice: dismisses into a small side chip */
+#maintenance-banner { position:fixed; z-index:120; }
+#maintenance-banner.maintenance-expanded {
+  top:0; left:0; right:0; background:rgba(120,53,15,.97); color:#fde68a;
+  border-bottom:1px solid #f59e0b; text-align:center; font-weight:700;
+  padding:7px 48px; box-shadow:0 2px 12px rgba(0,0,0,.28);
 }
+.maintenance-close {
+  position:absolute; inset-inline-end:12px; top:1px; border:0; background:transparent;
+  color:inherit; font-size:27px; line-height:30px; cursor:pointer;
+}
+#maintenance-banner.maintenance-collapsed { inset-inline-end:8px; top:72px; }
+.maintenance-chip {
+  border:1px solid rgba(245,158,11,.65); border-radius:999px; padding:6px 10px;
+  background:rgba(30,23,11,.90); color:#fbbf24; font-size:12px; font-weight:700;
+  box-shadow:0 2px 8px rgba(0,0,0,.2); cursor:pointer; opacity:.82;
+}
+.maintenance-chip:hover, .maintenance-chip:focus { opacity:1; }
 
 /* customization tab (live preview + owned skin picker) */
 .custom-wrap { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; }
@@ -200,3 +210,10 @@ footer { line-height: 1.8; }
 #practice-ind { text-align:center; color:var(--gold); font-weight:700; margin:4px 0 0; }
 #practice-ind.hidden { display:none; }
 .practice-note { color:var(--gold); font-weight:600; }
+
+/* visible IDF rank progress in the lobby */
+.rank-progress-card { margin:0 0 14px; padding:12px; border:1px solid #334155; border-radius:12px; background:#0f172a88; }
+.rank-progress-head { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; font-size:13px; }
+.rank-progress-track { height:9px; margin:10px 0 7px; overflow:hidden; border-radius:999px; background:#334155; }
+.rank-progress-track > div { height:100%; background:linear-gradient(90deg,#f59e0b,#fbbf24); transition:width .25s; }
+.rank-progress-card p { margin:0; color:var(--muted); font-size:13px; }
