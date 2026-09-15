@@ -239,6 +239,56 @@ def finalize_match(m, winner_side):
     m["state"]["results"] = results
 
 
+def finalize_draw(m, reason="time_limit"):
+    """Finish a tied match without moving coins, rating, rank or stats."""
+    m["status"] = "finished"
+    m["winner"] = None
+    m["state"]["winner_side"] = None
+    m["state"]["finish_reason"] = reason
+    m["state"]["results"] = {"p1": {"outcome": "draw", "coins": 0,
+                                      "rating_delta": 0},
+                               "p2": {"outcome": "draw", "coins": 0,
+                                      "rating_delta": 0}}
+
+
+def resolve_time_limit(m, now=None):
+    """Resolve an active match at three minutes by tower integrity fraction."""
+    if not m or m["status"] != "active" or not m["state"].get("towers"):
+        return []
+    now = time.time() if now is None else now
+    started = float(m["state"].get("started_at") or now)
+    if now < started + Config.MATCH_DURATION_SECONDS:
+        return []
+    # Claim resolution before applying economy changes. PythonAnywhere can
+    # serve both players' deadline polls concurrently, but only one may pay.
+    cur = execute("UPDATE matches SET status = 'resolving' WHERE id = ?"
+                  " AND status = 'active'", (m["id"],))
+    if cur.rowcount != 1:
+        current = load_match(m["id"])
+        if current:
+            m.clear(); m.update(current)
+        return []
+    m["status"] = "resolving"
+    hp = {side: tower_hp(m["state"], side) for side in ("p1", "p2")}
+    integrity = {side: (hp[side]["hp"] / hp[side]["max"] if hp[side]["max"] else 0.0)
+                 for side in ("p1", "p2")}
+    if abs(integrity["p1"] - integrity["p2"]) <= 1e-9:
+        finalize_draw(m)
+        event = {"type": "match_end", "winner_side": None,
+                 "reason": "time_limit", "draw": True}
+    else:
+        winner = "p1" if integrity["p1"] > integrity["p2"] else "p2"
+        finalize_match(m, winner)
+        m["state"]["finish_reason"] = "time_limit"
+        event = {"type": "match_end", "winner_side": winner,
+                 "reason": "time_limit"}
+    m["state"]["time_limit_integrity"] = {k: round(v, 6) for k, v in integrity.items()}
+    m["version"] += 1
+    save_match(m)
+    emit_events(m["id"], m["version"], [event])
+    return [event]
+
+
 def side_for(m, user_id):
     if m["p1"] == user_id:
         return "p1"
@@ -291,6 +341,10 @@ def match_snapshot(m, user_id, since):
         "last_shot_at": state.get("last_shot_at"),
         "winner_side": state.get("winner_side"),
         "results": state.get("results"),
+        "finish_reason": state.get("finish_reason"),
+        "time_limit_integrity": state.get("time_limit_integrity"),
+        "match_ends_at": ((state.get("started_at") or 0) + Config.MATCH_DURATION_SECONDS
+                          if m["status"] == "active" else None),
         "ready": state.get("ready", {}),
         "ai_difficulty": state.get("ai_difficulty"),
         "ai_tier": state.get("ai_tier"),
@@ -331,7 +385,8 @@ def sweep_stale_matches():
     void outcome (never a ranked loss, no coin movement) so both players become
     eligible for quick-match invites again. A 'waiting' match whose owner
     stopped polling for WAITING_MATCH_STALE_SECONDS will never find an
-    opponent: purge it like a player leaving the lobby. Free tier has no
+    opponent: purge it like a player leaving the lobby. Both windows default
+    to five minutes. Free tier has no
     always-on task runner, so API traffic carries this sweep, throttled to one
     run per STALE_SWEEP_INTERVAL_SECONDS per worker."""
     global _sweep_last_run
@@ -946,6 +1001,9 @@ def match_state(mid):
         since = max(0, int(request.args.get("since", 0)))
     except (TypeError, ValueError):
         return jsonify({"error": "bad_since"}), 400
+    # The match clock is server-authoritative. Resolve it before a bot or
+    # player can take another shot after the deadline.
+    resolve_time_limit(m)
     # AI opponent acts on poll when its cooldown has elapsed (+ reaction delay)
     if m["p2_ai"] and m["status"] == "active":
         last = (m["state"].get("last_shot_at") or {}).get("p2") or 0.0
@@ -965,7 +1023,9 @@ def match_state(mid):
                 m["version"] += 1
                 if won:
                     finalize_match(m, "p2")
-                    events.append({"type": "match_end", "winner_side": "p2"})
+                    m["state"]["finish_reason"] = "tower_destroyed"
+                    events.append({"type": "match_end", "winner_side": "p2",
+                                   "reason": "tower_destroyed"})
                 save_match(m)
                 emit_events(mid, m["version"], events)
             except Exception:
@@ -1006,6 +1066,7 @@ def match_fire(mid):
     side = side_for(m, g.user["id"]) if m else None
     if not m or side is None:
         return jsonify({"error": "not_found"}), 404
+    resolve_time_limit(m)
     if m["status"] != "active":
         return jsonify({"error": "not_active",
                         "error_he": "המשחק לא פעיל."}), 400
@@ -1036,7 +1097,9 @@ def match_fire(mid):
     m["version"] += 1
     if won:
         finalize_match(m, side)
-        events.append({"type": "match_end", "winner_side": side})
+        m["state"]["finish_reason"] = "tower_destroyed"
+        events.append({"type": "match_end", "winner_side": side,
+                       "reason": "tower_destroyed"})
     save_match(m)
     emit_events(mid, m["version"], events)
     snap = match_snapshot(m, g.user["id"], m["version"] - 1)

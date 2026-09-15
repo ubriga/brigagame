@@ -21,7 +21,10 @@ PythonAnywhere free tier has no WebSockets, so sync is HTTP short-polling
 with a `since=<version>` cursor (cheap empty responses when nothing changed).
 Polling is adaptive: ~0.8s right after activity, backing off to ~2.6s when
 idle and ~5s in hidden tabs, so exchanges feel live without hammering the
-free tier. Artillery shots are discrete events, so this feels live.
+free tier. Artillery shots are discrete events, so this feels live. Matches
+run for three minutes; at the deadline the higher remaining tower-integrity
+fraction wins and equal integrity is a neutral draw. Open or abandoned
+matches are cleared after five minutes.
 
 Quick match also invites players who are simply present anywhere in the app
 (an app-wide presence pulse every 8s marks them active), not only players who
