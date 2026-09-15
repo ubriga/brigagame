@@ -628,21 +628,60 @@ const GameView = {
     if (this.shake > 0.3)
       c.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
 
-    // sky
+    // Layered illustrated battlefield. Each layer drifts at a different
+    // speed, creating parallax without affecting any server-owned geometry.
     const sky = c.createLinearGradient(0, 0, 0, this.H);
-    sky.addColorStop(0, "#1e3a5f"); sky.addColorStop(1, "#0f1e33");
+    sky.addColorStop(0, "#0a2943"); sky.addColorStop(.55, "#15506a");
+    sky.addColorStop(1, "#e09a62");
     c.fillStyle = sky; c.fillRect(-20, -20, this.W + 40, this.H + 40);
-    // clouds
-    c.fillStyle = "rgba(255,255,255,0.07)";
-    const ct = now / 4000;
-    for (let i = 0; i < 4; i++) {
-      const cx = ((i * 260 + ct * (20 + i * 7)) % 1200) - 100;
-      c.beginPath(); c.ellipse(cx, 60 + i * 32, 60, 16, 0, 0, 7); c.fill();
+
+    // moon glow and sparse stars keep the same teal/amber palette.
+    const moon = c.createRadialGradient(790, 88, 3, 790, 88, 56);
+    moon.addColorStop(0, "rgba(255,239,190,.94)");
+    moon.addColorStop(.28, "rgba(244,201,93,.44)"); moon.addColorStop(1, "rgba(244,201,93,0)");
+    c.fillStyle = moon; c.beginPath(); c.arc(790, 88, 56, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "rgba(255,244,211,.55)";
+    for (let i = 0; i < 18; i++) {
+      const sx = (i * 83 + 31) % this.W, sy = 24 + (i * 47) % 150;
+      c.fillRect(sx, sy, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
     }
-    // ground
-    const g = c.createLinearGradient(0, this.GROUND, 0, this.H);
-    g.addColorStop(0, "#3f6212"); g.addColorStop(1, "#1a2e05");
-    c.fillStyle = g; c.fillRect(-20, this.GROUND, this.W + 40, this.H - this.GROUND + 20);
+
+    const secs = now / 1000;
+    const mountainLayer = (baseY, color, speed, peaks) => {
+      const off = (secs * speed) % 260;
+      c.fillStyle = color; c.beginPath(); c.moveTo(-300, this.GROUND);
+      for (let i = -2; i < peaks + 2; i++) {
+        const x = i * 260 - off;
+        c.lineTo(x, baseY + (i % 2 ? 18 : 0));
+        c.lineTo(x + 125, baseY - 115 - (i % 3) * 18);
+        c.lineTo(x + 260, baseY + (i % 2 ? 18 : 0));
+      }
+      c.lineTo(this.W + 300, this.GROUND); c.closePath(); c.fill();
+    };
+    mountainLayer(420, "rgba(20,62,73,.54)", 1.2, 6);
+    mountainLayer(466, "rgba(12,47,56,.88)", 3.0, 6);
+
+    // Two cloud belts use independent drift rates and softly grouped shapes.
+    const cloudLayer = (y, speed, alpha, scale, phase) => {
+      c.save(); c.fillStyle = `rgba(234,240,224,${alpha})`;
+      const off = (secs * speed + phase) % 1240;
+      for (let i = 0; i < 4; i++) {
+        const x = ((i * 330 + off) % 1320) - 160;
+        c.beginPath(); c.ellipse(x, y + i * 12, 52 * scale, 15 * scale, 0, 0, Math.PI * 2);
+        c.ellipse(x + 42 * scale, y + i * 12 + 3, 38 * scale, 12 * scale, 0, 0, Math.PI * 2);
+        c.ellipse(x - 35 * scale, y + i * 12 + 5, 31 * scale, 10 * scale, 0, 0, Math.PI * 2); c.fill();
+      }
+      c.restore();
+    };
+    cloudLayer(78, 4.5, .14, 1.05, 0);
+    cloudLayer(165, 9.5, .22, .72, 410);
+
+    // Ground with a warm rim, tying the battlefield to the interface palette.
+    const g = c.createLinearGradient(0, this.GROUND - 9, 0, this.H);
+    g.addColorStop(0, "#d08b4e"); g.addColorStop(.14, "#41694e"); g.addColorStop(1, "#183b35");
+    c.fillStyle = g; c.fillRect(-20, this.GROUND - 4, this.W + 40, this.H - this.GROUND + 24);
+    c.fillStyle = "rgba(244,201,93,.20)";
+    for (let x = 8; x < this.W; x += 34) c.fillRect(x, this.GROUND + 8 + (x % 3) * 3, 19, 2);
 
     // towers + HP bars and capped, deterministic idle life.
     for (const side of ["p1", "p2"]) {
@@ -880,62 +919,78 @@ const GameView = {
     const fill = style.fill || cols;
     const hpInfo = (this.displayHp || this.snap.tower_hp || {})[side];
     const blockMax = hpInfo && hpInfo.max ? hpInfo.max / (this.TROWS * this.TCOLS) : 15;
-    for (let r = 0; r < this.TROWS; r++) {
-      for (let col = 0; col < this.TCOLS; col++) {
-        const hp = tower[r][col];
-        if (hp <= 0) continue;
-        const x = this.TX[side] + col * this.BLOCK;
-        const y = this.GROUND - (this.TROWS - r) * this.BLOCK;
-        const frac = Math.min(1, hp / blockMax);
-        c.save();
-        if (style.glow) { c.shadowColor = style.glow; c.shadowBlur = 8; }
-        const grad = c.createLinearGradient(x, y, x + this.BLOCK, y + this.BLOCK);
-        grad.addColorStop(0, fill[0]); grad.addColorStop(1, fill[1] || fill[0]);
-        c.fillStyle = grad;
-        c.globalAlpha = 0.45 + 0.55 * frac;
-        c.fillRect(x + 1, y + 1, this.BLOCK - 2, this.BLOCK - 2);
-        c.globalAlpha = 1; c.shadowBlur = 0;
-        c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2;
-        c.strokeRect(x + 1, y + 1, this.BLOCK - 2, this.BLOCK - 2);
-        c.globalAlpha = 0.22;
-        c.strokeStyle = style.frame || "#fff"; c.lineWidth = 1;
-        if (style.texture === "brick" && (r + col) % 2 === 0) {
-          c.beginPath(); c.moveTo(x + 2, y + this.BLOCK / 2); c.lineTo(x + this.BLOCK - 2, y + this.BLOCK / 2); c.stroke();
-        } else if (style.texture === "steel") {
-          c.beginPath(); c.moveTo(x + 5, y + 5); c.lineTo(x + this.BLOCK - 5, y + this.BLOCK - 5); c.stroke();
-          c.fillStyle = style.frame || "#fff"; c.beginPath(); c.arc(x + 5, y + 5, 1.5, 0, 7); c.fill();
-        } else if (style.texture === "neon") {
-          c.beginPath(); c.moveTo(x + 3, y + this.BLOCK - 4); c.lineTo(x + this.BLOCK - 4, y + 3); c.stroke();
-        }
-        c.restore();
-        if (frac < 0.72) {  // cracked -> broken intermediate damage states
-          c.strokeStyle = "rgba(0,0,0,.62)"; c.lineWidth = frac < 0.35 ? 2.2 : 1.4;
-          c.beginPath(); c.moveTo(x + 5, y + 4); c.lineTo(x + 13, y + 12);
-          c.lineTo(x + 9, y + 22); c.moveTo(x + 21, y + 5); c.lineTo(x + 14, y + 13);
-          if (frac < 0.35) { c.moveTo(x + 3, y + 17); c.lineTo(x + 13, y + 12); c.lineTo(x + 23, y + 20); }
-          c.stroke();
-        }
+    const towerX = this.TX[side], towerY = this.GROUND - this.TROWS * this.BLOCK;
+
+    // Deep silhouette makes every skin read as the same chunky fortress style.
+    c.save(); c.fillStyle = "rgba(2,11,19,.32)";
+    c.beginPath(); c.roundRect(towerX - 7, towerY + 5, this.TCOLS * this.BLOCK + 14,
+      this.TROWS * this.BLOCK - 1, 10); c.fill(); c.restore();
+
+    for (let r = 0; r < this.TROWS; r++) for (let col = 0; col < this.TCOLS; col++) {
+      const hp = tower[r][col];
+      if (hp <= 0) continue;
+      const x = towerX + col * this.BLOCK, y = this.GROUND - (this.TROWS - r) * this.BLOCK;
+      const frac = Math.min(1, hp / blockMax), stagger = r % 2 ? 2 : 0;
+      c.save();
+      if (style.glow) { c.shadowColor = style.glow; c.shadowBlur = 8; }
+      const grad = c.createLinearGradient(x, y, x + this.BLOCK, y + this.BLOCK);
+      grad.addColorStop(0, fill[0]); grad.addColorStop(.62, fill[1] || fill[0]);
+      grad.addColorStop(1, style.frame || cols[1]);
+      c.fillStyle = grad; c.globalAlpha = .48 + .52 * frac;
+      c.beginPath(); c.roundRect(x + 1 + stagger * .12, y + 1, this.BLOCK - 2, this.BLOCK - 2, 4); c.fill();
+      c.globalAlpha = 1; c.shadowBlur = 0;
+      c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2;
+      c.beginPath(); c.roundRect(x + 1 + stagger * .12, y + 1, this.BLOCK - 2, this.BLOCK - 2, 4); c.stroke();
+      // Bevel and mortar lines replace the flat block look.
+      c.strokeStyle = "rgba(255,255,255,.22)"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(x + 5, y + 5); c.lineTo(x + this.BLOCK - 6, y + 5); c.stroke();
+      c.strokeStyle = "rgba(2,11,19,.24)";
+      c.beginPath(); c.moveTo(x + 5, y + this.BLOCK - 4); c.lineTo(x + this.BLOCK - 5, y + this.BLOCK - 4); c.stroke();
+      if (style.texture === "brick" && (r + col) % 2 === 0) {
+        c.beginPath(); c.moveTo(x + 3, y + this.BLOCK / 2); c.lineTo(x + this.BLOCK - 3, y + this.BLOCK / 2); c.stroke();
+      } else if (style.texture === "steel") {
+        c.fillStyle = style.frame || "#fff";
+        for (const px of [x + 6, x + this.BLOCK - 6]) { c.beginPath(); c.arc(px, y + 7, 1.6, 0, Math.PI * 2); c.fill(); }
+      } else if (style.texture === "neon") {
+        c.strokeStyle = style.glow || "rgba(255,255,255,.34)";
+        c.beginPath(); c.moveTo(x + 4, y + this.BLOCK - 5); c.lineTo(x + this.BLOCK - 5, y + 4); c.stroke();
+      }
+      c.restore();
+      if (frac < .72) {
+        c.strokeStyle = "rgba(2,11,19,.68)"; c.lineWidth = frac < .35 ? 2.2 : 1.4;
+        c.beginPath(); c.moveTo(x + 5, y + 4); c.lineTo(x + 13, y + 12); c.lineTo(x + 9, y + 22);
+        c.moveTo(x + 21, y + 5); c.lineTo(x + 14, y + 13);
+        if (frac < .35) { c.moveTo(x + 3, y + 17); c.lineTo(x + 13, y + 12); c.lineTo(x + 23, y + 20); }
+        c.stroke();
       }
     }
-    // A destroyed block lingers briefly as cracked, then broken, then falls away.
+
+    // Consistent crown, doorway and corner trim turn the destructible grid
+    // into a recognisable tower while preserving block-by-block damage.
+    c.save(); c.strokeStyle = style.frame || cols[1]; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(towerX - 4, towerY + 2); c.lineTo(towerX - 4, this.GROUND);
+    c.moveTo(towerX + this.TCOLS * this.BLOCK + 4, towerY + 2);
+    c.lineTo(towerX + this.TCOLS * this.BLOCK + 4, this.GROUND); c.stroke();
+    c.fillStyle = "rgba(2,11,19,.45)";
+    c.beginPath(); c.roundRect(towerX + this.TCOLS * this.BLOCK / 2 - 13, this.GROUND - 30, 26, 30, [12,12,2,2]); c.fill();
+    c.fillStyle = "rgba(244,201,93,.62)"; c.beginPath(); c.arc(towerX + this.TCOLS * this.BLOCK / 2 + 6, this.GROUND - 14, 2, 0, Math.PI * 2); c.fill();
+    c.restore();
+
     for (const b of this.blockTransitions) if (b.side === side) {
       const q = Math.min(1, b.age / b.life), p = this.blockCenter(side, b.r, b.col);
-      const x = p.x - this.BLOCK / 2, y = p.y - this.BLOCK / 2;
       c.save(); c.translate(p.x, p.y); c.rotate((q > .5 ? q - .5 : 0) * (side === "p1" ? .18 : -.18));
       const scale = q < .5 ? 1 : 1 - (q - .5) * .55; c.scale(scale, scale);
       c.globalAlpha = 1 - Math.max(0, q - .72) / .28;
-      c.fillStyle = fill[0]; c.fillRect(-this.BLOCK / 2 + 1, -this.BLOCK / 2 + 1, this.BLOCK - 2, this.BLOCK - 2);
-      c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2; c.strokeRect(-this.BLOCK / 2 + 1, -this.BLOCK / 2 + 1, this.BLOCK - 2, this.BLOCK - 2);
-      c.strokeStyle = "rgba(0,0,0,.75)"; c.lineWidth = q < .5 ? 1.5 : 2.5;
-      c.beginPath(); c.moveTo(-8,-9); c.lineTo(1,-1); c.lineTo(-5,10); c.moveTo(9,-7); c.lineTo(1,-1); c.lineTo(10,8); c.stroke(); c.restore();
+      c.fillStyle = fill[0]; c.beginPath(); c.roundRect(-this.BLOCK / 2 + 1, -this.BLOCK / 2 + 1, this.BLOCK - 2, this.BLOCK - 2, 4); c.fill();
+      c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2; c.stroke();
+      c.strokeStyle = "rgba(2,11,19,.75)"; c.beginPath(); c.moveTo(-8,-9); c.lineTo(1,-1); c.lineTo(-5,10); c.moveTo(9,-7); c.lineTo(1,-1); c.lineTo(10,8); c.stroke(); c.restore();
     }
     if (style.emblem) {
       const w = this.TCOLS * this.BLOCK, h = this.TROWS * this.BLOCK;
       c.save(); c.textAlign = "center"; c.textBaseline = "middle";
       c.font = `bold ${Math.round(this.BLOCK * 1.35)}px sans-serif`;
       c.fillStyle = style.frame || "#fff"; c.shadowColor = style.glow || "transparent"; c.shadowBlur = 12;
-      c.globalAlpha = 0.82; c.fillText(style.emblem, this.TX[side] + w / 2, this.GROUND - h / 2);
-      c.restore();
+      c.globalAlpha = .82; c.fillText(style.emblem, towerX + w / 2, this.GROUND - h / 2); c.restore();
     }
   },
 
@@ -962,20 +1017,24 @@ const GameView = {
     const c = this.ctx, m = this.muzzle(side);
     const isMe = side === this.mySide();
     const idle = !this.aiming && performance.now() - this.lastActionAt > 900;
-    const sway = idle ? Math.sin(this.idleClock * 1.25 + (side === "p2" ? 1.7 : 0)) * 0.8 : 0;
+    const sway = idle ? Math.sin(this.idleClock * 1.25 + (side === "p2" ? 1.7 : 0)) * .8 : 0;
     const ang = ((this.displayAngles[side] ?? (isMe ? this.aimAngle : 45)) + sway) * Math.PI / 180;
-    const f = side === "p1" ? 1 : -1;
-    const rt = this.cannonRecoil[side] || 0;
-    const rp = rt > 0 ? 1 - rt / 0.34 : 1;
-    // Fast kick followed by an eased return to the resting position.
+    const f = side === "p1" ? 1 : -1, rt = this.cannonRecoil[side] || 0;
+    const rp = rt > 0 ? 1 - rt / .34 : 1;
     const kick = rp < .24 ? 7 * (rp / .24) : 7 * (1 - Math.pow((rp - .24) / .76, .55));
-    c.save(); c.translate(m.x - f * Math.cos(ang) * kick, m.y + Math.sin(ang) * kick);
-    c.rotate(-f * ang);
-    c.fillStyle = "#475569";
-    c.fillRect(0, -5, 30 * f, 10);
-    c.restore();
-    c.fillStyle = "#64748b";
-    c.beginPath(); c.arc(m.x, m.y, 9, 0, 7); c.fill();
+    c.save(); c.translate(m.x - f * Math.cos(ang) * kick, m.y + Math.sin(ang) * kick); c.rotate(-f * ang);
+    // Tapered, banded barrel in the shared navy/brass art direction.
+    const barrel = c.createLinearGradient(0, -7, 0, 7);
+    barrel.addColorStop(0, "#8aa2ad"); barrel.addColorStop(.45, "#3c5967"); barrel.addColorStop(1, "#183543");
+    c.fillStyle = barrel; c.strokeStyle = "#071b2d"; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, -7); c.lineTo(32 * f, -5); c.lineTo(32 * f, 5); c.lineTo(0, 7); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = "#d79b48"; c.fillRect(8 * f - (f < 0 ? 4 : 0), -8, 5, 16);
+    c.fillStyle = "#f4c95d"; c.fillRect(27 * f - (f < 0 ? 5 : 0), -7, 5, 14); c.restore();
+    const hub = c.createRadialGradient(m.x - 3, m.y - 3, 1, m.x, m.y, 12);
+    hub.addColorStop(0, "#f4c95d"); hub.addColorStop(.36, "#d08b4e"); hub.addColorStop(1, "#60452f");
+    c.fillStyle = hub; c.strokeStyle = "#071b2d"; c.lineWidth = 2;
+    c.beginPath(); c.arc(m.x, m.y, 11, 0, Math.PI * 2); c.fill(); c.stroke();
+    c.fillStyle = "#173d54"; c.beginPath(); c.arc(m.x, m.y, 4, 0, Math.PI * 2); c.fill();
   },
 
   drawAim() {
