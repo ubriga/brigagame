@@ -10,7 +10,8 @@ Tank Stars and Worms-style economies).
 
 # ---------------------------------------------------------------- currency
 STARTING_COINS = 200          # welcome grant so a new player can try the store
-COINS_PER_WIN = 100
+COINS_PER_WIN = 50
+MAX_COINS_PER_WIN = 50
 COINS_PER_LOSS = 20           # consolation so playing never feels punished
 COINS_PER_DAMAGE = 0.1        # 1 coin per 10 damage dealt...
 MAX_HIT_COINS_PER_MATCH = 40  # ...capped to stop farming/stalling abuse

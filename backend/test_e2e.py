@@ -274,6 +274,7 @@ check("kill shot ends practice match", s == 200, str(r))
 s, st = call("GET", f"/api/matches/{easy_id}/state?since=0", token=tb)
 check("practice match won by player",
       st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
+check("practice win reward capped at 50", st["results"]["p1"]["coins"] <= 50)
 check("practice results marked",
       st["results"]["p1"].get("practice") is True)
 check("practice win awards 0 rank points",
@@ -298,6 +299,7 @@ s, r = call("POST", f"/api/matches/{nid}/fire", token=tc,
 s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
 check("normal bot match won by player",
       st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
+check("ranked bot win reward capped at 50", st["results"]["p1"]["coins"] <= 50)
 check("normal bot win awards half a rank point",
       st["results"]["p1"].get("rank_points_awarded") == 0.5,
       json.dumps(st["results"]["p1"]))
