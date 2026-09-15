@@ -237,6 +237,14 @@ const App = {
         </div>
         <div class="card">
           <h2>📊 הסטטיסטיקה שלך</h2>
+          <div class="rank-progress-card">
+            <div class="rank-progress-head">
+              <span>דרגה נוכחית: <b>${esc(u.idf_rank.name_he)} (${esc(u.idf_rank.abbr_he)})</b></span>
+              <span>${u.idf_rank.next ? `הבאה: <b>${esc(u.idf_rank.next.name_he)} (${esc(u.idf_rank.next.abbr_he)})</b>` : "הגעת לדרגה הגבוהה ביותר"}</span>
+            </div>
+            <div class="rank-progress-track"><div style="width:${u.idf_rank.progress_pct}%"></div></div>
+            <p>${u.idf_rank.next ? `נשארו <b>${u.idf_rank.next.wins_to_go}</b> נקודות דרגה לקידום` : "רא״ל - דרגה מרבית"}</p>
+          </div>
           <div class="stat-row">
             <span><b>${u.rating}</b>דירוג (${esc(u.rank)})</span>
             <span><b>${u.wins}</b>נצחונות</span>
