@@ -5,6 +5,10 @@ const GameView = {
   canvas: null, ctx: null, scale: 1,
   weapon: "standard", ammo: {},
   aiming: false, aimAngle: 45, aimPower: 50,
+  // Presentation-only motion state. Gameplay continues to use aimAngle and
+  // server snapshots, while the canvas eases between visual states.
+  displayAngles: { p1: 45, p2: 45 }, cannonRecoil: { p1: 0, p2: 0 },
+  blockTransitions: [], idleClock: 0, lastActionAt: 0,
   _rankImgs: {},
   anims: [], processing: false,
   // Small pooled FX budget keeps impact effects smooth on mobile. Particles
@@ -25,6 +29,9 @@ const GameView = {
     this.weapon = "standard"; this.snap = null;
     this.displayTowers = null; this.displayHp = null; this.pendingTowers = null;
     this.shake = 0; this.endAt = null; this.ended = false; this.readySent = false;
+    this.displayAngles = { p1: 45, p2: 45 };
+    this.cannonRecoil = { p1: 0, p2: 0 };
+    this.blockTransitions = []; this.idleClock = 0; this.lastActionAt = performance.now();
     this.reconnectFailures = 0;
     root.innerHTML = `
       <div id="game-hud">
@@ -347,6 +354,8 @@ const GameView = {
   async fire() {
     if (!this.canFire()) return;
     this.firing = true;
+    this.startRecoil(this.mySide());
+    this.lastActionAt = performance.now();
     Sfx.play("shot");
     // Optimistic launch: mirror the server's ballistics locally so the shell
     // leaves the barrel the instant the finger/mouse releases instead of
@@ -438,6 +447,10 @@ const GameView = {
         const dur = Math.max(0.6, Math.min(2.2, ev.points.length * 0.09));
         this.anims.push({ kind: "shot", points: ev.points, t: -delay, dur,
                           weapon: ev.weapon, side: ev.side });
+        // Remote shots recoil when their sequenced shell leaves the barrel.
+        // The local optimistic launch already kicked, so do not double-trigger it.
+        if (ev.side !== this.mySide())
+          this.anims.push({ kind: "recoil", side: ev.side, t: -delay, dur: 0.34 });
         delay += dur;
       } else if (ev.type === "explosion") {
         const dmg = ev.damage || 0;
@@ -470,6 +483,23 @@ const GameView = {
       }
     }
     return lastImpact;
+  },
+
+  startRecoil(side) {
+    if (!side) return;
+    this.cannonRecoil[side] = 0.34;
+  },
+
+  beginTowerTransition(oldTowers, newTowers) {
+    if (!oldTowers || !newTowers) return;
+    for (const side of ["p1", "p2"]) for (let r = 0; r < this.TROWS; r++) {
+      for (let col = 0; col < this.TCOLS; col++) {
+        const before = oldTowers[side]?.[r]?.[col] || 0;
+        const after = newTowers[side]?.[r]?.[col] || 0;
+        if (before > 0 && after <= 0 && this.blockTransitions.length < 24)
+          this.blockTransitions.push({ side, r, col, hp: before, age: 0, life: 0.46 });
+      }
+    }
   },
 
   takeParticle() {
@@ -529,6 +559,7 @@ const GameView = {
       const prev = a.t;
       a.t += dt / (a.dur || 1);
       if (a.kind === "sound" && prev < 0 && a.t >= 0) Sfx.play(a.name);
+      if (a.kind === "recoil" && prev < 0 && a.t >= 0) this.startRecoil(a.side);
       if (a.kind === "explosion" && prev < 0.02 && a.t >= 0.02) {
         if (!a.cosmetic) Sfx.play("explosion");
         if (!a.particlesStarted) {
@@ -547,6 +578,15 @@ const GameView = {
     }
     this.shake = Math.max(this.shake, shakeKick);
     this.shake = Math.max(0, this.shake - dt * 34);
+    this.idleClock += dt;
+    for (const side of ["p1", "p2"]) {
+      this.cannonRecoil[side] = Math.max(0, (this.cannonRecoil[side] || 0) - dt);
+      const target = side === this.mySide() ? this.aimAngle : 45;
+      // Exponential easing is frame-rate independent and never overshoots.
+      this.displayAngles[side] += (target - this.displayAngles[side]) * (1 - Math.exp(-dt * 13));
+    }
+    for (const b of this.blockTransitions) b.age += dt;
+    this.blockTransitions = this.blockTransitions.filter(b => b.age < b.life);
 
     const alive = [];
     for (const p of this.particles) {
@@ -570,11 +610,13 @@ const GameView = {
     this.stepAnims(dt);
     this.renderTimer();
 
-    // swap in crumbled tower state at the moment of impact
+    // At impact the authoritative state becomes current. Destroyed blocks
+    // pass through cracked and broken visual stages before disappearing.
     if (this.pendingTowers && now / 1000 >= this.pendingTowers.at) {
+      this.beginTowerTransition(this.displayTowers, this.pendingTowers.towers);
       this.displayTowers = this.pendingTowers.towers;
       this.displayHp = this.pendingTowers.hp;
-      this.pendingTowers = null;
+      this.pendingTowers = null; this.lastActionAt = now;
       this.renderHud();
     }
     // delayed end screen so the winning shot visibly lands first
@@ -602,8 +644,11 @@ const GameView = {
     g.addColorStop(0, "#3f6212"); g.addColorStop(1, "#1a2e05");
     c.fillStyle = g; c.fillRect(-20, this.GROUND, this.W + 40, this.H - this.GROUND + 20);
 
-    // towers + HP bars
-    for (const side of ["p1", "p2"]) { this.drawTower(side); this.drawHpBar(side); this.drawRankBadge(side); }
+    // towers + HP bars and capped, deterministic idle life.
+    for (const side of ["p1", "p2"]) {
+      this.drawIdleLife(side, now / 1000);
+      this.drawTower(side); this.drawHpBar(side); this.drawRankBadge(side);
+    }
     // A struck tower flashes as a whole, independently of the blast glow.
     for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
     // cannons
@@ -803,6 +848,28 @@ const GameView = {
     c.restore();
   },
 
+  drawIdleLife(side, t) {
+    const c = this.ctx, m = this.muzzle(side), f = side === "p1" ? 1 : -1;
+    // Two tiny smoke puffs are computed, not allocated, so idle cost is fixed.
+    for (let i = 0; i < 2; i++) {
+      const phase = (t * 0.12 + i * 0.5 + (side === "p2" ? 0.23 : 0)) % 1;
+      c.save(); c.globalAlpha = 0.13 * (1 - phase);
+      c.fillStyle = "#cbd5e1";
+      c.beginPath(); c.arc(m.x - f * 7 + Math.sin(t + i) * 3,
+        m.y - 13 - phase * 28, 3 + phase * 5, 0, Math.PI * 2); c.fill(); c.restore();
+    }
+    // A small flag gives towers life without particles or extra rAF loops.
+    const poleX = this.TX[side] + (side === "p1" ? 6 : this.TCOLS * this.BLOCK - 6);
+    const topY = this.GROUND - this.TROWS * this.BLOCK - 26;
+    c.save(); c.strokeStyle = "#94a3b8"; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(poleX, topY); c.lineTo(poleX, topY + 30); c.stroke();
+    const wave = Math.sin(t * 2.1 + (side === "p2" ? 1.4 : 0)) * 3;
+    c.fillStyle = side === "p1" ? "#38bdf8" : "#fb7185";
+    c.beginPath(); c.moveTo(poleX, topY); c.quadraticCurveTo(poleX + f * 12, topY + 4 + wave,
+      poleX + f * 24, topY + 8); c.lineTo(poleX + f * 24, topY + 18);
+    c.quadraticCurveTo(poleX + f * 12, topY + 12 + wave, poleX, topY + 11); c.fill(); c.restore();
+  },
+
   drawTower(side) {
     const c = this.ctx, tower = (this.displayTowers || this.snap.towers)[side];
     const rawSkin = this.snap.skins[side] || {};
@@ -841,12 +908,26 @@ const GameView = {
           c.beginPath(); c.moveTo(x + 3, y + this.BLOCK - 4); c.lineTo(x + this.BLOCK - 4, y + 3); c.stroke();
         }
         c.restore();
-        if (frac < 0.65) {  // cracks appear as blocks weaken
-          c.strokeStyle = "rgba(0,0,0,.55)"; c.lineWidth = 1.4;
-          c.beginPath(); c.moveTo(x + 5, y + 5); c.lineTo(x + 18, y + 16);
-          c.moveTo(x + 20, y + 6); c.lineTo(x + 9, y + 21); c.stroke();
+        if (frac < 0.72) {  // cracked -> broken intermediate damage states
+          c.strokeStyle = "rgba(0,0,0,.62)"; c.lineWidth = frac < 0.35 ? 2.2 : 1.4;
+          c.beginPath(); c.moveTo(x + 5, y + 4); c.lineTo(x + 13, y + 12);
+          c.lineTo(x + 9, y + 22); c.moveTo(x + 21, y + 5); c.lineTo(x + 14, y + 13);
+          if (frac < 0.35) { c.moveTo(x + 3, y + 17); c.lineTo(x + 13, y + 12); c.lineTo(x + 23, y + 20); }
+          c.stroke();
         }
       }
+    }
+    // A destroyed block lingers briefly as cracked, then broken, then falls away.
+    for (const b of this.blockTransitions) if (b.side === side) {
+      const q = Math.min(1, b.age / b.life), p = this.blockCenter(side, b.r, b.col);
+      const x = p.x - this.BLOCK / 2, y = p.y - this.BLOCK / 2;
+      c.save(); c.translate(p.x, p.y); c.rotate((q > .5 ? q - .5 : 0) * (side === "p1" ? .18 : -.18));
+      const scale = q < .5 ? 1 : 1 - (q - .5) * .55; c.scale(scale, scale);
+      c.globalAlpha = 1 - Math.max(0, q - .72) / .28;
+      c.fillStyle = fill[0]; c.fillRect(-this.BLOCK / 2 + 1, -this.BLOCK / 2 + 1, this.BLOCK - 2, this.BLOCK - 2);
+      c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2; c.strokeRect(-this.BLOCK / 2 + 1, -this.BLOCK / 2 + 1, this.BLOCK - 2, this.BLOCK - 2);
+      c.strokeStyle = "rgba(0,0,0,.75)"; c.lineWidth = q < .5 ? 1.5 : 2.5;
+      c.beginPath(); c.moveTo(-8,-9); c.lineTo(1,-1); c.lineTo(-5,10); c.moveTo(9,-7); c.lineTo(1,-1); c.lineTo(10,8); c.stroke(); c.restore();
     }
     if (style.emblem) {
       const w = this.TCOLS * this.BLOCK, h = this.TROWS * this.BLOCK;
@@ -880,9 +961,15 @@ const GameView = {
   drawCannon(side) {
     const c = this.ctx, m = this.muzzle(side);
     const isMe = side === this.mySide();
-    const ang = (isMe ? this.aimAngle : 45) * Math.PI / 180;
+    const idle = !this.aiming && performance.now() - this.lastActionAt > 900;
+    const sway = idle ? Math.sin(this.idleClock * 1.25 + (side === "p2" ? 1.7 : 0)) * 0.8 : 0;
+    const ang = ((this.displayAngles[side] ?? (isMe ? this.aimAngle : 45)) + sway) * Math.PI / 180;
     const f = side === "p1" ? 1 : -1;
-    c.save(); c.translate(m.x, m.y);
+    const rt = this.cannonRecoil[side] || 0;
+    const rp = rt > 0 ? 1 - rt / 0.34 : 1;
+    // Fast kick followed by an eased return to the resting position.
+    const kick = rp < .24 ? 7 * (rp / .24) : 7 * (1 - Math.pow((rp - .24) / .76, .55));
+    c.save(); c.translate(m.x - f * Math.cos(ang) * kick, m.y + Math.sin(ang) * kick);
     c.rotate(-f * ang);
     c.fillStyle = "#475569";
     c.fillRect(0, -5, 30 * f, 10);
