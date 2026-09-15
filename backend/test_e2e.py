@@ -2,6 +2,7 @@
 import os, sys, time, json, sqlite3, subprocess, urllib.request
 from datetime import datetime, timezone, timedelta
 
+from ranks import rank_payload
 BASE = "http://127.0.0.1:5000"
 
 def zero_tower(match_id, side):
@@ -190,17 +191,20 @@ wres = st["results"][winner_side]
 lres = st["results"]["p2" if winner_side == "p1" else "p1"]
 check("me exposes idf_rank (level 1 turai at start)",
       "idf_rank" in ma["user"] and "idf_rank" in mb["user"])
-check("1 win does not promote (rabat needs 3)",
+check("rank thresholds are doubled: rabat requires 6 and top rank 700",
+      ma["user"]["idf_rank"]["next"]["wins_required"] == 6
+      and rank_payload(700)["level"] == 18)
+check("1 win does not promote (rabat needs 6)",
       wres["idf_rank"]["level"] == 1 and wres["idf_rank"]["abbr_he"] == "טור׳"
       and "rank_up" not in wres, json.dumps(wres.get("idf_rank")))
 check("loser stays turai with progress",
       lres["idf_rank"]["level"] == 1 and lres["idf_rank"]["next"]["wins_to_go"] >= 2)
 
-# force both players to 2 wins; a quick second match (alice fires, bob leaves)
+# force both players to 5 points; a quick second match (alice fires, bob leaves)
 # makes alice's 3rd win -> promotion to rabat. Leave-win avoids a full match.
 aid_, bid_ = ma["user"]["id"], mb["user"]["id"]
 _db = sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db"), timeout=15)
-_db.execute("UPDATE users SET rank_points = 2, wins = 2 WHERE id IN (?, ?)", (aid_, bid_))
+_db.execute("UPDATE users SET rank_points = 5, wins = 5 WHERE id IN (?, ?)", (aid_, bid_))
 _db.commit(); _db.close()
 s, r = call("POST", "/api/matches/friend", token=ta)
 code2 = r["code"]; mid2 = r["match_id"]
@@ -216,7 +220,7 @@ s, st2x = call("GET", f"/api/matches/{mid2}/state?since=0", token=ta)
 check("promotion match finished for alice",
       st2x["status"] == "finished" and st2x["winner_side"] == "p1", str(st2x.get("status")))
 w2res = st2x["results"]["p1"]
-check("3rd win promotes to rabat (level 2)",
+check("6th point promotes to rabat (level 2)",
       w2res["idf_rank"]["level"] == 2 and w2res["idf_rank"]["abbr_he"] == "רב״ט",
       json.dumps(w2res.get("idf_rank")))
 check("rank_up event on promotion",
@@ -226,7 +230,7 @@ check("rank_up event on promotion",
 _, mw = call("GET", "/api/me", token=ta)
 check("winner me shows level 2 with next threshold",
       mw["user"]["idf_rank"]["level"] == 2
-      and mw["user"]["idf_rank"]["next"]["wins_required"] == 6,
+      and mw["user"]["idf_rank"]["next"]["wins_required"] == 12,
       json.dumps(mw["user"]["idf_rank"]))
 s, lb = call("GET", "/api/leaderboard", token=ta)
 check("leaderboard exposes idf_rank",
@@ -283,7 +287,7 @@ check("practice win awards 0 rank points",
 _, mb2 = call("GET", "/api/me", token=tb)
 check("practice win left rank untouched",
       mb2["user"]["idf_rank"]["level"] == 1
-      and mb2["user"]["idf_rank"]["wins"] == 1.5,
+      and mb2["user"]["idf_rank"]["wins"] == 4.5,
       json.dumps(mb2["user"]["idf_rank"]))
 
 _, gc = call("POST", "/api/auth/dev",
@@ -307,7 +311,7 @@ _, mc = call("GET", "/api/me", token=tc)
 check("half point reflected in rank progress",
       mc["user"]["idf_rank"]["wins"] == 0.5
       and mc["user"]["idf_rank"]["level"] == 1
-      and mc["user"]["idf_rank"]["next"]["wins_to_go"] == 2.5,
+      and mc["user"]["idf_rank"]["next"]["wins_to_go"] == 5.5,
       json.dumps(mc["user"]["idf_rank"]))
 
 # --- rank-point deductions: practice exempt; ranked bots and humans scale
@@ -325,10 +329,10 @@ with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "b
 _, loss_st = call("GET", f"/api/matches/{loss_id}/state?since=0", token=tb)
 check("ranked same-rank bot loss deducts scaled points",
       loss_st["status"] == "finished"
-      and loss_st["results"]["p1"].get("rank_points_lost") == 0.7,
+      and loss_st["results"]["p1"].get("rank_points_lost") == 0.4,
       json.dumps(loss_st.get("results")))
 _, after_loss = call("GET", "/api/me", token=tb)
-check("rank points reduced server-side", after_loss["user"]["idf_rank"]["wins"] == 54.3,
+check("rank points reduced server-side", after_loss["user"]["idf_rank"]["wins"] == 54.6,
       json.dumps(after_loss["user"]["idf_rank"]))
 
 # --- quick match consent + two-way real-time sync

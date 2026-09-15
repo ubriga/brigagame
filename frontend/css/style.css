@@ -210,3 +210,10 @@ footer { line-height: 1.8; }
 #practice-ind { text-align:center; color:var(--gold); font-weight:700; margin:4px 0 0; }
 #practice-ind.hidden { display:none; }
 .practice-note { color:var(--gold); font-weight:600; }
+
+/* visible IDF rank progress in the lobby */
+.rank-progress-card { margin:0 0 14px; padding:12px; border:1px solid #334155; border-radius:12px; background:#0f172a88; }
+.rank-progress-head { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; font-size:13px; }
+.rank-progress-track { height:9px; margin:10px 0 7px; overflow:hidden; border-radius:999px; background:#334155; }
+.rank-progress-track > div { height:100%; background:linear-gradient(90deg,#f59e0b,#fbbf24); transition:width .25s; }
+.rank-progress-card p { margin:0; color:var(--muted); font-size:13px; }
