@@ -4,6 +4,20 @@ from datetime import datetime, timezone, timedelta
 
 BASE = "http://127.0.0.1:5000"
 
+def zero_tower(match_id, side):
+    """Rubble one side's tower via direct DB edit so the next shot wins."""
+    db = sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "brigagame.db"), timeout=15)
+    row = db.execute("SELECT state FROM matches WHERE id = ?", (match_id,)).fetchone()
+    st = json.loads(row[0])
+    st["towers"][side] = [[0] * len(st["towers"][side][0])
+                          for _ in st["towers"][side]]
+    st["last_shot_at"] = {"p1": 0, "p2": 0}   # skip cooldowns for the kill shot
+    db.execute("UPDATE matches SET state = ? WHERE id = ?",
+               (json.dumps(st), match_id))
+    db.commit()
+    db.close()
+
 def call(method, path, token=None, body=None):
     req = urllib.request.Request(BASE + path, method=method)
     req.add_header("Content-Type", "application/json")
@@ -186,7 +200,7 @@ check("loser stays turai with progress",
 # makes alice's 3rd win -> promotion to rabat. Leave-win avoids a full match.
 aid_, bid_ = ma["user"]["id"], mb["user"]["id"]
 _db = sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db"), timeout=15)
-_db.execute("UPDATE users SET wins = 2 WHERE id IN (?, ?)", (aid_, bid_))
+_db.execute("UPDATE users SET rank_points = 2, wins = 2 WHERE id IN (?, ?)", (aid_, bid_))
 _db.commit(); _db.close()
 s, r = call("POST", "/api/matches/friend", token=ta)
 code2 = r["code"]; mid2 = r["match_id"]
@@ -233,6 +247,52 @@ time.sleep(9)
 s, st2 = call("GET", f"/api/matches/{aid}/state?since=0", token=tb)
 ai_shot = any(e["type"] == "shot" and e.get("side") == "p2" for e in st2["events"])
 check("AI fires back on poll", ai_shot)
+
+# --- bot-win rank weighting: easy = practice (0 pts), normal/hard = 0.5
+s, r = call("POST", "/api/matches/ai", token=tb, body={"difficulty": "easy"})
+easy_id = r["match_id"]
+s, st = call("GET", f"/api/matches/{easy_id}/state?since=0", token=tb)
+check("easy bot match flagged as practice", st.get("practice") is True)
+zero_tower(easy_id, "p2")
+s, r = call("POST", f"/api/matches/{easy_id}/fire", token=tb,
+            body={"angle": 45, "power": 60, "weapon": "standard"})
+check("kill shot ends practice match", s == 200, str(r))
+s, st = call("GET", f"/api/matches/{easy_id}/state?since=0", token=tb)
+check("practice match won by player",
+      st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
+check("practice results marked",
+      st["results"]["p1"].get("practice") is True)
+check("practice win awards 0 rank points",
+      st["results"]["p1"].get("rank_points_awarded") == 0,
+      json.dumps(st["results"]["p1"]))
+_, mb2 = call("GET", "/api/me", token=tb)
+check("practice win left rank untouched",
+      mb2["user"]["idf_rank"]["level"] == 1
+      and mb2["user"]["idf_rank"]["wins"] == 2,
+      json.dumps(mb2["user"]["idf_rank"]))
+
+_, gc = call("POST", "/api/auth/dev",
+             body={"email": f"carol-{int(time.time())}@example.com", "name": "Carol"})
+tc = gc["token"]
+s, r = call("POST", "/api/matches/ai", token=tc, body={"difficulty": "normal"})
+nid = r["match_id"]
+s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
+check("normal bot match is not practice", st.get("practice") is False)
+zero_tower(nid, "p2")
+s, r = call("POST", f"/api/matches/{nid}/fire", token=tc,
+            body={"angle": 45, "power": 60, "weapon": "standard"})
+s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
+check("normal bot match won by player",
+      st["status"] == "finished" and st["winner_side"] == "p1", str(st.get("status")))
+check("normal bot win awards half a rank point",
+      st["results"]["p1"].get("rank_points_awarded") == 0.5,
+      json.dumps(st["results"]["p1"]))
+_, mc = call("GET", "/api/me", token=tc)
+check("half point reflected in rank progress",
+      mc["user"]["idf_rank"]["wins"] == 0.5
+      and mc["user"]["idf_rank"]["level"] == 1
+      and mc["user"]["idf_rank"]["next"]["wins_to_go"] == 2.5,
+      json.dumps(mc["user"]["idf_rank"]))
 
 # --- quick match consent + two-way real-time sync
 s, r1 = call("POST", "/api/matches/quick", token=ta)

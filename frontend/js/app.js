@@ -201,7 +201,7 @@ const App = {
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
             <div class="ai-start">
               <select id="ai-difficulty" aria-label="רמת קושי">
-                <option value="easy">קל</option>
+                <option value="easy">קל (משחק תרגול)</option>
                 <option value="normal" selected>רגיל</option>
                 <option value="hard">קשה</option>
               </select>

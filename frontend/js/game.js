@@ -28,6 +28,7 @@ const GameView = {
         <div id="wind-ind">💨 ...</div>
         <div class="player-tag" id="tag-p2"></div>
       </div>
+      <div id="practice-ind" class="hidden">🎯 משחק תרגול - לא נספר לדרגה</div>
       <div id="game-stage">
         <canvas id="game-canvas" width="1000" height="560"></canvas>
         <div id="game-overlay" class="hidden"></div>
@@ -294,6 +295,8 @@ const GameView = {
           <div class="hp-num" style="color:${col}">${pct}%</div>
         </div>`;
     }
+    const pi = document.getElementById("practice-ind");
+    if (pi) pi.classList.toggle("hidden", !s.practice);
     const w = document.getElementById("wind-ind");
     if (w) {
       const v = s.wind || 0;
@@ -816,6 +819,7 @@ const GameView = {
       <p class="end-sub">${iWon ? "מגדל היריב הושמד!" : "המגדל שלך הושמד."}</p>
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
+      ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         <button class="btn" id="again-btn">עוד משחק</button>
