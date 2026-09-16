@@ -1152,13 +1152,20 @@ def match_leave(mid):
 @app.get("/api/leaderboard")
 @require_auth
 def leaderboard():
+    # The leaders' order is the IDF rank ladder (rank_points), the game's
+    # wins-based progression - NOT the Elo-style rating, which moves on a
+    # different curve and can place a lower-ranked player on top. Tie-breaks
+    # (wins, rating, id) make the order fully deterministic on every call.
     rows = q("SELECT id, name, picture, rating, wins, losses, rank_points"
              " FROM users"
-             " WHERE matches_played > 0 ORDER BY rating DESC LIMIT 100")
+             " WHERE matches_played > 0"
+             " ORDER BY rank_points DESC, wins DESC, rating DESC, id ASC"
+             " LIMIT 100")
     return jsonify({"leaderboard": [
         {"id": r["id"], "name": r["name"], "picture": r["picture"],
          "rating": r["rating"], "rank": rank_for(r["rating"]),
          "idf_rank": rank_payload(r["rank_points"]),
+         "rank_points": round(float(r["rank_points"]), 1),
          "wins": r["wins"], "losses": r["losses"]} for r in rows],
         "me": g.user["id"]})
 
