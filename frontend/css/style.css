@@ -12,6 +12,7 @@ body {
     radial-gradient(circle at 88% 30%, rgba(237,155,75,.08), transparent 30rem),
     linear-gradient(155deg, #071b2d, #0b2438 58%, #071725);
   color: var(--text); min-height: 100vh; display: flex; flex-direction: column;
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
 }
 .hidden { display: none !important; }
 a { color: var(--accent); text-decoration: none; }
@@ -85,7 +86,7 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 
 /* game */
 #game-stage { position: relative; width: 100%; animation: stage-in .28s ease-out; }
-#game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: none; background: #071b2d; border: 1px solid rgba(99,170,187,.48); box-shadow: 0 16px 36px rgba(2,11,19,.38), inset 0 0 0 1px rgba(255,255,255,.03); }
+#game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: pan-y; background: #071b2d; border: 1px solid rgba(99,170,187,.48); box-shadow: 0 16px 36px rgba(2,11,19,.38), inset 0 0 0 1px rgba(255,255,255,.03); }
 #game-hud { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .player-tag { display: flex; align-items: center; gap: 8px; background: linear-gradient(145deg, #14364c, #0d293d); padding: 7px 12px; border: 1px solid rgba(78,132,153,.38); border-radius: 12px; font-size: 14px; box-shadow: 0 6px 16px rgba(2,11,19,.18); transition: outline-color .2s ease, transform .2s ease; }
 .player-tag img { width: 26px; height: 26px; border-radius: 50%; }
@@ -288,4 +289,39 @@ footer { border-top-color: rgba(65,199,181,.15); }
 @media (max-width: 640px) {
   .install-card { left: 10px; bottom: 10px; width: calc(100vw - 20px); }
   #install-btn { font-size: 12px; padding: 5px 7px; }
+}
+
+
+/* Match/PWA viewport discipline. The account logout never competes with the
+   confirmed HUD exit. On short phone screens (installed landscape PWAs in
+   particular), keep the whole battlefield visible instead of scaling it to
+   the device width and making it taller than the viewport. */
+body.game-active #logout-btn { display: none !important; }
+/* Compact controls are selected by available space, not a phone model. */
+@media (max-width: 600px), (orientation: landscape) and (max-height: 760px) {
+  body.game-active #topbar { padding: 4px 8px; flex-wrap: nowrap; }
+  body.game-active #topbar nav,
+  body.game-active #coin-chip,
+  body.game-active #rank-chip,
+  body.game-active #user-pic,
+  body.game-active #install-btn,
+  body.game-active .brand .by,
+  body.game-active footer,
+  body.game-active .kbd-help,
+  body.game-active #weapon-bar + .sub { display: none !important; }
+  body.game-active main { padding: 4px 6px; }
+  body.game-active #game-hud { margin-bottom: 4px; flex-wrap: nowrap; }
+  body.game-active #weapon-bar { margin-top: 5px; gap: 5px; justify-content: center; }
+  body.game-active .wpn { padding: 5px 8px; font-size: 12px; }
+  body.game-active #reload-wrap { margin-top: 5px; }
+  body.game-active #aim-info { margin-top: 3px; }
+}
+/* In a short landscape viewport, height is the scarce dimension. Derive the
+   16:9 stage width from the live viewport height; min() still caps it to the
+   available width on narrow devices and split-screen windows. */
+@media (orientation: landscape) and (max-height: 760px) {
+  body.game-active #game-stage {
+    width: min(100%, calc((100dvh - clamp(158px, 27dvh, 194px)) * 1.785714));
+    margin-inline: auto;
+  }
 }

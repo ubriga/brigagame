@@ -183,17 +183,39 @@ const GameView = {
       const el = document.getElementById("aim-info");
       if (el) el.textContent = `זווית ${this.aimAngle}° · עוצמה ${this.aimPower}`;
     };
+    // Touches elsewhere on the battlefield are navigation, not shots. Aiming
+    // must begin near your tower and become a real drag before release fires.
+    // This also lets an ordinary one-finger swipe scroll the compact PWA view.
+    const cancelAim = () => {
+      this.aiming = false;
+      this.aimPointerId = null;
+      this.aimStart = null;
+    };
     cv.addEventListener("pointerdown", (e) => {
       if (!this.canFire()) return;
+      const p = pos(e);
+      const m = this.muzzle(this.mySide());
+      if (Math.hypot(p.x - m.x, p.y - m.y) > 145) return;
       this.aiming = true;
+      this.aimPointerId = e.pointerId;
+      this.aimStart = { clientX: e.clientX, clientY: e.clientY };
       try { cv.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ }
-      updateAim(pos(e));
+      updateAim(p);
     });
-    cv.addEventListener("pointermove", (e) => { if (this.aiming) updateAim(pos(e)); });
+    cv.addEventListener("pointermove", (e) => {
+      if (this.aiming && e.pointerId === this.aimPointerId) updateAim(pos(e));
+    });
     cv.addEventListener("pointerup", (e) => {
-      if (!this.aiming) return;
-      this.aiming = false; updateAim(pos(e)); this.fire();
+      if (!this.aiming || e.pointerId !== this.aimPointerId) return;
+      const start = this.aimStart;
+      const dragged = start && Math.hypot(e.clientX - start.clientX,
+                                          e.clientY - start.clientY) >= 12;
+      cancelAim();
+      if (!dragged) return;
+      updateAim(pos(e));
+      this.fire();
     });
+    cv.addEventListener("pointercancel", cancelAim);
     // Keyboard controls: arrows adjust angle/power, space fires, 1-4 picks a
     // weapon. Shift makes arrow steps bigger. The aim indicator stays visible
     // briefly after a key press so keyboard aiming has visual feedback.
