@@ -28,15 +28,21 @@ const Sfx = {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (AC) this.ctx = new AC();
     }
-    if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
     return this.ctx;
   },
 
   // Called from the first pointer/key gesture anywhere in the app (mobile
-  // autoplay unlock). Harmless to call often.
-  unlock() {
+  // autoplay unlock). Return the resume promise so tests and callers can
+  // observe whether the context was actually unlocked. Starting music here
+  // also covers saved-session launches, which skip the Google login callback.
+  async unlock() {
     const ctx = this.ensure();
-    if (ctx && ctx.state === "suspended") ctx.resume();
+    if (!ctx) return false;
+    if (ctx.state === "suspended") {
+      try { await ctx.resume(); } catch (_) { return false; }
+    }
+    if (!this.muted) this.startMusic();
+    return ctx.state === "running";
   },
 
   // Fetch + decode every sample once. Decoding works even while the context
@@ -68,6 +74,9 @@ const Sfx = {
   play(type) {
     if (this.muted || !this.ensure()) return;
     const ctx = this.ctx;
+    // A sound triggered by a real gesture gets one more best-effort resume.
+    // unlock() is installed in the capture phase, so this normally already ran.
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const buf = this._buffers[type];
     if (buf === "error") { this._synth(type); return; }
     if (!buf) {
