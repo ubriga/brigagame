@@ -144,6 +144,11 @@ const App = {
   route() {
     if (GameView.canvas) GameView.destroy();
     const hash = location.hash || "#/lobby";
+    const inGame = hash.startsWith("#/game/");
+    // The HUD owns match exit. Mark the document so the account logout cannot
+    // appear as a second, confirmation-free exit path during gameplay.
+    document.body.classList.toggle("game-active", inGame);
+    document.body.classList.toggle("login-active", hash.startsWith("#/login"));
     const view = document.getElementById("view");
     document.querySelectorAll("#topbar nav a").forEach(a =>
       a.classList.toggle("active", hash.startsWith("#/" + a.dataset.nav)));
