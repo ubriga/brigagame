@@ -37,6 +37,8 @@ a { color: var(--accent); text-decoration: none; }
 .coins { color: var(--gold); font-weight: 700; }
 .rank { font-size: 12px; color: var(--accent2); }
 #mute-btn, #logout-btn { background: var(--panel2); border: none; color: var(--text); border-radius: 8px; padding: 5px 9px; cursor: pointer; font-size: 15px; }
+#mute-btn, #logout-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 30px; }
+#logout-btn svg, #exit-match-btn svg { display: block; }
 
 main { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 18px 14px; }
 footer { text-align: center; color: var(--muted); font-size: 13px; padding: 16px; border-top: 1px solid #33415544; }
@@ -98,6 +100,11 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 }
 #match-timer { direction:ltr; font-weight:800; color:var(--accent); }
 #match-timer.urgent { color:var(--danger); animation:pulse .8s infinite alternate; }
+/* In-match exit: same power SVG as the header logout button, one icon on
+   every device. Tap reveals the confirmation strip before leaving. */
+#exit-match-btn { background: var(--panel2); border: none; color: var(--text); border-radius: 8px; padding: 5px 9px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 30px; }
+#exit-confirm { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid rgba(231,101,91,.45); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; font-size: 14px; }
+#exit-confirm .exit-note { flex-basis: 100%; text-align: center; font-size: 12px; color: var(--muted); }
 @media (max-width: 600px) {
   #match-info { order:-1; width:100%; justify-content:center; }
   #game-hud .player-tag { flex:1 1 0; min-width:0; padding:6px 8px; }
