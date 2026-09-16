@@ -8,7 +8,7 @@ const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
 function check(label, condition) { if (!condition) throw new Error(label); console.log(`PASS ${label}`); }
 check("manifest is linked", html.includes('rel="manifest" href="manifest.webmanifest"'));
 check("Hebrew RTL manifest", manifest.lang === "he" && manifest.dir === "rtl");
-check("fullscreen landscape install", manifest.display === "fullscreen" && manifest.orientation === "landscape");
+check("mobile-safe standalone install", manifest.display === "standalone" && manifest.orientation === "any" && !manifest.display_override.includes("fullscreen"));
 for (const icon of manifest.icons) check(`icon exists: ${icon.src}`, fs.existsSync(path.join(root, icon.src)));
 check("service worker is registered without HTTP cache", /register\("\.\/sw\.js", \{ updateViaCache: "none" \}\)/.test(fs.readFileSync(path.join(root, "js/pwa.js"), "utf8")));
 check("service worker uses network-first asset fetches", sw.includes('fetch(request, { cache: "no-store" })'));
