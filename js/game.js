@@ -47,7 +47,7 @@ const GameView = {
       <div id="reload-wrap"><div id="reload-bar"></div></div>
       <div id="aim-info">זווית 45° · עוצמה 50</div>
       <div id="weapon-bar"></div>
-      <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז באוויר.</p>
+      <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
         · <b>רווח</b> ירייה · <b>1-4</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
@@ -115,12 +115,18 @@ const GameView = {
 
   mySide() { return this.snap ? this.snap.you : "p1"; },
   facing() { return this.mySide() === "p1" ? 1 : -1; },
+  // Tower left edge for this match. The server randomizes the layout every
+  // game and sends it in the snapshot; TX is only the pre-snapshot fallback.
+  tx(side) {
+    const laid = this.snap && this.snap.tower_x;
+    return laid && laid[side] != null ? laid[side] : this.TX[side];
+  },
   muzzle(side) {
-    return { x: this.TX[side] + this.TCOLS * this.BLOCK / 2,
+    return { x: this.tx(side) + this.TCOLS * this.BLOCK / 2,
              y: this.GROUND - this.TROWS * this.BLOCK - 8 };
   },
   blockCenter(side, r, c) {
-    return { x: this.TX[side] + c * this.BLOCK + this.BLOCK / 2,
+    return { x: this.tx(side) + c * this.BLOCK + this.BLOCK / 2,
              y: this.GROUND - (this.TROWS - r) * this.BLOCK + this.BLOCK / 2 };
   },
 
@@ -312,6 +318,14 @@ const GameView = {
     if (w) {
       const v = s.wind || 0;
       w.textContent = `💨 ${v === 0 ? "ללא רוח" : (v > 0 ? "→" : "←") + " " + Math.abs(v)}`;
+      // Wind re-rolls after every shot; flash the pill so the new value
+      // registers before the player lines up the next shot.
+      if (this._lastWind !== undefined && this._lastWind !== v) {
+        w.classList.remove("wind-flash");
+        void w.offsetWidth;  // restart the CSS animation
+        w.classList.add("wind-flash");
+      }
+      this._lastWind = v;
     }
     this.renderTimer();
   },
@@ -813,7 +827,7 @@ const GameView = {
     c.shadowColor = "#fff"; c.shadowBlur = 20;
     for (let r = 0; r < this.TROWS; r++) for (let col = 0; col < this.TCOLS; col++) {
       if (tower[r][col] <= 0) continue;
-      const x = this.TX[side] + col * this.BLOCK;
+      const x = this.tx(side) + col * this.BLOCK;
       const y = this.GROUND - (this.TROWS - r) * this.BLOCK;
       c.fillRect(x + 1, y + 1, this.BLOCK - 2, this.BLOCK - 2);
     }
@@ -879,7 +893,7 @@ const GameView = {
     const img = this.rankImg(rank.insignia);
     if (!img.complete || !img.naturalWidth) return;
     const c = this.ctx, size = 40;
-    const x = this.TX[side] + this.TCOLS * this.BLOCK / 2 - size / 2;
+    const x = this.tx(side) + this.TCOLS * this.BLOCK / 2 - size / 2;
     const y = this.GROUND - this.TROWS * this.BLOCK + 4;
     c.save();
     c.shadowColor = "rgba(0,0,0,.5)"; c.shadowBlur = 6;
@@ -898,7 +912,7 @@ const GameView = {
         m.y - 13 - phase * 28, 3 + phase * 5, 0, Math.PI * 2); c.fill(); c.restore();
     }
     // A small flag gives towers life without particles or extra rAF loops.
-    const poleX = this.TX[side] + (side === "p1" ? 6 : this.TCOLS * this.BLOCK - 6);
+    const poleX = this.tx(side) + (side === "p1" ? 6 : this.TCOLS * this.BLOCK - 6);
     const topY = this.GROUND - this.TROWS * this.BLOCK - 26;
     c.save(); c.strokeStyle = "#94a3b8"; c.lineWidth = 2;
     c.beginPath(); c.moveTo(poleX, topY); c.lineTo(poleX, topY + 30); c.stroke();
@@ -919,7 +933,7 @@ const GameView = {
     const fill = style.fill || cols;
     const hpInfo = (this.displayHp || this.snap.tower_hp || {})[side];
     const blockMax = hpInfo && hpInfo.max ? hpInfo.max / (this.TROWS * this.TCOLS) : 15;
-    const towerX = this.TX[side], towerY = this.GROUND - this.TROWS * this.BLOCK;
+    const towerX = this.tx(side), towerY = this.GROUND - this.TROWS * this.BLOCK;
 
     // Deep silhouette makes every skin read as the same chunky fortress style.
     c.save(); c.fillStyle = "rgba(2,11,19,.32)";
@@ -1000,7 +1014,7 @@ const GameView = {
     if (!hp || !hp.max) return;
     const frac = Math.max(0, hp.hp / hp.max);
     const w = this.TCOLS * this.BLOCK + 24, h = 14;
-    const x = this.TX[side] - 12, y = this.GROUND - this.TROWS * this.BLOCK - 46;
+    const x = this.tx(side) - 12, y = this.GROUND - this.TROWS * this.BLOCK - 46;
     c.save();
     c.fillStyle = "rgba(10,15,30,.72)";
     c.beginPath(); c.roundRect(x - 3, y - 3, w + 6, h + 6, 8); c.fill();
