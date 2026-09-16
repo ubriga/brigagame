@@ -1,5 +1,5 @@
 """End-to-end API test: 2-client scripted match + store, coupons, admin."""
-import os, sys, time, json, sqlite3, subprocess, urllib.request
+import os, sys, time, json, math, sqlite3, subprocess, urllib.request
 from datetime import datetime, timezone, timedelta
 
 from ranks import rank_payload
@@ -152,11 +152,27 @@ s, st = call("GET", f"/api/matches/{mid}/state?since=0", token=ta)
 check("state snapshot", s == 200 and st["you"] == "p1" and st["status"] == "active")
 check("towers present", len(st["towers"]["p1"]) == 6 and len(st["towers"]["p2"]) == 6)
 check("wind present", isinstance(st["wind"], float))
+check("random layout present and legal",
+      isinstance(st.get("tower_x"), dict)
+      and 60 <= st["tower_x"]["p1"] <= 260
+      and 640 <= st["tower_x"]["p2"] <= 840
+      and st["tower_x"]["p2"] - (st["tower_x"]["p1"] + 104) >= 276,
+      json.dumps(st.get("tower_x")))
 
 # cooldown enforcement: fire twice rapidly
 s, r = call("POST", f"/api/matches/{mid}/fire", token=ta,
             body={"angle": 45, "power": 60, "weapon": "standard"})
 check("alice fires", s == 200 and any(e["type"] == "shot" for e in r["events"]), str(s))
+# Dynamic wind: every shot re-rolls the wind and reports it as an event.
+_wind_evs = [e for e in r["events"] if e.get("type") == "wind"]
+check("shot returns a wind re-roll event", len(_wind_evs) == 1, str(r["events"])[:200])
+check("wind event carries the pre-shot wind as previous",
+      _wind_evs and _wind_evs[0].get("previous") == st["wind"],
+      json.dumps(_wind_evs))
+_, _st_after = call("GET", f"/api/matches/{mid}/state?since=0", token=ta)
+check("snapshot wind matches the re-rolled wind",
+      _wind_evs and _st_after["wind"] == _wind_evs[0]["wind"],
+      f'event={_wind_evs[0]["wind"] if _wind_evs else None} snap={_st_after["wind"]}')
 s, r = call("POST", f"/api/matches/{mid}/fire", token=ta,
             body={"angle": 45, "power": 60, "weapon": "standard"})
 check("cooldown enforced (429)", s == 429 and r["error"] == "reloading")
@@ -171,17 +187,49 @@ s, r = call("POST", f"/api/matches/{mid}/fire", token=tb,
             body={"angle": 45, "power": 60, "weapon": "homing_missile"})
 check("unowned weapon rejected", s == 400 and r["error"] == "no_ammo")
 
-# fire until someone wins (alternating, respecting cooldown)
+# fire until someone wins (alternating, respecting cooldown). Each shot is
+# re-aimed from the live snapshot: the 45-degree ballistic solution at the
+# enemy tower's remaining center of mass, elevation-aware. Wind re-rolls
+# after every shot but its drift over a ~2s flight stays well inside the
+# tower's 104-unit width plus blast radius, so aimed shots keep landing.
+def aim_power(snap, side):
+    foe = "p2" if side == "p1" else "p1"
+    sx = snap["tower_x"][side] + 52
+    sy = 520 - 6 * 26 - 8
+    blocks = [(snap["tower_x"][foe] + c * 26 + 13, 520 - (6 - r) * 26 + 13)
+              for r in range(6) for c in range(4)
+              if snap["towers"][foe][r][c] > 0]
+    if blocks:
+        tx = sum(b[0] for b in blocks) / len(blocks)
+        ty = sum(b[1] for b in blocks) / len(blocks)
+    else:
+        tx, ty = snap["tower_x"][foe] + 52, sy
+    dx, dy = abs(tx - sx), ty - sy
+    v = math.sqrt(700.0 * dx * dx / max(60.0, dy + dx))
+    return max(5, min(100, round(v / 10.0)))
+
+winds_seen = set()
 winner = None
+halt = False
 for i in range(60):
-    for tok, w in ((ta, "standard"), (tb, "standard")):
+    for tok, side in ((ta, "p1"), (tb, "p2")):
         time.sleep(4.1)
+        _, cur = call("GET", f"/api/matches/{mid}/state?since=0", token=tok)
+        if cur.get("status") != "active":
+            winner = cur.get("winner_side")
+            halt = True
+            break
         s, r = call("POST", f"/api/matches/{mid}/fire", token=tok,
-                    body={"angle": 45 + ((i * 3) % 7) - 3, "power": 64 + ((i * 5) % 9) - 4, "weapon": w})
+                    body={"angle": 45, "power": aim_power(cur, side), "weapon": "standard"})
+        if s == 200:
+            winds_seen.update(e["wind"] for e in r.get("events", [])
+                              if e.get("type") == "wind")
         if s == 200 and r.get("winner_side"):
             winner = r["winner_side"]; break
-    if winner: break
+    if winner or halt: break
 check("match finishes with winner", winner in ("p1", "p2"), str(winner))
+check("wind actually changes between shots",
+      len(winds_seen) >= 2, json.dumps(sorted(winds_seen)))
 s, st = call("GET", f"/api/matches/{mid}/state?since=0", token=ta)
 check("final status finished", st["status"] == "finished")
 check("results recorded", st["results"] is not None, json.dumps(st.get("results")))
@@ -832,6 +880,24 @@ call("POST", f"/api/matches/{imid}/leave", token=tiv)
 s, r = call("GET", "/api/admin/audit", token=tadm)
 check("stale sweeps are audited",
       s == 200 and any(a["action"] == "stale_match_sweep" for a in r["audit"]))
+
+# --- random tower layouts: a run of matches must produce fresh, legal layouts
+tl = auth_dev(f"layout-{run_tag}@example.com", "Layout")["token"]
+layouts = []
+for _ in range(10):
+    s, r = call("POST", "/api/matches/ai", token=tl, body={"difficulty": "easy"})
+    if s != 200:
+        break
+    _, lst = call("GET", f"/api/matches/{r['match_id']}/state?since=0", token=tl)
+    if isinstance(lst.get("tower_x"), dict):
+        layouts.append((lst["tower_x"]["p1"], lst["tower_x"]["p2"]))
+check("ten matches all have legal random layouts",
+      len(layouts) == 10
+      and all(60 <= a <= 260 and 640 <= b <= 840 and b - (a + 104) >= 276
+              for a, b in layouts),
+      json.dumps(layouts))
+check("layouts are not repeated across matches",
+      len(set(layouts)) >= 2, json.dumps(layouts))
 
 print("\n%d failures" % len(fails))
 sys.exit(1 if fails else 0)
