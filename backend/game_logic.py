@@ -33,6 +33,10 @@ POWER_SCALE = 10.0    # power 0-100 -> initial speed
 DT = 0.02
 MAX_FLIGHT = 20.0
 WIND_MAX = 40.0
+# Horizontal acceleration per displayed wind unit. At maximum wind this
+# shifts a normal 1.2-1.5s shot by roughly one tower block, so players must
+# compensate without making the battlefield unwinnable.
+WIND_ACCEL = 0.75
 
 
 def new_tower(hp_level=0):
@@ -187,7 +191,7 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
     while t < MAX_FLIGHT:
         t += DT
         step += 1
-        vx += state["wind"] * 0.15 * DT
+        vx += state["wind"] * WIND_ACCEL * DT
         vy += GRAVITY * DT
         if homing:
             # gentle steering toward enemy muzzle
@@ -292,6 +296,7 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     equation for that point, then adds noise so it hits often but not always.
     """
     enemy = "p1" if side == "p2" else "p2"
+    facing = 1 if side == "p1" else -1
     sx, sy = muzzle(state, side)
     blocks = [(cx, cy) for r, c, cx, cy in tower_blocks(state, enemy)
               if state["towers"][enemy][r][c] > 0]
@@ -321,8 +326,29 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     angle = 45 + random.uniform(-profile["angle_noise"], profile["angle_noise"])
     rad = math.radians(angle)
     dy = ty - sy  # positive when target is lower (y grows downward)
-    denom = 2 * (math.cos(rad) ** 2) * (dy + dist * math.tan(rad))
-    v = math.sqrt(max(400.0, dist * GRAVITY * dist / max(200.0, denom)))
+
+    # Better bots compensate for the current wind rather than turning strong
+    # gusts into random misses. Medium/ranked bots learn this gradually with
+    # rank; hard compensates most of it and ultra compensates fully.
+    tier = state.get("ai_tier", "medium")
+    if tier == "ultra":
+        wind_skill = 1.0
+    elif tier == "hard":
+        wind_skill = 0.7
+    elif difficulty == "ranked":
+        wind_skill = max(0.0, min(1.0, ((int(rank_level or 1) - 1) / 17)))
+    else:
+        wind_skill = 0.0
+    along_accel = state.get("wind", 0.0) * WIND_ACCEL * facing * wind_skill
+
+    # Closed-form ballistic solution with constant horizontal acceleration.
+    # In coordinates facing the enemy: dist = v*cos(a)*t + .5*A*t^2.
+    tan_a = math.tan(rad)
+    t2_num = 2 * (dy + dist * tan_a)
+    t2_den = GRAVITY + along_accel * tan_a
+    flight_t = math.sqrt(max(0.01, t2_num / max(1.0, t2_den)))
+    v = (dist - 0.5 * along_accel * flight_t * flight_t) / \
+        max(0.05, math.cos(rad) * flight_t)
     power = v / POWER_SCALE * random.uniform(profile["power_min"], profile["power_max"])
     power = min(96.0, max(30.0, power))
     weapon = "standard"
