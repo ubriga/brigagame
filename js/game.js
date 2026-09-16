@@ -41,6 +41,13 @@ const GameView = {
         <div class="player-tag" id="tag-p1"></div>
         <div id="match-info"><div id="match-timer">⏱️ 03:00</div><div id="wind-ind">💨 ...</div></div>
         <div class="player-tag" id="tag-p2"></div>
+        <button id="exit-match-btn" title="יציאה מהמשחק" aria-label="יציאה מהמשחק"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 3v8"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg></button>
+      </div>
+      <div id="exit-confirm" class="hidden">
+        <span>לצאת מהמשחק?</span>
+        <button class="btn small danger" id="exit-match-yes">יציאה מהמשחק</button>
+        <button class="btn small secondary" id="exit-match-no">ביטול</button>
+        <span class="exit-note">יציאה ממשחק פעיל תיספר כהפסד בדירוג</span>
       </div>
       <div id="practice-ind" class="hidden">🎯 משחק תרגול - לא נספר לדרגה</div>
       <div id="game-stage">
@@ -55,6 +62,30 @@ const GameView = {
         · <b>רווח</b> ירייה · <b>1-4</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
     this.ctx = this.canvas.getContext("2d");
+    // Exit control: one tap reveals the confirmation strip; only the
+    // explicit "יציאה מהמשחק" button actually leaves (active match = loss,
+    // enforced server-side; waiting room = match deleted).
+    const exitBtn = document.getElementById("exit-match-btn");
+    const confirmBar = document.getElementById("exit-confirm");
+    exitBtn.onclick = () => {
+      Sfx.play("click");
+      exitBtn.classList.add("hidden");
+      confirmBar.classList.remove("hidden");
+    };
+    document.getElementById("exit-match-no").onclick = () => {
+      Sfx.play("click");
+      confirmBar.classList.add("hidden");
+      exitBtn.classList.remove("hidden");
+    };
+    document.getElementById("exit-match-yes").onclick = async (e) => {
+      Sfx.play("click");
+      const btn = e.target;
+      btn.disabled = true; btn.textContent = "יוצא...";
+      const st = this.snap && this.snap.status;
+      if (st === "active" || st === "waiting")
+        await API.post(`/api/matches/${this.matchId}/leave`);
+      location.hash = "#/lobby";
+    };
     this.bindInput();
     await this.refresh(0);
     this._destroyed = false;
