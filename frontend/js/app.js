@@ -1,3 +1,12 @@
+function apiError(result, fallback = "שגיאה") {
+  const data = (result && result.data) || {};
+  if (data.error_he) return data.error_he;
+  if (data.detail) return String(data.detail);
+  if (result && result.networkError) return "אין חיבור לשרת. נסה שוב.";
+  if (result && result.status) return `${fallback} (HTTP ${result.status})`;
+  return fallback;
+}
+
 // Router + views (login, lobby, store, leaderboard, messages, admin).
 const App = {
   me: null, inventory: {},
@@ -16,9 +25,9 @@ const App = {
     document.getElementById("mute-btn").textContent = Sfx.muted ? "🔇" : "🔊";
     // Mobile autoplay: resume the AudioContext on the first gesture anywhere;
     // start decoding samples right away (decode works while suspended).
-    const unlockAudio = () => Sfx.unlock();
+    const unlockAudio = () => { Sfx.unlock(); };
     ["pointerdown", "touchstart", "keydown"].forEach((ev) =>
-      window.addEventListener(ev, unlockAudio, { passive: true }));
+      window.addEventListener(ev, unlockAudio, { passive: true, capture: true }));
     Sfx.preload();
     if (API.token) {
       // Bounded retries: a busy/down server must show the reconnect indicator
@@ -271,14 +280,15 @@ const App = {
     const go = (id) => { location.hash = "#/game/" + id; };
     document.getElementById("quick-btn").onclick = async () => {
       Sfx.play("click");
-      const { data } = await API.post("/api/matches/quick");
+      const result = await API.post("/api/matches/quick");
+      const data = result.data || {};
       if (data.status === "waiting") {
         toast("מחכה ליריב...");
         go(data.match_id);
       } else if (data.status === "offered" && data.match_id) {
         this.showMatchOffer(data.match_id, data.expires_in || 20);
       } else if (data.match_id) go(data.match_id);
-      else toast(data.error_he || "שגיאה");
+      else toast(apiError(result, "שגיאה ביצירת משחק מהיר"));
     };
     const aiTier = document.getElementById("ai-tier");
     const savedAiTier = localStorage.getItem("brigagame.aiTier");
@@ -289,12 +299,14 @@ const App = {
       Sfx.play("click");
       const difficulty = aiTier.value;
       localStorage.setItem("brigagame.aiTier", difficulty);
-      const { data } = await API.post("/api/matches/ai", { difficulty });
-      if (data.match_id) go(data.match_id); else toast(data.error_he || "שגיאה");
+      const result = await API.post("/api/matches/ai", { difficulty });
+      const data = result.data || {};
+      if (data.match_id) go(data.match_id); else toast(apiError(result, "שגיאה ביצירת משחק מול בוט"));
     };
     document.getElementById("friend-btn").onclick = async () => {
       Sfx.play("click");
-      const { data } = await API.post("/api/matches/friend");
+      const result = await API.post("/api/matches/friend");
+      const data = result.data || {};
       if (data.code) {
         const box = document.getElementById("friend-code");
         box.classList.remove("hidden");
@@ -306,24 +318,27 @@ const App = {
           navigator.clipboard?.writeText(data.code); toast("הקוד הועתק");
         };
         go(data.match_id);
-      } else toast(data.error_he || "שגיאה");
+      } else toast(apiError(result, "שגיאה ביצירת משחק חברים"));
     };
     document.getElementById("join-btn").onclick = async () => {
       const code = document.getElementById("join-code").value.trim();
       if (!code) return;
       Sfx.play("click");
-      const { data } = await API.post("/api/matches/join", { code });
+      const result = await API.post("/api/matches/join", { code });
+      const data = result.data || {};
       if (data.match_id) go(data.match_id);
-      else toast(data.error_he || "הקוד לא תקין");
+      else toast(apiError(result, "הקוד לא תקין"));
     };
     document.getElementById("daily-btn").onclick = async (e) => {
-      const { status, data } = await API.post("/api/daily/claim");
+      const result = await API.post("/api/daily/claim");
+      const { status } = result;
+      const data = result.data || {};
       if (status === 200) {
         Sfx.play("coin");
         toast(`🎁 קיבלת ${data.amount} מטבעות! רצף: ${data.streak} ימים`);
         window.refreshMe();
         e.target.disabled = true; e.target.textContent = "🎁 בונוס יומי (נאסף)";
-      } else toast(data.error_he || "שגיאה");
+      } else toast(apiError(result, "שגיאה באיסוף הבונוס היומי"));
     };
   },
 
