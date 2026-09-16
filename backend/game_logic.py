@@ -18,7 +18,12 @@ BLOCK = 26
 TOWER_COLS = 4
 TOWER_ROWS = 6
 BLOCK_HP = 18
-TOWER_X = {"p1": 140, "p2": 760}  # left edge of each tower
+TOWER_X = {"p1": 140, "p2": 760}  # legacy default; matches now randomize
+# Spawn ranges for the left edge of each tower. Every match rolls a fresh
+# layout so no two games play the same; the ranges guarantee a gap of at
+# least 276 world units between the towers, which keeps every layout
+# winnable with the standard weapon's range.
+TOWER_X_RANGE = {"p1": (60, 260), "p2": (640, 840)}
 # Ballistics tuned so a comfortable mid-length drag at ~45 deg lands on the
 # enemy tower (muzzle-to-muzzle distance is 620 world units). With gravity
 # 700 and scale 10, power ~66 hits dead center at 45 deg; full power (100)
@@ -39,6 +44,8 @@ def new_tower(hp_level=0):
 def new_state(p1_mods, p2_mods):
     """pX_mods: {'armor': lvl, 'hp': lvl, 'skin': item_id or None}"""
     return {
+        "tower_x": {"p1": random.randint(*TOWER_X_RANGE["p1"]),
+                    "p2": random.randint(*TOWER_X_RANGE["p2"])},
         "towers": {
             "p1": new_tower(p1_mods.get("hp", 0)),
             "p2": new_tower(p2_mods.get("hp", 0)),
@@ -52,9 +59,15 @@ def new_state(p1_mods, p2_mods):
     }
 
 
-def tower_blocks(side):
+def tower_x_of(state, side):
+    """Left edge of a side's tower; falls back to the legacy fixed layout
+    for matches created before layouts were randomized."""
+    return (state.get("tower_x") or TOWER_X)[side]
+
+
+def tower_blocks(state, side):
     """Yield (row, col, cx, cy) center coordinates of every block."""
-    x0 = TOWER_X[side]
+    x0 = tower_x_of(state, side)
     for r in range(TOWER_ROWS):
         for c in range(TOWER_COLS):
             cx = x0 + c * BLOCK + BLOCK / 2
@@ -62,8 +75,8 @@ def tower_blocks(side):
             yield r, c, cx, cy
 
 
-def muzzle(side):
-    x0 = TOWER_X[side]
+def muzzle(state, side):
+    x0 = tower_x_of(state, side)
     cx = x0 + TOWER_COLS * BLOCK / 2
     cy = GROUND_Y - TOWER_ROWS * BLOCK - 8
     return cx, cy
@@ -102,7 +115,7 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
     if not cosmetic:
         armor_lvl = state["mods"][enemy].get("armor", 0)
         mult = armor_reduction(armor_lvl)
-        for r, c, cx, cy in tower_blocks(enemy):
+        for r, c, cx, cy in tower_blocks(state, enemy):
             hp = state["towers"][enemy][r][c]
             if hp <= 0:
                 continue
@@ -117,7 +130,7 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
                 if new_hp <= 0:
                     destroyed.append({"r": r, "c": c})
         # small splash to own tower keeps shots honest but is heavily reduced
-        for r, c, cx, cy in tower_blocks(attacker):
+        for r, c, cx, cy in tower_blocks(state, attacker):
             hp = state["towers"][attacker][r][c]
             if hp <= 0:
                 continue
@@ -162,14 +175,14 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
     facing = 1 if side == "p1" else -1
     angle = math.radians(angle_deg)
     speed = power * POWER_SCALE
-    x, y = muzzle(side)
+    x, y = muzzle(state, side)
     vx = facing * speed * math.cos(angle)
     vy = -speed * math.sin(angle)
     w = WEAPONS[weapon]
     points = []
     t = 0.0
     homing = weapon == "homing_missile"
-    ex, ey = muzzle(enemy)
+    ex, ey = muzzle(state, enemy)
     step = 0
     while t < MAX_FLIGHT:
         t += DT
@@ -192,7 +205,7 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
             return x, GROUND_Y, points, False
         # tower collision
         for s in (enemy, side):
-            for r, c, cx, cy in tower_blocks(s):
+            for r, c, cx, cy in tower_blocks(state, s):
                 if state["towers"][s][r][c] > 0 and abs(x - cx) <= BLOCK / 2 \
                         and abs(y - cy) <= BLOCK / 2:
                     points.append([round(x, 1), round(y, 1)])
@@ -255,6 +268,14 @@ def fire_weapon(state, side, angle, power, weapon):
                 _explode(state, x, y, w["damage"], w["radius"], side, ev)
         events.extend(ev)
 
+    # Dynamic wind: every shot re-rolls the wind, so the next shot always
+    # needs a fresh read of the wind indicator. Clients get the new value
+    # both in the next snapshot and as an explicit event.
+    previous_wind = state["wind"]
+    state["wind"] = round(random.uniform(-WIND_MAX, WIND_MAX), 1)
+    events.append({"type": "wind", "wind": state["wind"],
+                   "previous": previous_wind})
+
     state["last_shot_at"][side] = time.time()
     return events, not tower_alive(state["towers"][enemy])
 
@@ -271,14 +292,14 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     equation for that point, then adds noise so it hits often but not always.
     """
     enemy = "p1" if side == "p2" else "p2"
-    sx, sy = muzzle(side)
-    blocks = [(cx, cy) for r, c, cx, cy in tower_blocks(enemy)
+    sx, sy = muzzle(state, side)
+    blocks = [(cx, cy) for r, c, cx, cy in tower_blocks(state, enemy)
               if state["towers"][enemy][r][c] > 0]
     if blocks:
         tx = sum(b[0] for b in blocks) / len(blocks)
         ty = sum(b[1] for b in blocks) / len(blocks)
     else:
-        tx, ty = muzzle(enemy)
+        tx, ty = muzzle(state, enemy)
     dist = max(60.0, abs(tx - sx))
     profiles = {
         "easy": {"angle_noise": 20, "power_min": 0.72, "power_max": 1.28},

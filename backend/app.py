@@ -331,6 +331,7 @@ def match_snapshot(m, user_id, since):
         "you": side_for(m, user_id),
         "players": players,
         "towers": state.get("towers"),
+        "tower_x": state.get("tower_x"),
         # Waiting matches intentionally have no battlefield yet. Returning null
         # instead of calculating against {} keeps the waiting screen healthy.
         "tower_hp": ({side: tower_hp(state, side) for side in ("p1", "p2")}
