@@ -3,6 +3,9 @@ import os, sys, time, json, math, sqlite3, subprocess, urllib.request
 from datetime import datetime, timezone, timedelta
 
 from ranks import rank_payload
+from game_logic import (_simulate, ai_choose_shot, new_state, TOWER_COLS,
+                        TOWER_ROWS)
+from unittest.mock import patch
 BASE = "http://127.0.0.1:5000"
 
 def zero_tower(match_id, side):
@@ -43,6 +46,50 @@ fails = []
 def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
     if not cond: fails.append(name)
+
+def ballistic_state(wind):
+    """Deterministic empty battlefield for trajectory regression checks."""
+    state = new_state({}, {})
+    state["tower_x"] = {"p1": 140, "p2": 760}
+    state["wind"] = wind
+    state["towers"] = {
+        side: [[0] * TOWER_COLS for _ in range(TOWER_ROWS)]
+        for side in ("p1", "p2")
+    }
+    return state
+
+
+# Wind must be a gameplay force, not only a changing HUD number. Identical
+# shots under opposite maximum winds should separate by several blocks and in
+# the indicated direction. These checks are deterministic and run before HTTP.
+_wind_impacts = {}
+for _wind in (-40.0, 0.0, 40.0):
+    _x, _y, _points, _off = _simulate(
+        ballistic_state(_wind), "p1", 45, 66, "standard", [])
+    _wind_impacts[_wind] = _x
+check("wind bends shots in displayed direction",
+      _wind_impacts[-40.0] < _wind_impacts[0.0] < _wind_impacts[40.0],
+      json.dumps(_wind_impacts))
+check("maximum opposite winds separate trajectory perceptibly",
+      _wind_impacts[40.0] - _wind_impacts[-40.0] >= 70.0,
+      json.dumps(_wind_impacts))
+
+# At high bot level, opposite wind changes the solved power in the compensating
+# direction. Pin random noise to its midpoint so this remains deterministic.
+_ai_powers = {}
+with patch("game_logic.random.uniform", side_effect=lambda lo, hi: (lo + hi) / 2):
+    for _wind in (-40.0, 0.0, 40.0):
+        _state = new_state({}, {})
+        _state["tower_x"] = {"p1": 140, "p2": 760}
+        _state["wind"] = _wind
+        _state["ai_tier"] = "ultra"
+        _ai_powers[_wind] = ai_choose_shot(
+            _state, "p2", "ranked", 18)[1]
+check("high-level bot compensates for wind",
+      _ai_powers[-40.0] < _ai_powers[0.0] < _ai_powers[40.0],
+      json.dumps(_ai_powers))
+
+
 
 # --- auth: two players + admin
 a = auth_dev("alice@example.com", "Alice")

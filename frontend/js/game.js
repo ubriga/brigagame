@@ -9,6 +9,7 @@ const GameView = {
   // server snapshots, while the canvas eases between visual states.
   displayAngles: { p1: 45, p2: 45 }, cannonRecoil: { p1: 0, p2: 0 },
   blockTransitions: [], idleClock: 0, lastActionAt: 0,
+  cloudOffsets: [0, 410],
   _rankImgs: {},
   anims: [], processing: false,
   // Small pooled FX budget keeps impact effects smooth on mobile. Particles
@@ -20,6 +21,7 @@ const GameView = {
   pollDelay: 900, showAimUntil: 0, reconnectFailures: 0,
 
   W: 1000, H: 560, GROUND: 520, BLOCK: 26, TROWS: 6, TCOLS: 4,
+  WIND_ACCEL: 0.75,
   TX: { p1: 140, p2: 760 },
 
   async init(root, matchId, onExit) {
@@ -32,6 +34,7 @@ const GameView = {
     this.displayAngles = { p1: 45, p2: 45 };
     this.cannonRecoil = { p1: 0, p2: 0 };
     this.blockTransitions = []; this.idleClock = 0; this.lastActionAt = performance.now();
+    this.cloudOffsets = [0, 410];
     this.reconnectFailures = 0;
     root.innerHTML = `
       <div id="game-hud">
@@ -401,7 +404,7 @@ const GameView = {
   },
 
   // Predicted primary arc, mirroring the server's _simulate (gravity 700,
-  // power x10, wind x0.15, dt 0.02). Multi-shell weapons get only their
+  // power x10, wind x0.75, dt 0.02). Multi-shell weapons get only their
   // primary arc predicted; the server's events take over within a round
   // trip either way. Tagged `optimistic` so it can be dropped on reconcile.
   spawnOptimisticShot() {
@@ -417,7 +420,7 @@ const GameView = {
     let step = 0, t = 0;
     while (t < 20) {
       t += DT; step++;
-      vx += wind * 0.15 * DT; vy += 700 * DT;
+      vx += wind * this.WIND_ACCEL * DT; vy += 700 * DT;
       x += vx * DT; y += vy * DT;
       if (step % 6 === 0) points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
       if (y >= this.GROUND) { points.push([Math.round(x * 10) / 10, this.GROUND]); break; }
@@ -593,6 +596,11 @@ const GameView = {
     this.shake = Math.max(this.shake, shakeKick);
     this.shake = Math.max(0, this.shake - dt * 34);
     this.idleClock += dt;
+    // Integrating offsets avoids a visual jump when wind changes. Positive
+    // wind moves clouds right, negative wind left, and calm air holds them.
+    const wind = (this.snap && this.snap.wind) || 0;
+    this.cloudOffsets[0] = (this.cloudOffsets[0] + wind * 0.55 * dt) % 1320;
+    this.cloudOffsets[1] = (this.cloudOffsets[1] + wind * 1.05 * dt) % 1320;
     for (const side of ["p1", "p2"]) {
       this.cannonRecoil[side] = Math.max(0, (this.cannonRecoil[side] || 0) - dt);
       const target = side === this.mySide() ? this.aimAngle : 45;
@@ -675,10 +683,12 @@ const GameView = {
     mountainLayer(420, "rgba(20,62,73,.54)", 1.2, 6);
     mountainLayer(466, "rgba(12,47,56,.88)", 3.0, 6);
 
-    // Two cloud belts use independent drift rates and softly grouped shapes.
-    const cloudLayer = (y, speed, alpha, scale, phase) => {
+    // Two cloud belts drift continuously with the current wind. Their
+    // different response rates preserve depth while direction and strength
+    // remain physically legible to the player.
+    const cloudLayer = (y, alpha, scale, layer) => {
       c.save(); c.fillStyle = `rgba(234,240,224,${alpha})`;
-      const off = (secs * speed + phase) % 1240;
+      const off = ((this.cloudOffsets[layer] % 1320) + 1320) % 1320;
       for (let i = 0; i < 4; i++) {
         const x = ((i * 330 + off) % 1320) - 160;
         c.beginPath(); c.ellipse(x, y + i * 12, 52 * scale, 15 * scale, 0, 0, Math.PI * 2);
@@ -687,8 +697,8 @@ const GameView = {
       }
       c.restore();
     };
-    cloudLayer(78, 4.5, .14, 1.05, 0);
-    cloudLayer(165, 9.5, .22, .72, 410);
+    cloudLayer(78, .14, 1.05, 0);
+    cloudLayer(165, .22, .72, 1);
 
     // Ground with a warm rim, tying the battlefield to the interface palette.
     const g = c.createLinearGradient(0, this.GROUND - 9, 0, this.H);
