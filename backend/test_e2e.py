@@ -30,15 +30,24 @@ def call(method, path, token=None, body=None):
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
 
+def auth_dev(email, name):
+    """Dev login, patient with the server's 10/minute auth rate limit."""
+    for _ in range(5):
+        _, r = call("POST", "/api/auth/dev", body={"email": email, "name": name})
+        if "token" in r:
+            return r
+        time.sleep(15)
+    raise SystemExit("dev login failed: " + json.dumps(r))
+
 fails = []
 def check(name, cond, extra=""):
     print(("PASS " if cond else "FAIL ") + name, extra)
     if not cond: fails.append(name)
 
 # --- auth: two players + admin
-_, a = call("POST", "/api/auth/dev", body={"email": "alice@example.com", "name": "Alice"})
-_, b = call("POST", "/api/auth/dev", body={"email": "bob@example.com", "name": "Bob"})
-_, adm = call("POST", "/api/auth/dev", body={"email": "ubriga@gmail.com", "name": "Orel"})
+a = auth_dev("alice@example.com", "Alice")
+b = auth_dev("bob@example.com", "Bob")
+adm = auth_dev("ubriga@gmail.com", "Orel")
 ta, tb, tadm = a["token"], b["token"], adm["token"]
 check("dev auth x3", all([ta, tb, tadm]))
 check("admin flag", adm["user"]["is_admin"] is True)
@@ -365,9 +374,7 @@ check("practice win leaves coins, rating, record and rank untouched",
       and mb2["user"]["idf_rank"]["wins"] == practice_before["user"]["idf_rank"]["wins"],
       json.dumps({"before": practice_before["user"], "after": mb2["user"]}))
 
-_, gc = call("POST", "/api/auth/dev",
-             body={"email": f"carol-{int(time.time())}@example.com", "name": "Carol"})
-tc = gc["token"]
+tc = auth_dev(f"carol-{int(time.time())}@example.com", "Carol")["token"]
 s, r = call("POST", "/api/matches/ai", token=tc, body={"difficulty": "normal"})
 nid = r["match_id"]
 s, st = call("GET", f"/api/matches/{nid}/state?since=0", token=tc)
@@ -498,15 +505,21 @@ call("POST", f"/api/matches/{dmid}/leave", token=ta)  # clean up the waiting mat
 # --- presence invites: present-anywhere players get quick-match offers
 run_tag = str(int(time.time()))
 def devlogin(name):
-    _, r = call("POST", "/api/auth/dev",
-                body={"email": f"{name}-{run_tag}@example.com", "name": name.title()})
-    return r["token"]
+    return auth_dev(f"{name}-{run_tag}@example.com", name.title())["token"]
 tc = devlogin("carol"); td = devlogin("dave"); te = devlogin("erin"); tf = devlogin("frank")
 
 # carol is simply present in the app - she never clicks quick match.
 s, hb = call("POST", "/api/presence/ping", token=tc)
 check("presence ping ok", s == 200 and hb.get("ok") and hb.get("offer") is None, str(hb))
-check("presence ping carries server_version", hb.get("server_version") == "10", str(hb.get("server_version")))
+# Server and client versions must move together (lobby reload handshake).
+_cfg = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "frontend", "js", "config.js"),
+            encoding="utf-8").read()
+import re as _re
+_client_ver = _re.search(r'CLIENT_VERSION:\s*"([^"]+)"', _cfg).group(1)
+check("presence ping carries server_version matching client",
+      hb.get("server_version") == _client_ver,
+      f'server={hb.get("server_version")} client={_client_ver}')
 
 # --- maintenance flag (D1): admin toggle carried in the presence pulse
 s, r = call("GET", "/api/admin/maintenance", token=ta)
@@ -600,6 +613,55 @@ check("unbanned user can play", s == 200)
 s, r = call("GET", "/api/leaderboard", token=ta)
 check("leaderboard", s == 200 and len(r["leaderboard"]) >= 1)
 
+# --- leaderboard ordering regression (the leaders' order, guaranteed)
+# Craft three players whose Elo rating order CONTRADICTS their IDF rank
+# order. The table must follow rank points (the wins-based ladder), with
+# deterministic tie-breaks, identically on every call.
+_LB_DB = os.environ.get(
+    "DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "brigagame.db"))
+
+def _craft_user(email, name, rating, rank_points, wins):
+    db = sqlite3.connect(_LB_DB, timeout=15)
+    db.execute("INSERT INTO users (email, name, picture, coins, rating, wins,"
+               " rank_points, losses, matches_played, created_at)"
+               " VALUES (?,?, '', 0, ?, ?, ?, 0, 1, ?)",
+               (email, name, rating, wins, rank_points,
+                datetime.now(timezone.utc).isoformat()))
+    db.commit()
+    uid = db.execute("SELECT id FROM users WHERE email = ?",
+                     (email,)).fetchone()[0]
+    db.close()
+    return uid
+
+_lb_tag = str(int(time.time()))
+u_hirank = _craft_user(f"sortb-{_lb_tag}@example.com", "SortB", 1100, 9.0, 9)
+u_tie    = _craft_user(f"sortc-{_lb_tag}@example.com", "SortC", 1200, 9.0, 5)
+u_hielo  = _craft_user(f"sorta-{_lb_tag}@example.com", "SortA", 1400, 2.0, 2)
+
+s, lb1 = call("GET", "/api/leaderboard", token=ta)
+order1 = [row["id"] for row in lb1["leaderboard"]]
+def _pos(uid):
+    return order1.index(uid) if uid in order1 else 10 ** 9
+check("leaderboard sorted by rank points, not rating",
+      s == 200 and _pos(u_hirank) < _pos(u_tie) < _pos(u_hielo),
+      str(order1))
+pts_seq = [row["rank_points"] for row in lb1["leaderboard"]]
+check("leaderboard rank points monotonic non-increasing",
+      all(a >= b for a, b in zip(pts_seq, pts_seq[1:])), str(pts_seq))
+s, lb2 = call("GET", "/api/leaderboard", token=ta)
+check("leaderboard order deterministic across calls",
+      s == 200 and [row["id"] for row in lb2["leaderboard"]] == order1)
+
+# --- remember-me wiring (client): token storage honors the checkbox
+_fe = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "js")
+_api_js = open(os.path.join(_fe, "api.js"), encoding="utf-8").read()
+_app_js = open(os.path.join(_fe, "app.js"), encoding="utf-8").read()
+check("remember-me checkbox on login screen",
+      'id="remember-me"' in _app_js and "זכור אותי" in _app_js)
+check("session-only storage when remember-me is off",
+      "sessionStorage" in _api_js and "remember" in _api_js)
+
 # --- stale-match sweep: abandoned matches end as void, never ranked losses
 DB_FILE = os.environ.get(
     "DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db"))
@@ -646,17 +708,12 @@ def set_tower_fraction(match_id, side, fraction):
     db.execute("UPDATE matches SET state = ? WHERE id = ?", (json.dumps(st), match_id))
     db.commit(); db.close()
 
-_, g = call("POST", "/api/auth/dev",
-            body={"email": f"stale-{run_tag}@example.com", "name": "Stale"})
-tg = g["token"]
+tg = auth_dev(f"stale-{run_tag}@example.com", "Stale")["token"]
 _, me0 = call("GET", "/api/me", token=tg)
 
 # --- three-minute server clock: integrity winner, exact tie, and bot coverage
-_, timer_a = call("POST", "/api/auth/dev",
-                  body={"email": f"timer-a-{run_tag}@example.com", "name": "Timer A"})
-_, timer_b = call("POST", "/api/auth/dev",
-                  body={"email": f"timer-b-{run_tag}@example.com", "name": "Timer B"})
-tta, ttb = timer_a["token"], timer_b["token"]
+tta = auth_dev(f"timer-a-{run_tag}@example.com", "Timer A")["token"]
+ttb = auth_dev(f"timer-b-{run_tag}@example.com", "Timer B")["token"]
 _, before_ta = call("GET", "/api/me", token=tta)
 _, before_tb = call("GET", "/api/me", token=ttb)
 s, r = call("POST", "/api/matches/friend", token=tta)
@@ -751,9 +808,7 @@ check("stale waiting match purged", s == 404, str(s))
 # Let every earlier heartbeat fall outside the 25s presence window so the
 # only eligible players in this section are the ones we ping here.
 time.sleep(26)
-_, iv = call("POST", "/api/auth/dev",
-             body={"email": f"ivy-{run_tag}@example.com", "name": "Ivy"})
-tiv = iv["token"]
+tiv = auth_dev(f"ivy-{run_tag}@example.com", "Ivy")["token"]
 s, r = call("POST", "/api/matches/ai", token=tg)
 smid2 = r["match_id"]
 call("POST", "/api/presence/ping", token=tg)

@@ -1,6 +1,9 @@
 // Thin API client. The server is authoritative for everything.
 const API = {
-  token: localStorage.getItem("bg_token") || null,
+  // Remember-me: "זכור אותי" stores the session in localStorage (persists
+  // across days, until server expiry); without it the token lives in
+  // sessionStorage and dies when the browser tab/session closes.
+  token: localStorage.getItem("bg_token") || sessionStorage.getItem("bg_token") || null,
   retryBaseMs: 450,
   // Hard ceiling per request. Without a timeout, one stalled connection (or
   // the single free-tier worker being busy) hangs the client on "connecting"
@@ -8,10 +11,11 @@ const API = {
   // of waiting on a dead one.
   timeoutMs: 12000,
 
-  setToken(t) {
+  setToken(t, remember = true) {
     this.token = t;
-    if (t) localStorage.setItem("bg_token", t);
-    else localStorage.removeItem("bg_token");
+    localStorage.removeItem("bg_token");
+    sessionStorage.removeItem("bg_token");
+    if (t) (remember ? localStorage : sessionStorage).setItem("bg_token", t);
   },
 
   setReconnecting(on) {

@@ -159,6 +159,11 @@ const App = {
         <p class="sub">by OrelAI · משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!</p>
         <div class="card">
           <div class="gsi-wrap"><div id="gsi-btn"></div></div>
+          <label style="display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 4px;font-size:14px;cursor:pointer">
+            <input type="checkbox" id="remember-me" checked
+              style="width:auto;padding:0;margin:0;accent-color:var(--accent)">
+            <span>זכור אותי</span>
+          </label>
           <p class="sub" style="font-size:13px">התחברות עם חשבון גוגל בלבד.
             בהתחברות אתה מאשר את <a href="terms.html">תנאי השימוש</a>
             ו<a href="privacy.html">מדיניות הפרטיות</a>.</p>
@@ -174,7 +179,7 @@ const App = {
       document.getElementById("dev-btn").onclick = async () => {
         const email = document.getElementById("dev-email").value.trim();
         const { status, data } = await API.post("/api/auth/dev", { email });
-        if (status === 200) { API.setToken(data.token); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
+        if (status === 200) { API.setToken(data.token, document.getElementById("remember-me").checked); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
         else toast(data.error_he || "כניסת פיתוח כבויה");
       };
     }
@@ -186,7 +191,7 @@ const App = {
           const { status, data } = await API.post("/api/auth/google",
             { credential: resp.credential });
           if (status === 200) {
-            API.setToken(data.token);
+            API.setToken(data.token, document.getElementById("remember-me").checked);
             const me = await API.get("/api/me");
             if (me.status === 200) App.setMe(me.data);
             App.startPulse();
@@ -593,7 +598,7 @@ const App = {
     data.leaderboard.forEach((p, i) => {
       const medal = ["🥇", "🥈", "🥉"][i] || (i + 1);
       html += `<tr style="${p.id === data.me ? "outline:2px solid var(--accent)" : ""}">
-        <td>${medal}</td><td>${esc(p.name)}</td><td>${esc(p.rank)}</td>
+        <td>${medal}</td><td>${esc(p.name)}</td><td>${esc(p.idf_rank.name_he)}</td>
         <td>${p.rating}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
     });
     html += `</table></div>`;
