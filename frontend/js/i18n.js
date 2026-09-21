@@ -35,7 +35,16 @@ const Lang = {
     "מוות פתאומי - הנזק הוכפל!":"Sudden death - damage doubled!","הזמן נגמר - לשני המגדלים אותה שלמות.":"Time is up - both towers have equal integrity.",
     "משחק תרגול - לא נספר לדרגה":"Practice match - does not affect rank","המשחק הסתיים מסיבה טכנית - ללא ניצחון, הפסד או מטבעות.":"The match ended for a technical reason - no win, loss, or coins.",
     "ריבאנץ' נגד OrelAI Bot":"Rematch against OrelAI Bot","יוצר משחק...":"Creating match...","שגיאה ביצירת משחק":"Could not create match",
-    "הדירוג עולה ויורד לפי נצחונות והפסדים.":"Rating rises and falls with wins and losses.","טבלת דירוג":"Leaderboard","שחקן":"Player","הפ׳":"L","נצ׳":"W"
+    "הדירוג עולה ויורד לפי נצחונות והפסדים.":"Rating rises and falls with wins and losses.","טבלת דירוג":"Leaderboard","שחקן":"Player","הפ׳":"L","נצ׳":"W",
+    "טוראי":"Private","רב טוראי":"Private First Class","סמל":"Sergeant","סמל ראשון":"Staff Sergeant","רב סמל":"Sergeant First Class","רב סמל ראשון":"Master Sergeant","רב סמל מתקדם":"Advanced Master Sergeant","רב סמל בכיר":"Senior Master Sergeant","רב נגד":"Chief Warrant Officer","סגן משנה":"Second Lieutenant","סגן":"Lieutenant","סרן":"Captain","רב סרן":"Major","סגן אלוף":"Lieutenant Colonel","אלוף משנה":"Colonel","תת אלוף":"Brigadier General","אלוף":"Major General","רב אלוף":"Lieutenant General",
+    "נשארו":"Remaining:","לקידום":"to promotion","מטבעות":"Coins","יתרה:":"Balance:","בתיק:":"Inventory:","שימושים":"uses","חבילה של":"pack of",
+    "פצצה כפולה":"Double Bomb","טיל מסתובב":"Homing Missile","פגז מרושת":"Cluster Shell","שריון":"Armor Plating","חיזוק מגדל":"Reinforced Tower",
+    "משגרת שני פגזים ברצף בכל ירייה. חבילה של 3 שימושים.":"Fires two shells in sequence. Pack of 3 uses.","מתקן את מסלולו לעבר מגדל האויב באוויר. חבילה של 3 שימושים.":"Corrects its path toward the enemy tower. Pack of 3 uses.","מתפצל לארבעה פצצונים בשיא המסלול. חבילה של 3 שימושים.":"Splits into four bomblets at the trajectory peak. Pack of 3 uses.","מפחית נזק נכנס ב-4% לרמה.":"Reduces incoming damage by 4% per level.","מגדיל את חיי המגדל ב-10% לרמה.":"Increases tower health by 10% per level.",
+    "מימוש קופון":"Redeem coupon","נשקים מיוחדים":"Special weapons","שדרוגי מגדל":"Tower upgrades","מראה":"Cosmetics","כל רכישה מופיעה כאן מיד.":"Every purchase appears here immediately.",
+    "התקנת המשחק":"Install game","השתקה":"Mute","סגירת הודעת תחזוקה":"Close maintenance notice","תחזוקה":"Maintenance","אין חיבור לשרת":"No server connection","נסה שוב":"Try again",
+    "גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות.":"Drag from your tower to aim and release to fire.","רווח":"Space","צעדים גדולים":"large steps","רגיל (∞)":"Standard (∞)","כפולה":"Double","מסתובב":"Homing","מרושת":"Cluster",
+    "הזמן נגמר":"Time is up","למגדל שלך נשארה יותר שלמות.":"Your tower has more integrity remaining.","למגדל היריב נשארה יותר שלמות.":"The enemy tower has more integrity remaining.","דירוג ":"Rating ","קודמת לדרגת":"Promoted to",
+    "מחכים ליריב...":"Waiting for opponent...","משחק מהיר - מחפש יריב":"Quick match - finding an opponent","להיכנס למשחק?":"Enter the match?","כן, מתחילים":"Yes, start","דחית את ההזמנה":"You declined the invitation","ההזמנה פגה":"The invitation expired"
   })),
   words: [],
   text(value) {
