@@ -325,3 +325,5 @@ body.game-active #logout-btn { display: none !important; }
     margin-inline: auto;
   }
 }
+
+#aim-info{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px auto;max-width:560px}.aim-gauge{width:120px;height:10px;background:#0b2235;border-radius:999px;overflow:hidden;border:1px solid #31536a}.aim-gauge i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,#f4c95d);transition:width .08s}#ability-bar{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:7px}.btn.active{box-shadow:0 0 0 2px #f4c95d;background:#5b421d}#shot-clock{text-align:center;font-weight:800;color:#f4c95d}.urgent{color:#fb7185!important}

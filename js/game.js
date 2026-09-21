@@ -36,6 +36,7 @@ const GameView = {
     this.blockTransitions = []; this.idleClock = 0; this.lastActionAt = performance.now();
     this.cloudOffsets = [0, 410];
     this.reconnectFailures = 0;
+    Sfx.startMusic();
     root.innerHTML = `
       <div id="game-hud">
         <div class="player-tag" id="tag-p1"></div>
@@ -55,7 +56,9 @@ const GameView = {
         <div id="game-overlay" class="hidden"></div>
       </div>
       <div id="reload-wrap"><div id="reload-bar"></div></div>
-      <div id="aim-info">זווית 45° · עוצמה 50</div>
+      <div id="shot-clock">⏳ 10</div>
+      <div id="aim-info" aria-label="מדדי כיוון ועוצמה"><span>זווית</span><div class="aim-gauge"><i id="angle-gauge"></i></div><span>עוצמה</span><div class="aim-gauge"><i id="power-gauge"></i></div></div>
+      <div id="ability-bar"><button id="move-left" class="btn small secondary">⬅ הזזה</button><button id="move-right" class="btn small secondary">הזזה ➡</button><button id="shield-btn" class="btn small secondary">🛡 מגן</button><button id="mega-btn" class="btn small secondary">⚡ מגה</button></div>
       <div id="weapon-bar"></div>
       <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
@@ -84,9 +87,18 @@ const GameView = {
       const st = this.snap && this.snap.status;
       if (st === "active" || st === "waiting")
         await API.post(`/api/matches/${this.matchId}/leave`);
+      Sfx.stopMusic();
       location.hash = "#/lobby";
     };
     this.bindInput();
+    const ability = async (path, body = {}) => {
+      const { status, data } = await API.post(`/api/matches/${this.matchId}/${path}`, body);
+      if (status === 200) this.applySnap(data); else toast((data && data.error_he) || "הפעולה אינה זמינה");
+    };
+    document.getElementById("move-left").onclick = () => ability("move", { direction: "left" });
+    document.getElementById("move-right").onclick = () => ability("move", { direction: "right" });
+    document.getElementById("shield-btn").onclick = () => ability("shield");
+    document.getElementById("mega-btn").onclick = () => { this.useMega = !this.useMega; document.getElementById("mega-btn").classList.toggle("active", this.useMega); };
     await this.refresh(0);
     this._destroyed = false;
     this.pollDelay = CONFIG.POLL_MIN_MS || 900;
@@ -181,7 +193,7 @@ const GameView = {
       this.aimAngle = Math.round(ang);
       this.aimPower = Math.max(5, Math.min(100, Math.round(dist / 3.2)));
       const el = document.getElementById("aim-info");
-      if (el) el.textContent = `זווית ${this.aimAngle}° · עוצמה ${this.aimPower}`;
+      if (el) this.renderAimGauges();
     };
     // Touches elsewhere on the battlefield are navigation, not shots. Aiming
     // must begin near your tower and become a real drag before release fires.
@@ -252,9 +264,15 @@ const GameView = {
       e.preventDefault();
       this.showAimUntil = performance.now() + 1600;
       const el = document.getElementById("aim-info");
-      if (el) el.textContent = `זווית ${this.aimAngle}° · עוצמה ${this.aimPower}`;
+      if (el) this.renderAimGauges();
     };
     window.addEventListener("keydown", this._onKey);
+  },
+
+  renderAimGauges() {
+    const a = document.getElementById("angle-gauge"), p = document.getElementById("power-gauge");
+    if (a) a.style.width = `${Math.max(0, Math.min(100, this.aimAngle / 90 * 100))}%`;
+    if (p) p.style.width = `${Math.max(0, Math.min(100, this.aimPower))}%`;
   },
 
   canFire() {
@@ -383,6 +401,11 @@ const GameView = {
       }
       this._lastWind = v;
     }
+    const moves = Number(s.moves_left || 0);
+    ["move-left", "move-right"].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = moves < 1; });
+    const ab = s.abilities || {};
+    const sb = document.getElementById("shield-btn"); if (sb) sb.disabled = Number(ab.shield || 0) < 1;
+    const mb = document.getElementById("mega-btn"); if (mb) mb.disabled = Number(ab.mega || 0) < 1;
     this.renderTimer();
   },
 
@@ -399,6 +422,17 @@ const GameView = {
     const sec = String(left % 60).padStart(2, "0");
     el.textContent = `⏱️ ${String(min).padStart(2, "0")}:${sec}`;
     el.classList.toggle("urgent", left <= 30);
+    if (this.snap.sudden_death) el.textContent += " · 🔥 נזק כפול";
+    const shot = document.getElementById("shot-clock");
+    if (shot && this.snap.turn_deadline) {
+      const turn = Math.max(0, Math.ceil(this.snap.turn_deadline - (Date.now() / 1000 + this.serverOffset)));
+      shot.textContent = `⏳ ${turn}`; shot.classList.toggle("urgent", turn <= 3);
+      // The ten-second clock is a real gameplay constraint: if the player is
+      // still loaded and ready at zero, fire the current visual-gauge aim.
+      if (turn === 0 && this.canFire() && !this._clockAutoFired) {
+        this._clockAutoFired = true; this.fire();
+      } else if (turn > 0) this._clockAutoFired = false;
+    }
   },
 
   renderWeapons() {
@@ -434,8 +468,10 @@ const GameView = {
     this.localLastShot = Date.now() / 1000 + this.serverOffset;
     this.spawnOptimisticShot();
     const { status, data } = await API.post(`/api/matches/${this.matchId}/fire`, {
-      angle: this.aimAngle, power: this.aimPower, weapon: this.weapon,
+      angle: this.aimAngle, power: this.aimPower, weapon: this.weapon, mega: !!this.useMega,
     });
+    this.useMega = false;
+    const megaBtn = document.getElementById("mega-btn"); if (megaBtn) megaBtn.classList.remove("active");
     this.firing = false;
     if (status === 200) {
       this.applySnap(data);
@@ -546,6 +582,13 @@ const GameView = {
                               t: -(delay + 0.08), dur: 0.1 });
         }
         delay += ev.cosmetic ? 0.2 : 0.45;
+      } else if (ev.type === "critical") {
+        toast("🎯 פגיעה קריטית בקנה התותח!");
+      } else if (ev.type === "random_event") {
+        const labels = { gust: "משב רוח קיצוני", meteor: "מטאור פגע בזירה", charge: "מטען מגה נוסף" };
+        toast(`⚡ אירוע אקראי: ${labels[ev.kind] || ev.kind}`);
+      } else if (ev.type === "sudden_death") {
+        toast("🔥 מוות פתאומי - הנזק הוכפל!");
       } else if (ev.type === "collapse" && ev.blocks) {
         for (const b of ev.blocks) this.spawnDebris(b.side, b.r, b.c, delay);
         if (ev.blocks.length)
@@ -705,9 +748,10 @@ const GameView = {
 
     // Layered illustrated battlefield. Each layer drifts at a different
     // speed, creating parallax without affecting any server-owned geometry.
+    const map = (this.snap && this.snap.map) || "valley";
     const sky = c.createLinearGradient(0, 0, 0, this.H);
-    sky.addColorStop(0, "#0a2943"); sky.addColorStop(.55, "#15506a");
-    sky.addColorStop(1, "#e09a62");
+    const palette = map === "desert" ? ["#3f1d38", "#b4533c", "#f2b66d"] : map === "highlands" ? ["#10243c", "#355c68", "#a7c7b7"] : ["#0a2943", "#15506a", "#e09a62"];
+    sky.addColorStop(0, palette[0]); sky.addColorStop(.55, palette[1]); sky.addColorStop(1, palette[2]);
     c.fillStyle = sky; c.fillRect(-20, -20, this.W + 40, this.H + 40);
 
     // moon glow and sparse stars keep the same teal/amber palette.
@@ -760,6 +804,12 @@ const GameView = {
     c.fillStyle = "rgba(244,201,93,.20)";
     for (let x = 8; x < this.W; x += 34) c.fillRect(x, this.GROUND + 8 + (x % 3) * 3, 19, 2);
 
+    const ob = this.snap && this.snap.obstacle;
+    if (ob) {
+      c.fillStyle = "#4b5563"; c.strokeStyle = "#111827"; c.lineWidth = 4;
+      c.fillRect(ob.x, ob.y, ob.w, ob.h); c.strokeRect(ob.x, ob.y, ob.w, ob.h);
+      c.fillStyle = "rgba(255,255,255,.14)"; c.fillRect(ob.x + 8, ob.y + 8, ob.w - 16, 8);
+    }
     // towers + HP bars and capped, deterministic idle life.
     for (const side of ["p1", "p2"]) {
       this.drawIdleLife(side, now / 1000);
@@ -1148,7 +1198,9 @@ const GameView = {
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
       ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
-      ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} נקודות דרגה</p>` : ""}
+      ${!res.practice && res.rank_points_awarded > 0 ? `<p class="practice-note">⭐ +${res.rank_points_awarded} XP מנזק וניצחון</p>` : ""}
+      ${!res.practice && res.damage_xp_awarded > 0 ? `<p class="practice-note">⭐ +${res.damage_xp_awarded} XP מנזק</p>` : ""}
+      ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} XP</p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         <button class="btn" id="again-btn">עוד משחק</button>
@@ -1180,21 +1232,23 @@ const GameView = {
     };
   },
 
-  // After an AI match, "play again" offers an instant rematch against the
-  // same bot with the difficulty preselected from the match just played,
-  // instead of dumping the player back at the lobby.
+  // Rematches expose only the five difficulty tiers. The server maps a tier
+  // to an authoritative bot rank; the client never chooses or submits one.
   showAiRematch() {
     const ov = document.getElementById("game-overlay");
-    const practice = this.snap && this.snap.practice;
-    const minLevel = (this.snap && this.snap.players && this.snap.players[this.snap.you] && this.snap.players[this.snap.you].idf_rank || {}).level || 1;
-    const prevLevel = (this.snap && this.snap.ai_rank_level) || minLevel;
+    const previous = (this.snap && (this.snap.ai_tier || (this.snap.practice ? "easy" : "medium"))) || "medium";
+    const tiers = [
+      ["easy", "קל - תרגול, ללא נקודות או מטבעות"],
+      ["medium", "בינוני"], ["hard", "קשה"],
+      ["ultra", "אולטרה קשה"], ["expert", "מומחה - האתגר הקשה ביותר"]
+    ];
     ov.innerHTML = `
       <div class="end-emoji">🤖⚔️</div>
       <h2>ריבאנץ' נגד OrelAI Bot</h2>
-      <p class="end-sub">אותו יריב, משחק חדש - אפשר לשנות רמת קושי</p>
+      <p class="end-sub">משחק חדש - בחר רמת קושי בלבד</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center">
         <select id="rematch-diff" aria-label="רמת קושי">
-          ${practice ? `<option value="easy">משחק תרגול</option>` : App.botRankOptions(minLevel, prevLevel)}
+          ${tiers.map(([value, label]) => `<option value="${value}" ${value === previous ? "selected" : ""}>${label}</option>`).join("")}
         </select>
         <button class="btn" id="rematch-go">עוד משחק</button>
         <button class="btn secondary" id="rematch-lobby">חזרה ללובי</button>
@@ -1203,17 +1257,18 @@ const GameView = {
       Sfx.play("click");
       const btn = e.target;
       btn.disabled = true; btn.textContent = "יוצר משחק...";
-      const value = document.getElementById("rematch-diff").value;
-      const body = practice ? { difficulty: "easy" } : { difficulty: "ranked", bot_rank_level: Number(value) };
-      const { status, data } = await API.post("/api/matches/ai", body);
-      if (status === 200 && data.match_id) {
-        location.hash = "#/game/" + data.match_id;
-      } else {
+      const difficulty = document.getElementById("rematch-diff").value;
+      localStorage.setItem("brigagame.aiTier", difficulty);
+      const { status, data } = await API.post("/api/matches/ai", { difficulty });
+      if (status === 200 && data.match_id) location.hash = "#/game/" + data.match_id;
+      else {
         btn.disabled = false; btn.textContent = "עוד משחק";
         toast((data && data.error_he) || "שגיאה ביצירת משחק");
       }
     };
-    document.getElementById("rematch-lobby").onclick = () => { Sfx.play("click"); location.hash = "#/lobby"; };
+    document.getElementById("rematch-lobby").onclick = () => {
+      Sfx.play("click"); Sfx.stopMusic(); location.hash = "#/lobby";
+    };
   },
 
   spawnConfetti() {
