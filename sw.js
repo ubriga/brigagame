@@ -1,10 +1,10 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "13-admin-controls";
+const RELEASE = "13-premium-skins";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/style.css", "./js/config.js", "./js/i18n.js", "./js/api.js",
-  "./js/audio.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
+  "./js/audio.js", "./js/tower-skins.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
   "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3",
   "./assets/sfx/crumble.mp3", "./assets/sfx/click.mp3",
   "./assets/sfx/coin.mp3", "./assets/sfx/win.mp3", "./assets/sfx/lose.mp3",

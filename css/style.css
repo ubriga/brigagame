@@ -335,3 +335,8 @@ html:has(body.game-active),body.game-active{overflow-x:hidden;max-width:100vw;sc
 .swatch{position:relative;overflow:hidden}.coming-ribbon{position:absolute;top:12px;right:-36px;width:140px;transform:rotate(38deg);background:#f59e0b;color:#111827;font-weight:900;text-align:center;padding:5px;box-shadow:0 2px 8px #0008;z-index:2}.item.disabled .coming-ribbon{filter:none;opacity:1}
 #lang-btn{min-width:44px;font-weight:800}
 html[dir="ltr"] body{text-align:left}html[dir="ltr"] .coming-ribbon{right:auto;left:-36px;transform:rotate(-38deg)}
+
+/* Premium skins show real geometry in store cards, not color-only swatches. */
+.skin-card-art { position:relative; }
+.skin-card-preview { width:100%; height:150px; display:block; border-radius:10px; background:radial-gradient(circle at 50% 35%,rgba(56,189,248,.14),rgba(2,11,19,.8)); }
+@media (max-width:640px) { .skin-card-preview { height:135px; } }
