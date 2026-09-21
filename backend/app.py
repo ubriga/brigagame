@@ -103,8 +103,18 @@ def user_mods(user_id):
     return mods
 
 
+def effective_catalog():
+    """Merge validated operator controls without allowing arbitrary style data."""
+    catalog = {key: dict(value) for key, value in CATALOG.items()}
+    for row in q("SELECT item_id, price, available FROM cosmetic_overrides"):
+        if row["item_id"] in catalog and catalog[row["item_id"]].get("kind") == "skin":
+            catalog[row["item_id"]]["price"] = row["price"]
+            catalog[row["item_id"]]["available"] = bool(row["available"])
+    return catalog
+
+
 def skin_style(skin_id):
-    item = CATALOG.get(skin_id, DEFAULT_SKIN)
+    item = effective_catalog().get(skin_id, DEFAULT_SKIN)
     # Keep colors in the payload for older cached clients while richer clients
     # use the style data. This makes rolling deploys safe mid-match.
     return {"colors": item["colors"], **item["style"]}
@@ -584,7 +594,7 @@ def store_get():
                           "equipped": bool(r["equipped"])}
            for r in q("SELECT item_id, qty, level, equipped FROM user_items"
                       " WHERE user_id = ?", (g.user["id"],))}
-    return jsonify({"catalog": CATALOG, "inventory": inv,
+    return jsonify({"catalog": effective_catalog(), "inventory": inv,
                     "coins": g.user["coins"]})
 
 
@@ -598,9 +608,11 @@ def store_buy():
     if blocked:
         return jsonify({"error": "blocked", "error_he": blocked}), 403
     item_id = (request.get_json(silent=True) or {}).get("item_id", "")
-    item = CATALOG.get(item_id)
+    item = effective_catalog().get(item_id)
     if not item:
         return jsonify({"error": "unknown_item"}), 400
+    if item.get("available") is False:
+        return jsonify({"error": "unavailable", "error_he": "הפריט אינו זמין כרגע."}), 400
     uid = g.user["id"]
     owned = q("SELECT * FROM user_items WHERE user_id = ? AND item_id = ?",
               (uid, item_id), one=True)
@@ -1397,6 +1409,38 @@ def admin_maintenance_set():
             (json.dumps({"on": on, "message": message}),))
     audit("admin.maintenance", details={"on": on, "message": message})
     return jsonify({"ok": True, "maintenance": get_maintenance()})
+
+
+@app.get("/api/admin/cosmetics")
+@require_admin
+def admin_cosmetics_list():
+    catalog = effective_catalog()
+    return jsonify({"cosmetics": [{"item_id": key, **item} for key, item in catalog.items()
+                    if item.get("kind") == "skin"]})
+
+
+@app.post("/api/admin/cosmetics/<item_id>")
+@require_admin
+def admin_cosmetics_update(item_id):
+    base = CATALOG.get(item_id)
+    if not base or base.get("kind") != "skin":
+        return jsonify({"error": "unknown_cosmetic"}), 404
+    body = request.get_json(silent=True) or {}
+    try:
+        price = int(body.get("price", base["price"]))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_price"}), 400
+    if price < 0 or price > 100000:
+        return jsonify({"error": "bad_price"}), 400
+    available = bool(body.get("available", True))
+    execute("INSERT INTO cosmetic_overrides (item_id, price, available, updated_by, updated_at)"
+            " VALUES (?,?,?,?,?) ON CONFLICT(item_id) DO UPDATE SET price=excluded.price,"
+            " available=excluded.available, updated_by=excluded.updated_by, updated_at=excluded.updated_at",
+            (item_id, price, int(available), g.user["id"], _now_iso()))
+    audit("admin.cosmetic_update", "item", item_id,
+          {"price": price, "available": available})
+    return jsonify({"ok": True, "item_id": item_id, "price": price,
+                    "available": available})
 
 
 @app.get("/api/admin/coupons")

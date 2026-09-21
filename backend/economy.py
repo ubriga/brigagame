@@ -140,6 +140,46 @@ CATALOG = {
     },
 }
 
+# Large cosmetics collection. Every entry is visual-only; rarity drives price,
+# while style data is sent by the server so clients cannot forge ownership.
+_COSMETIC_SKINS = [
+    ("ocean", "גל אוקיינוס", "rare", 350, "#22d3ee", "#164e63", "≈", "wave"),
+    ("forest", "יער עתיק", "common", 180, "#4ade80", "#14532d", "♣", "brick"),
+    ("desert", "חול מדברי", "common", 180, "#fbbf24", "#92400e", "☀", "sand"),
+    ("arctic", "קרח ארקטי", "rare", 350, "#e0f2fe", "#0369a1", "❄", "ice"),
+    ("volcano", "לבה געשית", "epic", 700, "#fb7185", "#7f1d1d", "♨", "lava"),
+    ("toxic", "ניאון רעיל", "epic", 700, "#a3e635", "#365314", "☣", "neon"),
+    ("cyber", "סייבר 2099", "epic", 800, "#e879f9", "#312e81", "⌁", "circuit"),
+    ("stealth", "צל חמקני", "rare", 420, "#64748b", "#020617", "◈", "carbon"),
+    ("pearl", "פנינה לבנה", "rare", 420, "#f8fafc", "#94a3b8", "◉", "pearl"),
+    ("rose", "רוז גולד", "epic", 750, "#fda4af", "#9f1239", "✿", "metal"),
+    ("galaxy", "גלקסיה", "legendary", 1400, "#818cf8", "#1e1b4b", "✺", "stars"),
+    ("dragon", "דרקון אש", "legendary", 1600, "#f97316", "#450a0a", "龍", "scales"),
+    ("samurai", "סמוראי", "epic", 850, "#ef4444", "#111827", "侍", "lacquer"),
+    ("pharaoh", "פרעה", "legendary", 1500, "#facc15", "#0f766e", "𓂀", "stone"),
+    ("viking", "ויקינג", "epic", 850, "#d1d5db", "#374151", "ᚱ", "steel"),
+    ("pirate", "פיראט", "rare", 450, "#f59e0b", "#292524", "☠", "wood"),
+    ("candy", "ממלכת ממתקים", "rare", 380, "#f9a8d4", "#7c3aed", "♥", "candy"),
+    ("pixel", "פיקסל רטרו", "common", 220, "#2dd4bf", "#134e4a", "▣", "pixel"),
+    ("camo", "הסוואה", "common", 220, "#84cc16", "#3f6212", "✥", "camo"),
+    ("chrome", "כרום", "epic", 800, "#e2e8f0", "#475569", "◇", "chrome"),
+    ("plasma", "פלזמה", "legendary", 1350, "#c084fc", "#4c1d95", "ϟ", "plasma"),
+    ("solar", "שמש מלכותית", "legendary", 1450, "#fde047", "#c2410c", "☀", "solar"),
+    ("lunar", "ירח כסוף", "epic", 780, "#cbd5e1", "#312e81", "☾", "lunar"),
+    ("aurora", "זוהר צפוני", "legendary", 1550, "#5eead4", "#6d28d9", "✧", "aurora"),
+    ("obsidian", "אובסידיאן", "legendary", 1700, "#a78bfa", "#09090b", "◆", "obsidian"),
+    ("hologram", "הולוגרמה", "legendary", 1800, "#67e8f9", "#7e22ce", "⌬", "hologram"),
+]
+for _key, _name, _tier, _price, _light, _dark, _emblem, _texture in _COSMETIC_SKINS:
+    CATALOG["skin_" + _key] = {
+        "kind": "skin", "name": _key.title(), "name_he": _name,
+        "tier": _tier, "price": _price, "colors": [_light, _dark],
+        "style": {"fill": [_light, _dark], "frame": _light,
+                  "glow": _light + "88", "texture": _texture,
+                  "emblem": _emblem, "debris": [_light, _dark, "#f8fafc"]},
+        "desc_he": "מראה קוסמטי איכותי בדרגת " + {"common":"רגיל","rare":"נדיר","epic":"אפי","legendary":"אגדי"}[_tier] + ".",
+    }
+
 DEFAULT_SKIN = {
     "colors": ["#3b82f6", "#1e3a8a"],
     "style": {"fill": ["#60a5fa", "#1d4ed8"], "frame": "#bfdbfe",

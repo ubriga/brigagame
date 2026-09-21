@@ -16,3 +16,8 @@ check("aim starts near own tower only", game.includes("Math.hypot(p.x - m.x, p.y
 check("tap does not shoot and drag threshold is required", game.includes(">= 12") && game.includes("if (!dragged) return"));
 check("cancelled touch never shoots", game.includes('addEventListener("pointercancel", cancelAim)'));
 check("PWA no longer forces fullscreen landscape", manifest.display === "standalone" && manifest.orientation === "any" && !manifest.display_override.includes("fullscreen"));
+
+check("match start resets inherited horizontal scroll", game.includes("document.documentElement.scrollLeft = 0") && game.includes("scrollIntoView({ block: \"start\", inline: \"center\" })"));
+check("game document blocks horizontal overflow", css.includes("body.game-active{overflow-x:hidden"));
+check("shop exposes item investment tiers", app.includes("legendary: 4") && app.includes("tierOrder"));
+check("admin controls cosmetic price and availability", app.includes("/api/admin/cosmetics/") && app.includes("data-price") && app.includes("data-available"));
