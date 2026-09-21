@@ -317,14 +317,16 @@ wres = st["results"][winner_side]
 lres = st["results"]["p2" if winner_side == "p1" else "p1"]
 check("me exposes idf_rank (level 1 turai at start)",
       "idf_rank" in ma["user"] and "idf_rank" in mb["user"])
-check("rank thresholds are doubled: rabat requires 6 and top rank 700",
-      ma["user"]["idf_rank"]["next"]["wins_required"] == 6
+check("rank thresholds remain rabat 6 XP through top rank 700 XP",
+      rank_payload(0)["next"]["wins_required"] == 6
       and rank_payload(700)["level"] == 18)
-check("1 win does not promote (rabat needs 6)",
-      wres["idf_rank"]["level"] == 1 and wres["idf_rank"]["abbr_he"] == "טור׳"
-      and "rank_up" not in wres, json.dumps(wres.get("idf_rank")))
-check("loser stays turai with progress",
-      lres["idf_rank"]["level"] == 1 and lres["idf_rank"]["next"]["wins_to_go"] >= 2)
+check("winner receives server-derived XP from damage plus win",
+      wres["rank_points_awarded"] >= 10
+      and wres["idf_rank"]["xp"] == wres["rank_points_awarded"],
+      json.dumps(wres.get("idf_rank")))
+check("loser progression reflects authoritative damage XP and loss stake",
+      lres["idf_rank"]["xp"] >= 0 and "damage_xp_awarded" in lres,
+      json.dumps(lres.get("idf_rank")))
 
 # force both players to 5 points; a quick second match (alice fires, bob leaves)
 # makes alice's 3rd win -> promotion to rabat. Leave-win avoids a full match.
@@ -346,24 +348,26 @@ s, st2x = call("GET", f"/api/matches/{mid2}/state?since=0", token=ta)
 check("promotion match finished for alice",
       st2x["status"] == "finished" and st2x["winner_side"] == "p1", str(st2x.get("status")))
 w2res = st2x["results"]["p1"]
-check("6th point promotes to rabat (level 2)",
-      w2res["idf_rank"]["level"] == 2 and w2res["idf_rank"]["abbr_he"] == "רב״ט",
+expected_after = rank_payload(5 + w2res["rank_points_awarded"])
+check("damage plus human-win XP advances the ladder",
+      w2res["idf_rank"]["level"] == expected_after["level"]
+      and w2res["idf_rank"]["xp"] == expected_after["xp"],
       json.dumps(w2res.get("idf_rank")))
-check("rank_up event on promotion",
+check("rank_up event reports the actual crossed levels",
       w2res.get("rank_up", {}).get("from_level") == 1
-      and w2res.get("rank_up", {}).get("to_level") == 2
-      and w2res.get("rank_up", {}).get("abbr_he") == "רב״ט", json.dumps(w2res.get("rank_up")))
+      and w2res.get("rank_up", {}).get("to_level") == expected_after["level"],
+      json.dumps(w2res.get("rank_up")))
 _, mw = call("GET", "/api/me", token=ta)
-check("winner me shows level 2 with next threshold",
-      mw["user"]["idf_rank"]["level"] == 2
-      and mw["user"]["idf_rank"]["next"]["wins_required"] == 12,
+check("winner me shows the same server-derived XP level",
+      mw["user"]["idf_rank"]["level"] == expected_after["level"]
+      and mw["user"]["idf_rank"]["xp"] == expected_after["xp"],
       json.dumps(mw["user"]["idf_rank"]))
 s, lb = call("GET", "/api/leaderboard", token=ta)
 check("leaderboard exposes idf_rank",
       s == 200 and all("idf_rank" in r for r in lb["leaderboard"]))
 s, st3 = call("GET", f"/api/matches/{mid2}/state?since=0", token=ta)
 check("match players expose idf_rank with insignia path",
-      st3["players"]["p1"]["idf_rank"]["level"] == 2
+      st3["players"]["p1"]["idf_rank"]["level"] == expected_after["level"]
       and st3["players"]["p1"]["idf_rank"]["insignia"].startswith("assets/ranks/rank-"))
 
 # --- AI match
@@ -504,14 +508,15 @@ check("win reward varies by destruction completeness and bot strength",
       0 < minimum_win < full_medium < full_ultra <= 50,
       json.dumps({"minimum_win": minimum_win, "full_medium": full_medium,
                   "full_ultra": full_ultra}))
-check("normal bot win awards half a rank point",
-      st["results"]["p1"].get("rank_points_awarded") == 0.5,
+expected_bot_xp = round(5000 * 0.05 + 6.0, 1)
+check("normal bot win awards server-derived damage plus win XP",
+      st["results"]["p1"].get("rank_points_awarded") == expected_bot_xp,
       json.dumps(st["results"]["p1"]))
 _, mc = call("GET", "/api/me", token=tc)
-check("half point reflected in rank progress",
-      mc["user"]["idf_rank"]["wins"] == 0.5
-      and mc["user"]["idf_rank"]["level"] == 1
-      and mc["user"]["idf_rank"]["next"]["wins_to_go"] == 5.5,
+check("damage plus win XP is reflected in rank progress",
+      mc["user"]["idf_rank"]["xp"] == expected_bot_xp
+      and mc["user"]["idf_rank"]["level"] == 13
+      and mc["user"]["idf_rank"]["next"]["wins_to_go"] == 34.0,
       json.dumps(mc["user"]["idf_rank"]))
 
 # --- rank-point deductions: practice exempt; ranked bots and humans scale
@@ -806,7 +811,7 @@ def set_tower_fraction(match_id, side, fraction):
 tg = auth_dev(f"stale-{run_tag}@example.com", "Stale")["token"]
 _, me0 = call("GET", "/api/me", token=tg)
 
-# --- three-minute server clock: integrity winner, exact tie, and bot coverage
+# --- sudden death at 3:00, final integrity resolution at 4:00
 tta = auth_dev(f"timer-a-{run_tag}@example.com", "Timer A")["token"]
 ttb = auth_dev(f"timer-b-{run_tag}@example.com", "Timer B")["token"]
 _, before_ta = call("GET", "/api/me", token=tta)
@@ -815,13 +820,13 @@ s, r = call("POST", "/api/matches/friend", token=tta)
 tmid, tcode = r["match_id"], r["code"]
 call("POST", "/api/matches/join", token=ttb, body={"code": tcode})
 s, active_clock = call("GET", f"/api/matches/{tmid}/state?since=0", token=tta)
-check("active snapshot exposes three-minute deadline",
-      s == 200 and 178 <= active_clock["match_ends_at"] - active_clock["server_time"] <= 181,
+check("active snapshot exposes four-minute deadline",
+      s == 200 and 238 <= active_clock["match_ends_at"] - active_clock["server_time"] <= 241,
       str(active_clock.get("match_ends_at")))
 set_tower_fraction(tmid, "p2", .75)
-set_match_age(tmid, 180)
+set_match_age(tmid, 240)
 s, timed = call("GET", f"/api/matches/{tmid}/state?since=0", token=tta)
-check("three-minute integrity lead decides human match",
+check("four-minute integrity lead decides human match",
       s == 200 and timed["status"] == "finished" and timed["winner_side"] == "p1"
       and timed["finish_reason"] == "time_limit"
       and timed["time_limit_integrity"]["p1"] > timed["time_limit_integrity"]["p2"],
@@ -829,7 +834,7 @@ check("three-minute integrity lead decides human match",
 check("timed winner uses normal economy",
       timed["results"]["p1"]["outcome"] == "win"
       and timed["results"]["p2"]["outcome"] == "loss"
-      and timed["results"]["p1"]["rank_points_awarded"] == 1.0,
+      and timed["results"]["p1"]["rank_points_awarded"] == 10.0,
       json.dumps(timed.get("results")))
 # Re-polling cannot apply the timed economy twice.
 call("GET", f"/api/matches/{tmid}/state?since=0", token=ttb)
@@ -844,7 +849,7 @@ _, draw0 = call("GET", "/api/me", token=tta)
 s, r = call("POST", "/api/matches/friend", token=tta)
 dmid, dcode = r["match_id"], r["code"]
 call("POST", "/api/matches/join", token=ttb, body={"code": dcode})
-set_match_age(dmid, 180)
+set_match_age(dmid, 240)
 s, draw = call("GET", f"/api/matches/{dmid}/state?since=0", token=tta)
 _, draw1 = call("GET", "/api/me", token=tta)
 check("equal tower integrity ends as draw",
@@ -861,9 +866,9 @@ check("draw is economy-neutral",
 s, r = call("POST", "/api/matches/ai", token=tta, body={"difficulty": "easy"})
 btmid = r["match_id"]
 set_tower_fraction(btmid, "p1", .7)
-set_match_age(btmid, 180)
+set_match_age(btmid, 240)
 s, bot_timed = call("GET", f"/api/matches/{btmid}/state?since=0", token=tta)
-check("three-minute integrity rule covers bot matches",
+check("four-minute integrity rule covers bot matches",
       s == 200 and bot_timed["status"] == "finished"
       and bot_timed["winner_side"] == "p2" and bot_timed["finish_reason"] == "time_limit",
       json.dumps(bot_timed))

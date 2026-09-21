@@ -37,6 +37,7 @@ WIND_MAX = 40.0
 # shifts a normal 1.2-1.5s shot by roughly one tower block, so players must
 # compensate without making the battlefield unwinnable.
 WIND_ACCEL = 0.75
+MAPS = ("valley", "desert", "highlands")
 
 
 def new_tower(hp_level=0):
@@ -46,10 +47,14 @@ def new_tower(hp_level=0):
 
 
 def new_state(p1_mods, p2_mods):
-    """pX_mods: {'armor': lvl, 'hp': lvl, 'skin': item_id or None}"""
+    """Create a complete server-authoritative battlefield."""
+    p1x = random.randint(*TOWER_X_RANGE["p1"])
+    p2x = random.randint(*TOWER_X_RANGE["p2"])
+    obstacle_x = random.randint(p1x + 190, p2x - 100)
     return {
-        "tower_x": {"p1": random.randint(*TOWER_X_RANGE["p1"]),
-                    "p2": random.randint(*TOWER_X_RANGE["p2"])},
+        "tower_x": {"p1": p1x, "p2": p2x},
+        "map": random.choice(MAPS),
+        "obstacle": {"x": obstacle_x, "y": GROUND_Y - 105, "w": 68, "h": 105},
         "towers": {
             "p1": new_tower(p1_mods.get("hp", 0)),
             "p2": new_tower(p2_mods.get("hp", 0)),
@@ -60,6 +65,12 @@ def new_state(p1_mods, p2_mods):
         "damage_dealt": {"p1": 0.0, "p2": 0.0},
         "ready": {"p1": False, "p2": False},
         "started_at": time.time(),
+        "sudden_death": False,
+        "last_turn_at": {"p1": time.time(), "p2": time.time()},
+        "moves_left": {"p1": 1, "p2": 1},
+        "abilities": {"p1": {"shield": 1, "mega": 1}, "p2": {"shield": 1, "mega": 1}},
+        "shield": {"p1": False, "p2": False},
+        "shot_count": 0,
     }
 
 
@@ -119,6 +130,12 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
     if not cosmetic:
         armor_lvl = state["mods"][enemy].get("armor", 0)
         mult = armor_reduction(armor_lvl)
+        if state.get("shield", {}).get(enemy):
+            mult *= 0.4
+            state["shield"][enemy] = False
+            events.append({"type": "shield", "side": enemy, "active": False})
+        if state.get("sudden_death"):
+            mult *= 2.0
         for r, c, cx, cy in tower_blocks(state, enemy):
             hp = state["towers"][enemy][r][c]
             if hp <= 0:
@@ -207,6 +224,11 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
         if y >= GROUND_Y:
             points.append([round(x, 1), GROUND_Y])
             return x, GROUND_Y, points, False
+        # Random mid-field obstacle changes the viable firing arcs.
+        ob = state.get("obstacle") or {}
+        if ob and ob.get("x", 0) <= x <= ob.get("x", 0) + ob.get("w", 0) and ob.get("y", 0) <= y <= GROUND_Y:
+            points.append([round(x, 1), round(y, 1)])
+            return x, y, points, False
         # tower collision
         for s in (enemy, side):
             for r, c, cx, cy in tower_blocks(state, s):
@@ -220,6 +242,16 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
             points.append([round(cx, 1), round(cy, 1)])
             return cx, cy, points, True
     return None, None, points, True
+
+
+def _critical_multiplier(state, attacker, x, y, events):
+    """A direct hit on the enemy cannon barrel is a server-verified critical."""
+    enemy = "p2" if attacker == "p1" else "p1"
+    mx, my = muzzle(state, enemy)
+    if math.hypot(x - mx, y - my) <= 24:
+        events.append({"type": "critical", "side": attacker, "target": enemy})
+        return 2.5
+    return 1.0
 
 
 def fire_weapon(state, side, angle, power, weapon):
@@ -244,7 +276,7 @@ def fire_weapon(state, side, angle, power, weapon):
                 if off:
                     _explode(state, x, y, 0, 26, side, ev, cosmetic=True)
                 else:
-                    _explode(state, x, y, w["damage"], w["radius"], side, ev)
+                    _explode(state, x, y, w["damage"] * _critical_multiplier(state, side, x, y, ev), w["radius"], side, ev)
             events.extend(ev)
     elif weapon == "cluster_shell":
         ev = []
@@ -269,7 +301,7 @@ def fire_weapon(state, side, angle, power, weapon):
             if off:
                 _explode(state, x, y, 0, 26, side, ev, cosmetic=True)
             else:
-                _explode(state, x, y, w["damage"], w["radius"], side, ev)
+                _explode(state, x, y, w["damage"] * _critical_multiplier(state, side, x, y, ev), w["radius"], side, ev)
         events.extend(ev)
 
     # Dynamic wind: every shot re-rolls the wind, so the next shot always
@@ -281,6 +313,20 @@ def fire_weapon(state, side, angle, power, weapon):
                    "previous": previous_wind})
 
     state["last_shot_at"][side] = time.time()
+    state.setdefault("last_turn_at", {})[side] = time.time()
+    state["shot_count"] = int(state.get("shot_count", 0)) + 1
+    # Bounded random events, rolled authoritatively after every third shot.
+    if state["shot_count"] % 3 == 0:
+        kind = random.choice(("gust", "meteor", "charge"))
+        if kind == "gust":
+            state["wind"] = round(random.choice((-1, 1)) * WIND_MAX, 1)
+        elif kind == "meteor":
+            mx = random.randint(360, 640)
+            _explode(state, mx, GROUND_Y, 10, 48, side, events)
+        else:
+            state.setdefault("abilities", {}).setdefault(side, {}).setdefault("mega", 0)
+            state["abilities"][side]["mega"] += 1
+        events.append({"type": "random_event", "kind": kind})
     return events, not tower_alive(state["towers"][enemy])
 
 
@@ -331,7 +377,10 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     # gusts into random misses. Medium/ranked bots learn this gradually with
     # rank; hard compensates most of it and ultra compensates fully.
     tier = state.get("ai_tier", "medium")
-    if tier == "ultra":
+    if tier == "expert":
+        wind_skill = 1.0
+        profile = {"angle_noise": 0.8, "power_min": 0.995, "power_max": 1.005}
+    elif tier == "ultra":
         wind_skill = 1.0
     elif tier == "hard":
         wind_skill = 0.7
