@@ -44,6 +44,33 @@ def tower_dims(tower):
     return len(tower), len(tower[0]) if tower else 0
 
 
+def obstacle_at(state, at_time=None):
+    """Return the obstacle at a server time. Old matches remain stationary."""
+    ob = dict(state.get("obstacle") or {})
+    motion = state.get("obstacle_motion") or {}
+    if not ob or not motion.get("enabled"):
+        return ob
+    lo, hi = float(motion["min_x"]), float(motion["max_x"])
+    distance = max(0.0, hi - lo)
+    speed = max(1.0, float(motion.get("speed", 20)))
+    dwell = max(0.0, float(motion.get("warning_seconds", 0)))
+    travel = distance / speed if distance else 0.0
+    leg = dwell + travel
+    cycle = 2 * leg
+    phase = (float(at_time if at_time is not None else time.time()) - float(motion.get("epoch", 0))) % max(0.001, cycle)
+    reverse = phase >= leg
+    local = phase - leg if reverse else phase
+    warning = local < dwell
+    progress = 0.0 if warning or travel == 0 else min(1.0, (local - dwell) / travel)
+    x = (hi - progress * distance) if reverse else (lo + progress * distance)
+    ob.update({"x": round(x, 2), "moving": not warning and distance > 0,
+               "warning": warning, "direction": -1 if reverse else 1,
+               "motion": {"enabled": True, "min_x": lo, "max_x": hi,
+                          "speed": speed, "warning_seconds": dwell,
+                          "epoch": float(motion.get("epoch", 0))}})
+    return ob
+
+
 def expanded_dims(extra_cubes):
     # Add full-height side strips first. Every cube increases area/HP, and each
     # completed strip makes the silhouette wider and easier to hit.
@@ -75,10 +102,18 @@ def new_state(p1_mods, p2_mods):
     p2x = random.randint(max(580, 580 + (p2_cols - TOWER_COLS) * BLOCK), WORLD_W - 40 - p2_cols * BLOCK)
     gap_start, gap_end = p1x + p1_cols * BLOCK + 60, p2x - 128
     obstacle_x = random.randint(int(gap_start), int(max(gap_start, gap_end)))
+    dyn = p1_mods.get("dynamic_obstacle") or {}
+    obstacle_enabled = bool(dyn.get("enabled"))
+    obstacle_epoch = time.time()
     return {
         "tower_x": {"p1": p1x, "p2": p2x},
         "map": random.choice(MAPS),
         "obstacle": {"x": obstacle_x, "y": GROUND_Y - 105, "w": 68, "h": 105},
+        "obstacle_motion": {"enabled": obstacle_enabled,
+            "min_x": float(gap_start), "max_x": float(max(gap_start, gap_end)),
+            "speed": float(dyn.get("speed", 20)),
+            "warning_seconds": float(dyn.get("warning_seconds", 1.5)),
+            "epoch": obstacle_epoch},
         "towers": {
             "p1": new_tower(p1_mods.get("hp", 0), p1_mods.get("extra_cubes", 0), p1_mods.get("expansion_cube_hp", BLOCK_HP)),
             "p2": new_tower(p2_mods.get("hp", 0), p2_mods.get("extra_cubes", 0), p2_mods.get("expansion_cube_hp", BLOCK_HP)),
@@ -272,7 +307,7 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
             points.append([round(x, 1), GROUND_Y])
             return x, GROUND_Y, points, False
         # Random mid-field obstacle changes the viable firing arcs.
-        ob = state.get("obstacle") or {}
+        ob = obstacle_at(state, time.time() + t)
         if ob and ob.get("x", 0) <= x <= ob.get("x", 0) + ob.get("w", 0) and ob.get("y", 0) <= y <= GROUND_Y:
             points.append([round(x, 1), round(y, 1)])
             return x, y, points, False

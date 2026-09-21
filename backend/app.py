@@ -21,7 +21,7 @@ from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS,
                      MAX_COINS_PER_WIN, MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for,
                      win_reward_coins)
 from game_logic import (TOWER_X_RANGE, ai_choose_shot, cooldown_for, fire_weapon, new_state,
-                        tower_hp)
+                        obstacle_at, tower_hp)
 from ranks import MAX_LEVEL, rank_for_level, rank_payload, rank_up_info
 from security import init_security, limited, request_ip_hash
 
@@ -107,7 +107,9 @@ def user_mods(user_id):
     refresh_expansions(user_id)
     expansion = q("SELECT extra_cubes FROM user_expansions WHERE user_id = ?", (user_id,), one=True)
     mods["extra_cubes"] = int(expansion["extra_cubes"]) if expansion else 0
-    mods["expansion_cube_hp"] = float(get_gameplay_controls()["tower_expansion"]["cube_hp"])
+    controls = get_gameplay_controls()
+    mods["expansion_cube_hp"] = float(controls["tower_expansion"]["cube_hp"])
+    mods["dynamic_obstacle"] = dict(controls["dynamic_obstacle"])
     return mods
 
 
@@ -187,7 +189,7 @@ DEFAULT_GAMEPLAY_CONTROLS = {
         "cube_hp": 18,
     },
     "dynamic_obstacle": {
-        "enabled": False,
+        "enabled": True,
         "speed": 20,
         "warning_seconds": 1.5,
     },
@@ -518,7 +520,7 @@ def match_snapshot(m, user_id, since):
                      if state.get("towers") else None),
         "wind": state.get("wind"),
         "map": state.get("map", "valley"),
-        "obstacle": state.get("obstacle"),
+        "obstacle": obstacle_at(state),
         "sudden_death": bool(state.get("sudden_death")),
         "turn_deadline": (state.get("last_turn_at") or {}).get(side_for(m, user_id), 0) + 10,
         "moves_left": (state.get("moves_left") or {}).get(side_for(m, user_id), 0),
