@@ -21,6 +21,7 @@ check("match start resets inherited horizontal scroll", game.includes("document.
 check("game document blocks horizontal overflow", css.includes("body.game-active{overflow-x:hidden"));
 check("shop exposes item investment tiers", app.includes("legendary: 4") && app.includes("tierOrder"));
 check("admin controls cosmetic price and availability", app.includes("/api/admin/cosmetics/") && app.includes("data-price") && app.includes("data-available"));
+check("admin foundations cover every approved gameplay stage", app.includes("/api/admin/gameplay-controls") && ["premium_skins", "coatings", "tower_expansion", "dynamic_obstacle"].every(k => app.includes(k)));
 
 const i18n = fs.readFileSync(path.join(root, "js/i18n.js"), "utf8");
 check("language choice persists and covers dynamic game/store DOM", i18n.includes("brigagame_lang") && i18n.includes("MutationObserver") && app.includes("Lang.boot()"));
