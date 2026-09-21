@@ -145,6 +145,9 @@ const App = {
     if (GameView.canvas) GameView.destroy();
     const hash = location.hash || "#/lobby";
     const inGame = hash.startsWith("#/game/");
+    // Match music belongs to the battlefield. Always stop it when routing to
+    // the lobby or any other screen (including PWA history navigation).
+    if (!inGame) Sfx.stopMusic();
     // The HUD owns match exit. Mark the document so the account logout cannot
     // appear as a second, confirmation-free exit path during gameplay.
     document.body.classList.toggle("game-active", inGame);
@@ -251,6 +254,7 @@ const App = {
                 <option value="medium">בינוני</option>
                 <option value="hard">קשה</option>
                 <option value="ultra">אולטרה קשה</option>
+                <option value="expert">מומחה - האתגר הקשה ביותר</option>
               </select>
               <button class="btn secondary" id="ai-btn">🤖 משחק מול בוט</button>
             </div>
@@ -270,7 +274,7 @@ const App = {
               <span>${u.idf_rank.next ? `הבאה: <b>${esc(u.idf_rank.next.name_he)} (${esc(u.idf_rank.next.abbr_he)})</b>` : "הגעת לדרגה הגבוהה ביותר"}</span>
             </div>
             <div class="rank-progress-track"><div style="width:${u.idf_rank.progress_pct}%"></div></div>
-            <p>${u.idf_rank.next ? `נשארו <b>${u.idf_rank.next.wins_to_go}</b> נקודות דרגה לקידום` : "רא״ל - דרגה מרבית"}</p>
+            <p>${u.idf_rank.next ? `נשארו <b>${u.idf_rank.next.wins_to_go}</b> XP לקידום` : "רא״ל - דרגה מרבית"}</p>
           </div>
           <div class="stat-row">
             <span><b>${u.rating}</b>דירוג (${esc(u.rank)})</span>
@@ -297,7 +301,7 @@ const App = {
     };
     const aiTier = document.getElementById("ai-tier");
     const savedAiTier = localStorage.getItem("brigagame.aiTier");
-    if (["easy", "medium", "hard", "ultra"].includes(savedAiTier)) aiTier.value = savedAiTier;
+    if (["easy", "medium", "hard", "ultra", "expert"].includes(savedAiTier)) aiTier.value = savedAiTier;
     else aiTier.value = "medium";
     aiTier.onchange = () => localStorage.setItem("brigagame.aiTier", aiTier.value);
     document.getElementById("ai-btn").onclick = async () => {
