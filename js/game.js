@@ -26,6 +26,12 @@ const GameView = {
 
   async init(root, matchId, onExit) {
     this.matchId = matchId; this.onExit = onExit;
+    // Every match opens at the logical start of the document. Mobile RTL and
+    // installed PWAs can preserve a horizontal offset from the lobby/store;
+    // clear both axes before laying out the fixed-aspect battlefield.
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     this.firing = false; this.localLastShot = 0;
     this.anims = []; this.particles = []; this.particlePool = [];
     this.weapon = "standard"; this.snap = null;
@@ -64,6 +70,11 @@ const GameView = {
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
         · <b>רווח</b> ירייה · <b>1-4</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
+    requestAnimationFrame(() => {
+      document.documentElement.scrollLeft = 0; document.body.scrollLeft = 0;
+      window.scrollTo(0, 0);
+      document.getElementById("game-stage")?.scrollIntoView({ block: "start", inline: "center" });
+    });
     this.ctx = this.canvas.getContext("2d");
     // Exit control: one tap reveals the confirmation strip; only the
     // explicit "יציאה מהמשחק" button actually leaves (active match = loss,
