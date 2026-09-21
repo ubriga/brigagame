@@ -447,7 +447,7 @@ const App = {
     const options = [{ id: "skin_default", name_he: "ברירת מחדל", desc_he: "המגדל הכחול הקלאסי", style: DEFAULT_STYLE }]
       .concat(Object.entries(catalog)
         .filter(([id, it]) => it.kind === "skin" && inv[id])
-        .map(([id, it]) => ({ id, name_he: it.name_he, desc_he: it.desc_he, style: it.style || {} })));
+        .map(([id, it]) => ({ id, name_he: it.name_he, desc_he: it.desc_he, style: { colors: it.colors, ...(it.style || {}) } })));
     let applied = Object.keys(inv).find(id => id.startsWith("skin_") && inv[id].equipped) || "skin_default";
     this._custSel = applied;
     view.innerHTML = `
@@ -509,6 +509,9 @@ const App = {
     const fill = style.fill || cols;
     const tx = (W - COLS * BLOCK) / 2;
     const pulse = 0.7 + 0.3 * Math.sin(t / 350);
+    if (typeof PremiumTowerArt !== "undefined")
+      PremiumTowerArt.draw(c, style.geometry, { x: tx, y: ground - ROWS * BLOCK,
+        w: COLS * BLOCK, h: ROWS * BLOCK, ground }, style, t, "p1", "back");
     for (let r = 0; r < ROWS; r++) {
       for (let col = 0; col < COLS; col++) {
         const x = tx + col * BLOCK, y = ground - (ROWS - r) * BLOCK;
@@ -543,6 +546,9 @@ const App = {
       c.fillText(style.emblem, tx + w / 2, ground - h / 2);
       c.restore();
     }
+    if (typeof PremiumTowerArt !== "undefined")
+      PremiumTowerArt.draw(c, style.geometry, { x: tx, y: ground - ROWS * BLOCK,
+        w: COLS * BLOCK, h: ROWS * BLOCK, ground }, style, t, "p1", "front");
     c.fillStyle = "rgba(148,163,184,.35)";
     c.fillRect(tx - 30, ground, COLS * BLOCK + 60, 4);
   },
@@ -578,7 +584,7 @@ const App = {
         } else {
           const owned = !!inv;
           const tierName = { common: "רגיל", rare: "נדיר", epic: "אפי", legendary: "אגדי" }[it.tier] || "רגיל";
-          body = `<div class="swatch" style="background:linear-gradient(135deg,${it.colors[0]},${it.colors[1]})">${it.coming_soon && it.available === false ? '<span class="coming-ribbon">בקרוב</span>' : ''}</div>
+          body = `<div class="skin-card-art"><canvas class="skin-card-preview" width="220" height="150" data-skin-preview="${id}"></canvas>${it.coming_soon && it.available === false ? '<span class="coming-ribbon">בקרוב</span>' : ''}</div>
                   <span class="shop-tier tier-${esc(it.tier || "common")}">${tierName}</span>
                   <p class="${owned ? "owned-tag" : "price"}">${owned ? (inv.equipped ? "✓ המראה הפעיל שלך" : "בבעלותך - לחץ להחיל") : "🪙 " + it.price}</p>`;
         }
@@ -594,6 +600,10 @@ const App = {
       html += `</div>`;
     }
     view.innerHTML = html;
+    view.querySelectorAll("[data-skin-preview]").forEach(canvas => {
+      const it = catalog[canvas.dataset.skinPreview];
+      this.drawSkinPreview(canvas, { colors: it.colors, ...(it.style || {}) }, 0);
+    });
     document.getElementById("coupon-btn").onclick = async () => {
       const code = document.getElementById("coupon-in").value.trim();
       const { status: s, data: d } = await API.post("/api/coupons/redeem", { code });

@@ -137,6 +137,17 @@ check("no-token 401", s == 401)
 
 CATALOG_SKIN_CRIMSON = ["#ef4444", "#7f1d1d"]
 
+# Premium cosmetics must change recognizable geometry, not just colors.
+_, premium_store = call("GET", "/api/store", token=ta)
+premium_ids = ["skin_missile_tower", "skin_spaceship", "skin_battle_tank",
+               "skin_dragon_keep", "skin_sun_pyramid", "skin_ice_fortress",
+               "skin_mecha_core", "skin_royal_castle"]
+check("eight premium geometry skins are server catalog items",
+      all(k in premium_store["catalog"] for k in premium_ids))
+check("premium skins expose distinct server-owned geometry",
+      len({premium_store["catalog"][k]["style"].get("geometry")
+           for k in premium_ids}) == 8)
+
 # --- store: buy consumable, upgrade, skin
 s, r = call("POST", "/api/store/buy", token=ta, body={"item_id": "double_bomb"})
 check("buy double_bomb (90)", s == 200 and r["coins"] == 110, str(r))
