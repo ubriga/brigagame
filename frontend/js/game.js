@@ -824,7 +824,7 @@ const GameView = {
     // towers + HP bars and capped, deterministic idle life.
     for (const side of ["p1", "p2"]) {
       this.drawIdleLife(side, now / 1000);
-      this.drawTower(side); this.drawHpBar(side); this.drawRankBadge(side);
+      this.drawTower(side); this.drawCoating(side); this.drawHpBar(side); this.drawRankBadge(side);
     }
     // A struck tower flashes as a whole, independently of the blast glow.
     for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
@@ -1139,6 +1139,22 @@ const GameView = {
       PremiumTowerArt.draw(c, style.geometry, { x: towerX, y: towerY,
         w: this.TCOLS * this.BLOCK, h: this.TROWS * this.BLOCK, ground: this.GROUND },
         style, this.idleClock * 1000, side, "front");
+  },
+
+  drawCoating(side) {
+    const coating = (this.snap.coatings || {})[side];
+    if (!coating || coating.hp <= 0) return;
+    const c=this.ctx, x=this.tx(side), y=this.GROUND-this.TROWS*this.BLOCK;
+    const w=this.TCOLS*this.BLOCK, h=this.TROWS*this.BLOCK;
+    const frac=Math.max(0,Math.min(1,coating.hp/coating.max_hp));
+    const palette={wood:["#92400e","#d97706"],tin:["#94a3b8","#e2e8f0"],iron:["#334155","#94a3b8"]}[coating.material]||["#64748b","#cbd5e1"];
+    c.save();c.globalAlpha=.32+.38*frac;c.strokeStyle=palette[1];c.lineWidth=6;
+    c.beginPath();c.roundRect(x-5,y-5,w+10,h+10,9);c.stroke();
+    c.globalAlpha=.75;c.strokeStyle=palette[0];c.lineWidth=2;
+    for(let yy=y+8;yy<this.GROUND;yy+=18){c.beginPath();c.moveTo(x-5,yy);c.lineTo(x+w+5,yy);c.stroke();}
+    if(coating.material==="wood"){for(let xx=x+10;xx<x+w;xx+=22){c.beginPath();c.moveTo(xx,y-4);c.lineTo(xx,this.GROUND+4);c.stroke();}}
+    else {for(let xx=x+10;xx<x+w;xx+=26){for(let yy=y+10;yy<this.GROUND;yy+=26){c.fillStyle=palette[1];c.beginPath();c.arc(xx,yy,2,0,7);c.fill();}}}
+    c.restore();
   },
 
   drawHpBar(side) {

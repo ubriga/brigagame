@@ -63,6 +63,7 @@ def new_state(p1_mods, p2_mods):
         "wind": round(random.uniform(-WIND_MAX, WIND_MAX), 1),
         "last_shot_at": {"p1": 0.0, "p2": 0.0},
         "damage_dealt": {"p1": 0.0, "p2": 0.0},
+        "coatings": {"p1": p1_mods.get("coating"), "p2": p2_mods.get("coating")},
         "ready": {"p1": False, "p2": False},
         "started_at": time.time(),
         "sudden_death": False,
@@ -130,6 +131,21 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
     if not cosmetic:
         armor_lvl = state["mods"][enemy].get("armor", 0)
         mult = armor_reduction(armor_lvl)
+        coating = state.get("coatings", {}).get(enemy)
+        if coating and coating.get("hp", 0) > 0:
+            # The coating is a separate server-owned layer. It absorbs blast
+            # energy before structural blocks; wood always breaks on first hit.
+            incoming = max(0.0, damage * mult)
+            absorbed = min(float(coating["hp"]), incoming)
+            if coating.get("material") == "wood" and incoming > 0:
+                coating["hp"] = 0.0
+            else:
+                coating["hp"] = round(max(0.0, float(coating["hp"]) - absorbed), 1)
+            mult *= max(0.0, 1.0 - absorbed / incoming) if incoming else 0.0
+            events.append({"type": "coating_hit", "side": enemy,
+                           "material": coating.get("material"),
+                           "absorbed": round(absorbed, 1),
+                           "hp": coating["hp"], "broken": coating["hp"] <= 0})
         if state.get("shield", {}).get(enemy):
             mult *= 0.4
             state["shield"][enemy] = False
