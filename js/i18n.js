@@ -54,7 +54,7 @@ const Lang = {
     let out=value;
     // Phrase replacement is safe because every source is an explicit UI string,
     // never a loose fragment. It also translates values embedded with numbers.
-    for (const [he,en] of this.exact) out=out.split(he).join(en);
+    for (const [he,en] of [...this.exact].sort((a,b)=>b[0].length-a[0].length)) out=out.split(he).join(en);
     for (const [re,en] of this.words) out=out.replace(re,en);
     return out;
   },
