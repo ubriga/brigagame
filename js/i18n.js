@@ -52,7 +52,9 @@ const Lang = {
     const trim=value.trim(), direct=this.exact.get(trim);
     if (direct) return value.replace(trim,direct);
     let out=value;
-    for (const [he,en] of this.exact) if (he.length > 5) out=out.split(he).join(en);
+    // Phrase replacement is safe because every source is an explicit UI string,
+    // never a loose fragment. It also translates values embedded with numbers.
+    for (const [he,en] of this.exact) out=out.split(he).join(en);
     for (const [re,en] of this.words) out=out.replace(re,en);
     return out;
   },
