@@ -119,6 +119,13 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cosmetic_overrides (
+    item_id TEXT PRIMARY KEY,
+    price INTEGER NOT NULL,
+    available INTEGER NOT NULL DEFAULT 1,
+    updated_by INTEGER,
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,
     window_start REAL NOT NULL,
