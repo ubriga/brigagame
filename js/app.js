@@ -554,6 +554,8 @@ const App = {
     const sec = { consumable: "⚔️ נשקים מיוחדים", upgrade: "🛡️ שדרוגי מגדל", skin: "🎨 מראה" };
     const groups = { consumable: [], upgrade: [], skin: [] };
     for (const [id, it] of Object.entries(catalog)) groups[it.kind].push([id, it]);
+    const tierOrder = { common: 1, rare: 2, epic: 3, legendary: 4 };
+    groups.skin.sort((a, b) => (tierOrder[a[1].tier] || 0) - (tierOrder[b[1].tier] || 0) || a[1].price - b[1].price);
     let html = `<h1>🛒 חנות</h1><p class="sub">יתרה: 🪙 ${data.coins} מטבעות</p>
       <div class="card"><h2>🎟️ מימוש קופון</h2>
         <div style="display:flex;gap:8px"><input id="coupon-in" placeholder="קוד קופון">
@@ -574,16 +576,18 @@ const App = {
           body = `<div class="level-pips">${pips}</div><p class="price">${next}</p>`;
         } else {
           const owned = !!inv;
+          const tierName = { common: "רגיל", rare: "נדיר", epic: "אפי", legendary: "אגדי" }[it.tier] || "רגיל";
           body = `<div class="swatch" style="background:linear-gradient(135deg,${it.colors[0]},${it.colors[1]})"></div>
+                  <span class="shop-tier tier-${esc(it.tier || "common")}">${tierName}</span>
                   <p class="${owned ? "owned-tag" : "price"}">${owned ? (inv.equipped ? "✓ המראה הפעיל שלך" : "בבעלותך - לחץ להחיל") : "🪙 " + it.price}</p>`;
         }
         const skinBtn = kind === "skin"
           ? (inv && inv.equipped ? "✓ במשחק" : inv ? "החל מראה" : "קנה והחל")
           : "קנה";
-        html += `<div class="card item${kind === "skin" && inv && inv.equipped ? " equipped" : ""}">
+        html += `<div class="card item${kind === "skin" && inv && inv.equipped ? " equipped" : ""}${it.available === false ? " disabled" : ""}">
           <b>${esc(it.name_he)}</b><span class="sub" style="margin:0">${esc(it.desc_he)}</span>
           ${body}
-          <button class="btn small" data-buy="${id}" ${kind === "skin" && inv && inv.equipped ? "disabled" : ""}>${skinBtn}</button>
+          <button class="btn small" data-buy="${id}" ${kind === "skin" && (inv && inv.equipped || it.available === false) ? "disabled" : ""}>${it.available === false ? "לא זמין" : skinBtn}</button>
         </div>`;
       }
       html += `</div>`;
@@ -651,9 +655,9 @@ const App = {
     view.innerHTML = `
       <h1>🛠️ ניהול</h1>
       <div class="tabs">
-        ${["stats", "users", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
+        ${["stats", "users", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
           `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-            stats: "סטטיסטיקות", users: "משתמשים", audit: "יומן פעילות", broadcast: "שידור הודעה",
+            stats: "סטטיסטיקות", users: "משתמשים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
             coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה" }[t]}</button>`).join("")}
       </div>
       <div id="admin-body"></div>`;
@@ -717,6 +721,25 @@ const App = {
       };
       document.getElementById("uq").oninput = () => load();
       load();
+    } else if (tab === "cosmetics") {
+      const loadCosmetics = async () => {
+        const { status, data } = await API.get("/api/admin/cosmetics");
+        if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הקטלוג.</p>"; return; }
+        body.innerHTML = `<div class="card"><h2>שליטת קטלוג קוסמטי</h2><p class="sub">מחיר וזמינות נשמרים בשרת.</p><table>
+          <tr><th>פריט</th><th>דרגה</th><th>מחיר</th><th>זמין</th><th></th></tr>
+          ${(data.cosmetics || []).map(c => `<tr><td>${esc(c.name_he || c.name)}<br><small>${esc(c.item_id)}</small></td>
+            <td>${esc(c.tier || "common")}</td><td><input type="number" min="0" max="100000" value="${c.price}" data-price="${esc(c.item_id)}" style="width:100px"></td>
+            <td><input type="checkbox" data-available="${esc(c.item_id)}" ${c.available === false ? "" : "checked"} style="width:auto"></td>
+            <td><button class="btn small" data-savecos="${esc(c.item_id)}">שמור</button></td></tr>`).join("")}</table></div>`;
+        body.querySelectorAll("[data-savecos]").forEach(btn => btn.onclick = async () => {
+          const id = btn.dataset.savecos;
+          const price = parseInt(body.querySelector(`[data-price="${id}"]`).value, 10);
+          const available = body.querySelector(`[data-available="${id}"]`).checked;
+          const { status: st } = await API.post("/api/admin/cosmetics/" + encodeURIComponent(id), { price, available });
+          toast(st === 200 ? "נשמר" : "שגיאה");
+        });
+      };
+      loadCosmetics();
     } else if (tab === "audit") {
       const { status, data } = await API.get("/api/admin/audit");
       if (status !== 200) { body.innerHTML = `<p>שגיאה בטעינת היומן.</p>`; return; }
@@ -763,12 +786,14 @@ const App = {
         <select id="cp-kind"><option value="coins">מטבעות</option><option value="item">פריט</option></select>
         <label>סכום (אם מטבעות)</label><input id="cp-amount" type="number" value="100">
         <label>פריט (אם פריט)</label>
-        <select id="cp-item">${["double_bomb","homing_missile","cluster_shell","skin_emerald","skin_crimson","skin_royal","skin_gold"]
-          .map(i => `<option>${i}</option>`).join("")}</select>
+        <select id="cp-item"><option>טוען קטלוג...</option></select>
         <label>מספר מימושים</label><input id="cp-uses" type="number" value="1">
         <label>קוד (ריק = אקראי)</label><input id="cp-code">
         <button class="btn" id="cp-create" style="margin-top:12px">צור קופון</button></div>
         <div id="cp-list"></div>`;
+      const catalogResult = await API.get("/api/store");
+      document.getElementById("cp-item").innerHTML = Object.entries(catalogResult.data.catalog || {})
+        .map(([id, item]) => `<option value="${esc(id)}">${esc(item.name_he || item.name || id)} (${esc(id)})</option>`).join("");
       const loadC = async () => {
         const { data } = await API.get("/api/admin/coupons");
         document.getElementById("cp-list").innerHTML = `<div class="card"><table>
