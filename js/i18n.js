@@ -5,7 +5,7 @@ const Lang = {
   exact: new Map(Object.entries({
     "לובי":"Lobby","חנות":"Shop","ההתאמה שלי":"My collection","דירוג":"Leaderboard","הודעות":"Messages","ניהול":"Admin",
     "התקנה":"Install","התנתקות":"Sign out","השתקה":"Mute","מתחבר מחדש...":"Reconnecting...","בקרוב":"Coming soon",
-    "משחקים":"Matches","משתמשים":"Users","קוסמטיקה":"Cosmetics","קופונים":"Coupons","תחזוקה":"Maintenance",
+    "משחקים":"Matches","משתמשים":"Users","שליטת משחק":"Game controls","קוסמטיקה":"Cosmetics","קופונים":"Coupons","תחזוקה":"Maintenance",
     "סטטיסטיקות":"Statistics","יומן פעילות":"Activity log","שידור הודעה":"Broadcast","רגיל":"Common","נדיר":"Rare","אפי":"Epic","אגדי":"Legendary",
     "קנה":"Buy","קנה והחל":"Buy & equip","החל מראה":"Equip","לא זמין":"Unavailable","מקסימום":"Maximum","✓ במשחק":"✓ Equipped",
     "יציאה מהמשחק":"Exit match","ביטול":"Cancel","זווית":"Angle","עוצמה":"Power","הזזה":"Move","מגן":"Shield","מגה":"Mega",
@@ -18,6 +18,7 @@ const Lang = {
     "מגדל היריב הושמד!":"Enemy tower destroyed!","המגדל שלך הושמד.":"Your tower was destroyed.","המשחק בוטל":"Match cancelled",
     "הפעולה אינה זמינה":"Action unavailable","הקנייה נכשלה":"Purchase failed","נקנה בהצלחה!":"Purchased!","שגיאה בטעינת החנות":"Could not load shop",
     "שליטת קטלוג קוסמטי":"Cosmetic catalog controls","מחיר וזמינות נשמרים בשרת.":"Price and availability are saved on the server.",
+    "קצב התקדמות XP":"XP progression rate","בונוס ניצחון מול שחקן":"Player win bonus","בונוס ניצחון מול מחשב":"Bot win bonus","XP לכל נקודת נזק":"XP per damage point","סקינים מושקעים":"Premium skins","תקציב משקל לסקין (KB)":"Asset budget per skin (KB)","ציפויי מגדל":"Tower coatings","מספר שלבים מרבי":"Maximum levels","זמן בנייה בסיסי (דקות)":"Base build time (minutes)","הרחבת מגדל":"Tower expansion","מספר קוביות נוספות מרבי":"Maximum extra cubes","מכשול דינמי":"Dynamic obstacle","מהירות":"Speed","התראה לפני תנועה (שניות)":"Warning before movement (seconds)","מופעל":"Enabled","שמור את כל ההגדרות":"Save all settings","הגדרות המשחק נשמרו":"Game settings saved","ערך לא תקין - לא נשמר":"Invalid value - not saved",
     "שלום,":"Hello,","הפל את מגדל היריב לפני שהוא מפיל את שלך.":"Destroy the enemy tower before it destroys yours.","🎮 משחק":"🎮 Play",
     "⚡ משחק מהיר":"⚡ Quick match","🤖 משחק מול בוט":"🤖 Play vs bot","🔗 משחק חברים (צור קוד)":"🔗 Friend match (create code)","הצטרף":"Join",
     "רמת קושי":"Difficulty","קוד משחק":"Match code","📊 הסטטיסטיקה שלך":"📊 Your statistics","דרגה נוכחית:":"Current rank:","הבאה:":"Next:",
