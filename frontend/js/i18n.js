@@ -17,9 +17,27 @@ const Lang = {
     "ברירת מחדל":"Default","המגדל הכחול הקלאסי":"Classic blue tower","משחק חדש - בחר רמת קושי בלבד":"New game - choose difficulty",
     "מגדל היריב הושמד!":"Enemy tower destroyed!","המגדל שלך הושמד.":"Your tower was destroyed.","המשחק בוטל":"Match cancelled",
     "הפעולה אינה זמינה":"Action unavailable","הקנייה נכשלה":"Purchase failed","נקנה בהצלחה!":"Purchased!","שגיאה בטעינת החנות":"Could not load shop",
-    "שליטת קטלוג קוסמטי":"Cosmetic catalog controls","מחיר וזמינות נשמרים בשרת.":"Price and availability are saved on the server."
+    "שליטת קטלוג קוסמטי":"Cosmetic catalog controls","מחיר וזמינות נשמרים בשרת.":"Price and availability are saved on the server.",
+    "שלום,":"Hello,","הפל את מגדל היריב לפני שהוא מפיל את שלך.":"Destroy the enemy tower before it destroys yours.","🎮 משחק":"🎮 Play",
+    "⚡ משחק מהיר":"⚡ Quick match","🤖 משחק מול בוט":"🤖 Play vs bot","🔗 משחק חברים (צור קוד)":"🔗 Friend match (create code)","הצטרף":"Join",
+    "רמת קושי":"Difficulty","קוד משחק":"Match code","📊 הסטטיסטיקה שלך":"📊 Your statistics","דרגה נוכחית:":"Current rank:","הבאה:":"Next:",
+    "דירוג":"Rating","נצחונות":"Wins","הפסדים":"Losses","🎁 בונוס יומי (נאסף)":"🎁 Daily bonus (collected)","🎁 בונוס יומי":"🎁 Daily bonus",
+    "משחק חינמי, ללא פרסים או ערך כספי":"Free game, no prizes or monetary value","הצג הודעת תחזוקה":"Show maintenance notice",
+    "להתקין את Brigagame?":"Install Brigagame?","גישה מהירה ומסך מלא לרוחב":"Quick access and full-screen landscape mode",
+    "🛒 חנות":"🛒 Shop","יתרה:":"Balance:","🎟️ מימוש קופון":"🎟️ Redeem coupon","קוד קופון":"Coupon code","ממש":"Redeem",
+    "⚔️ נשקים מיוחדים":"⚔️ Special weapons","🛡️ שדרוגי מגדל":"🛡️ Tower upgrades","🎨 מראה":"🎨 Cosmetics","בתיק:":"Inventory:","שימושים":"uses",
+    "בבעלותך - לחץ להחיל":"Owned - click to equip","✓ המראה הפעיל שלך":"✓ Your active cosmetic","נקנה והוחל! יופיע במשחק הבא":"Purchased and equipped! It will appear next match",
+    "המראה הוחל - יופיע במשחק הבא":"Cosmetic equipped - it will appear next match","🛠️ ניהול":"🛠️ Admin","פעילים היום":"Active today",
+    "משחקים פעילים":"Active matches","מטבעות הונפקו":"Coins issued","מטבעות הוצאו":"Coins spent","רכישות":"Purchases","חסומים":"Blocked",
+    "🎯 משחק תרגול - לא נספר לדרגה":"🎯 Practice match - does not affect rank","גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.":"Drag from your tower to aim and release to fire. Wind moves the shell and changes after every shot; tower positions vary each match.",
+    "⌨️ מקלדת:":"⌨️ Keyboard:","ירייה":"fire","בחירת נשק":"choose weapon","יוצא...":"Exiting...","יציאה ממשחק פעיל תיספר כהפסד בדירוג":"Leaving an active match counts as a ranked loss",
+    "פגיעה קריטית בקנה התותח!":"Critical cannon hit!","משב רוח קיצוני":"Extreme wind gust","מטאור פגע בזירה":"A meteor hit the arena","מטען מגה נוסף":"Extra mega charge",
+    "מוות פתאומי - הנזק הוכפל!":"Sudden death - damage doubled!","הזמן נגמר - לשני המגדלים אותה שלמות.":"Time is up - both towers have equal integrity.",
+    "משחק תרגול - לא נספר לדרגה":"Practice match - does not affect rank","המשחק הסתיים מסיבה טכנית - ללא ניצחון, הפסד או מטבעות.":"The match ended for a technical reason - no win, loss, or coins.",
+    "ריבאנץ' נגד OrelAI Bot":"Rematch against OrelAI Bot","יוצר משחק...":"Creating match...","שגיאה ביצירת משחק":"Could not create match",
+    "הדירוג עולה ויורד לפי נצחונות והפסדים.":"Rating rises and falls with wins and losses.","טבלת דירוג":"Leaderboard","שחקן":"Player","הפ׳":"L","נצ׳":"W"
   })),
-  words: [[/משחק/g,"game"],[/מטבעות/g,"coins"],[/מראה/g,"cosmetic"],[/מגדל/g,"tower"],[/ניצחון/g,"win"],[/הפסד/g,"loss"],[/רמה/g,"tier"],[/קוד/g,"code"],[/חבר/g,"friend"],[/שחקן/g,"player"],[/טעינה/g,"loading"],[/שגיאה/g,"error"],[/נזק/g,"damage"],[/רוח/g,"wind"]],
+  words: [],
   text(value) {
     if (this.current !== "en" || !value || !/[א-ת]/.test(value)) return value;
     const trim=value.trim(), direct=this.exact.get(trim);
