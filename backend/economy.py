@@ -138,6 +138,47 @@ CATALOG = {
                   "emblem": "★", "debris": ["#fef3c7", "#f59e0b", "#92400e"]},
         "desc_he": "מראה פלדה מוזהבת עם זוהר וסמל כוכב.",
     },
+    # --- premium geometry skins: procedural vector ornaments, no bitmap weight ---
+    "skin_missile_tower": {
+        "kind": "skin", "name": "Missile Tower", "name_he": "מגדל טיל", "tier": "legendary", "price": 1800,
+        "colors": ["#e2e8f0", "#334155"], "style": {"fill": ["#f8fafc", "#475569"], "frame": "#fb923c", "glow": "rgba(251,146,60,.42)", "texture": "steel", "emblem": "", "geometry": "missile", "debris": ["#e2e8f0", "#fb923c", "#334155"]},
+        "desc_he": "גוף טיל, חרטום, סנפירים, חלון ולהבות מנוע.", "desc_en": "Missile body, nose cone, fins, window and engine flames.",
+    },
+    "skin_spaceship": {
+        "kind": "skin", "name": "Starship", "name_he": "חללית", "tier": "legendary", "price": 1750,
+        "colors": ["#67e8f9", "#312e81"], "style": {"fill": ["#a5f3fc", "#4338ca"], "frame": "#c4b5fd", "glow": "rgba(103,232,249,.5)", "texture": "neon", "emblem": "", "geometry": "spaceship", "debris": ["#67e8f9", "#818cf8", "#312e81"]},
+        "desc_he": "כיפת חללית, כנפיים, חלונות וטבעת אנרגיה.", "desc_en": "Starship dome, wings, windows and an energy ring.",
+    },
+    "skin_battle_tank": {
+        "kind": "skin", "name": "Battle Tank", "name_he": "טנק קרב", "tier": "legendary", "price": 1700,
+        "colors": ["#84cc16", "#1f2937"], "style": {"fill": ["#a3e635", "#374151"], "frame": "#d9f99d", "glow": "rgba(132,204,22,.35)", "texture": "steel", "emblem": "", "geometry": "tank", "debris": ["#a3e635", "#4d7c0f", "#1f2937"]},
+        "desc_he": "זחלים, צריח וקנה ארוך שמעניקים צללית של טנק.", "desc_en": "Tracks, turret and a long barrel create a tank silhouette.",
+    },
+    "skin_dragon_keep": {
+        "kind": "skin", "name": "Dragon Keep", "name_he": "מצודת דרקון", "tier": "legendary", "price": 1900,
+        "colors": ["#fb923c", "#7f1d1d"], "style": {"fill": ["#fdba74", "#991b1b"], "frame": "#fde68a", "glow": "rgba(249,115,22,.48)", "texture": "scales", "emblem": "", "geometry": "dragon", "debris": ["#fb923c", "#ef4444", "#450a0a"]},
+        "desc_he": "כנפי דרקון, קרניים, עיניים זוהרות וזנב.", "desc_en": "Dragon wings, horns, glowing eyes and tail.",
+    },
+    "skin_sun_pyramid": {
+        "kind": "skin", "name": "Sun Pyramid", "name_he": "פירמידת שמש", "tier": "epic", "price": 1200,
+        "colors": ["#fde047", "#92400e"], "style": {"fill": ["#fef08a", "#b45309"], "frame": "#fff7cc", "glow": "rgba(250,204,21,.42)", "texture": "stone", "emblem": "", "geometry": "pyramid", "debris": ["#fde68a", "#d97706", "#78350f"]},
+        "desc_he": "מעטפת פירמידה מדורגת וסמל שמש מואר.", "desc_en": "Stepped pyramid shell with a luminous sun mark.",
+    },
+    "skin_ice_fortress": {
+        "kind": "skin", "name": "Ice Fortress", "name_he": "מבצר קרח", "tier": "legendary", "price": 1650,
+        "colors": ["#e0f2fe", "#0369a1"], "style": {"fill": ["#f0f9ff", "#0ea5e9"], "frame": "#cffafe", "glow": "rgba(125,211,252,.55)", "texture": "ice", "emblem": "", "geometry": "ice_fortress", "debris": ["#e0f2fe", "#7dd3fc", "#075985"]},
+        "desc_he": "צריחי קרח חדים, מעטפת שקופה וסדקים קפואים.", "desc_en": "Sharp ice spires, translucent shell and frozen cracks.",
+    },
+    "skin_mecha_core": {
+        "kind": "skin", "name": "Mecha Core", "name_he": "ליבת מכונה", "tier": "legendary", "price": 1850,
+        "colors": ["#94a3b8", "#0f172a"], "style": {"fill": ["#cbd5e1", "#1e293b"], "frame": "#67e8f9", "glow": "rgba(34,211,238,.5)", "texture": "circuit", "emblem": "", "geometry": "mecha", "debris": ["#cbd5e1", "#22d3ee", "#0f172a"]},
+        "desc_he": "זרועות משוריינות, כתפיים וליבת אנרגיה פועמת.", "desc_en": "Armored limbs, shoulders and a pulsing energy core.",
+    },
+    "skin_royal_castle": {
+        "kind": "skin", "name": "Royal Castle", "name_he": "טירת מלוכה", "tier": "epic", "price": 1350,
+        "colors": ["#c4b5fd", "#4c1d95"], "style": {"fill": ["#ddd6fe", "#5b21b6"], "frame": "#fde68a", "glow": "rgba(167,139,250,.4)", "texture": "stone", "emblem": "", "geometry": "castle", "debris": ["#c4b5fd", "#8b5cf6", "#4c1d95"]},
+        "desc_he": "מגדלי צד, שיניים ודגלי מלוכה מתנופפים.", "desc_en": "Side turrets, battlements and waving royal flags.",
+    },
 }
 
 # Large cosmetics collection. Every entry is visual-only; rarity drives price,

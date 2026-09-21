@@ -1059,6 +1059,11 @@ const GameView = {
     const blockMax = hpInfo && hpInfo.max ? hpInfo.max / (this.TROWS * this.TCOLS) : 15;
     const towerX = this.tx(side), towerY = this.GROUND - this.TROWS * this.BLOCK;
 
+    if (typeof PremiumTowerArt !== "undefined")
+      PremiumTowerArt.draw(c, style.geometry, { x: towerX, y: towerY,
+        w: this.TCOLS * this.BLOCK, h: this.TROWS * this.BLOCK, ground: this.GROUND },
+        style, this.idleClock * 1000, side, "back");
+
     // Deep silhouette makes every skin read as the same chunky fortress style.
     c.save(); c.fillStyle = "rgba(2,11,19,.32)";
     c.beginPath(); c.roundRect(towerX - 7, towerY + 5, this.TCOLS * this.BLOCK + 14,
@@ -1130,6 +1135,10 @@ const GameView = {
       c.fillStyle = style.frame || "#fff"; c.shadowColor = style.glow || "transparent"; c.shadowBlur = 12;
       c.globalAlpha = .82; c.fillText(style.emblem, towerX + w / 2, this.GROUND - h / 2); c.restore();
     }
+    if (typeof PremiumTowerArt !== "undefined")
+      PremiumTowerArt.draw(c, style.geometry, { x: towerX, y: towerY,
+        w: this.TCOLS * this.BLOCK, h: this.TROWS * this.BLOCK, ground: this.GROUND },
+        style, this.idleClock * 1000, side, "front");
   },
 
   drawHpBar(side) {
