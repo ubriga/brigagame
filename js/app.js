@@ -12,6 +12,7 @@ const App = {
   me: null, inventory: {},
 
   async boot() {
+    Lang.boot();
     window.addEventListener("hashchange", () => this.route());
     document.getElementById("mute-btn").onclick = () => {
       const m = Sfx.toggleMute();
@@ -577,7 +578,7 @@ const App = {
         } else {
           const owned = !!inv;
           const tierName = { common: "רגיל", rare: "נדיר", epic: "אפי", legendary: "אגדי" }[it.tier] || "רגיל";
-          body = `<div class="swatch" style="background:linear-gradient(135deg,${it.colors[0]},${it.colors[1]})"></div>
+          body = `<div class="swatch" style="background:linear-gradient(135deg,${it.colors[0]},${it.colors[1]})">${it.coming_soon && it.available === false ? '<span class="coming-ribbon">בקרוב</span>' : ''}</div>
                   <span class="shop-tier tier-${esc(it.tier || "common")}">${tierName}</span>
                   <p class="${owned ? "owned-tag" : "price"}">${owned ? (inv.equipped ? "✓ המראה הפעיל שלך" : "בבעלותך - לחץ להחיל") : "🪙 " + it.price}</p>`;
         }
@@ -585,7 +586,7 @@ const App = {
           ? (inv && inv.equipped ? "✓ במשחק" : inv ? "החל מראה" : "קנה והחל")
           : "קנה";
         html += `<div class="card item${kind === "skin" && inv && inv.equipped ? " equipped" : ""}${it.available === false ? " disabled" : ""}">
-          <b>${esc(it.name_he)}</b><span class="sub" style="margin:0">${esc(it.desc_he)}</span>
+          <b>${esc(Lang.pick(it))}</b><span class="sub" style="margin:0">${esc(Lang.current === "en" ? (it.desc_en || `Premium ${it.tier || "common"} cosmetic.`) : it.desc_he)}</span>
           ${body}
           <button class="btn small" data-buy="${id}" ${kind === "skin" && (inv && inv.equipped || it.available === false) ? "disabled" : ""}>${it.available === false ? "לא זמין" : skinBtn}</button>
         </div>`;
