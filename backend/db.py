@@ -143,6 +143,21 @@ CREATE TABLE IF NOT EXISTS user_coatings (
     max_hp REAL NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS expansion_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    cube_number INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    starts_at REAL NOT NULL,
+    completes_at REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_expansion_jobs_user ON expansion_jobs(user_id, status, starts_at);
+CREATE TABLE IF NOT EXISTS user_expansions (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    extra_cubes INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,
     window_start REAL NOT NULL,

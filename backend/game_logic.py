@@ -40,26 +40,53 @@ WIND_ACCEL = 0.75
 MAPS = ("valley", "desert", "highlands")
 
 
-def new_tower(hp_level=0):
+def tower_dims(tower):
+    return len(tower), len(tower[0]) if tower else 0
+
+
+def expanded_dims(extra_cubes):
+    # Add full-height side strips first. Every cube increases area/HP, and each
+    # completed strip makes the silhouette wider and easier to hit.
+    extra = max(0, int(extra_cubes or 0))
+    cols = TOWER_COLS + extra // TOWER_ROWS
+    rem = extra % TOWER_ROWS
+    return TOWER_ROWS, cols, rem
+
+
+def new_tower(hp_level=0, extra_cubes=0, cube_hp=BLOCK_HP):
     mult = hp_multiplier(hp_level)
-    return [[round(BLOCK_HP * mult, 1) for _ in range(TOWER_COLS)]
-            for _ in range(TOWER_ROWS)]
+    rows, cols, rem = expanded_dims(extra_cubes)
+    base_hp = round(BLOCK_HP * mult, 1)
+    tower = [[base_hp for _ in range(cols)] for _ in range(rows)]
+    full_extra_cols = max(0, cols - TOWER_COLS)
+    for r in range(rows):
+        for c in range(full_extra_cols): tower[r][c] = round(float(cube_hp) * mult, 1)
+    if rem:
+        tower = [[None] + row for row in tower]
+        for r in range(rows - rem, rows): tower[r][0] = round(float(cube_hp) * mult, 1)
+    return tower
 
 
 def new_state(p1_mods, p2_mods):
     """Create a complete server-authoritative battlefield."""
-    p1x = random.randint(*TOWER_X_RANGE["p1"])
-    p2x = random.randint(*TOWER_X_RANGE["p2"])
-    obstacle_x = random.randint(p1x + 190, p2x - 100)
+    p1_cols = expanded_dims(p1_mods.get("extra_cubes", 0))[1] + (1 if int(p1_mods.get("extra_cubes", 0) or 0) % TOWER_ROWS else 0)
+    p2_cols = expanded_dims(p2_mods.get("extra_cubes", 0))[1] + (1 if int(p2_mods.get("extra_cubes", 0) or 0) % TOWER_ROWS else 0)
+    p1x = random.randint(40, min(240, 420 - p1_cols * BLOCK))
+    p2x = random.randint(max(580, 580 + (p2_cols - TOWER_COLS) * BLOCK), WORLD_W - 40 - p2_cols * BLOCK)
+    gap_start, gap_end = p1x + p1_cols * BLOCK + 60, p2x - 128
+    obstacle_x = random.randint(int(gap_start), int(max(gap_start, gap_end)))
     return {
         "tower_x": {"p1": p1x, "p2": p2x},
         "map": random.choice(MAPS),
         "obstacle": {"x": obstacle_x, "y": GROUND_Y - 105, "w": 68, "h": 105},
         "towers": {
-            "p1": new_tower(p1_mods.get("hp", 0)),
-            "p2": new_tower(p2_mods.get("hp", 0)),
+            "p1": new_tower(p1_mods.get("hp", 0), p1_mods.get("extra_cubes", 0), p1_mods.get("expansion_cube_hp", BLOCK_HP)),
+            "p2": new_tower(p2_mods.get("hp", 0), p2_mods.get("extra_cubes", 0), p2_mods.get("expansion_cube_hp", BLOCK_HP)),
         },
         "mods": {"p1": p1_mods, "p2": p2_mods},
+        "tower_max_hp": {
+            "p1": round((TOWER_COLS*TOWER_ROWS*BLOCK_HP + int(p1_mods.get("extra_cubes",0) or 0)*float(p1_mods.get("expansion_cube_hp",BLOCK_HP))) * hp_multiplier(p1_mods.get("hp",0)), 1),
+            "p2": round((TOWER_COLS*TOWER_ROWS*BLOCK_HP + int(p2_mods.get("extra_cubes",0) or 0)*float(p2_mods.get("expansion_cube_hp",BLOCK_HP))) * hp_multiplier(p2_mods.get("hp",0)), 1)},
         "wind": round(random.uniform(-WIND_MAX, WIND_MAX), 1),
         "last_shot_at": {"p1": 0.0, "p2": 0.0},
         "damage_dealt": {"p1": 0.0, "p2": 0.0},
@@ -84,27 +111,30 @@ def tower_x_of(state, side):
 def tower_blocks(state, side):
     """Yield (row, col, cx, cy) center coordinates of every block."""
     x0 = tower_x_of(state, side)
-    for r in range(TOWER_ROWS):
-        for c in range(TOWER_COLS):
+    rows, cols = tower_dims(state["towers"][side])
+    for r in range(rows):
+        for c in range(cols):
             cx = x0 + c * BLOCK + BLOCK / 2
-            cy = GROUND_Y - (TOWER_ROWS - r) * BLOCK + BLOCK / 2
+            cy = GROUND_Y - (rows - r) * BLOCK + BLOCK / 2
             yield r, c, cx, cy
 
 
 def muzzle(state, side):
     x0 = tower_x_of(state, side)
-    cx = x0 + TOWER_COLS * BLOCK / 2
-    cy = GROUND_Y - TOWER_ROWS * BLOCK - 8
+    rows, cols = tower_dims(state["towers"][side])
+    cx = x0 + cols * BLOCK / 2
+    cy = GROUND_Y - rows * BLOCK - 8
     return cx, cy
 
 
 def tower_hp(state, side):
     """Current and max HP of one tower, for client HP bars."""
     tw = state["towers"][side]
-    hp = sum(v for row in tw for v in row)
+    hp = sum(v for row in tw for v in row if v is not None)
     mult = hp_multiplier(state.get("mods", {}).get(side, {}).get("hp", 0))
-    return {"hp": round(hp, 1),
-            "max": round(BLOCK_HP * mult * TOWER_COLS * TOWER_ROWS, 1)}
+    max_blocks = sum(1 for row in tw for v in row if v is not None)
+    fallback = round(BLOCK_HP * mult * max_blocks, 1)
+    return {"hp": round(hp, 1), "max": (state.get("tower_max_hp") or {}).get(side, fallback)}
 
 
 # a tower is "destroyed" when 75% of its blocks are rubble;
@@ -114,8 +144,8 @@ DESTROY_FRACTION = 0.75
 
 
 def tower_alive(tower):
-    total = TOWER_COLS * TOWER_ROWS
-    alive = sum(1 for row in tower for hp in row if hp > 0)
+    total = sum(1 for row in tower for hp in row if hp is not None)
+    alive = sum(1 for row in tower for hp in row if hp is not None and hp > 0)
     return alive > total * (1.0 - DESTROY_FRACTION)
 
 
@@ -154,7 +184,7 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
             mult *= 2.0
         for r, c, cx, cy in tower_blocks(state, enemy):
             hp = state["towers"][enemy][r][c]
-            if hp <= 0:
+            if hp is None or hp <= 0:
                 continue
             dist = math.hypot(cx - x, cy - y)
             if dist <= radius:
@@ -169,7 +199,7 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
         # small splash to own tower keeps shots honest but is heavily reduced
         for r, c, cx, cy in tower_blocks(state, attacker):
             hp = state["towers"][attacker][r][c]
-            if hp <= 0:
+            if hp is None or hp <= 0:
                 continue
             dist = math.hypot(cx - x, cy - y)
             if dist <= radius * 0.7:
@@ -186,9 +216,10 @@ def _explode(state, x, y, damage, radius, attacker, events, cosmetic=False):
             changed = True
             while changed:
                 changed = False
-                for c in range(TOWER_COLS):
-                    for r in range(TOWER_ROWS - 1):  # not the ground row
-                        if tw[r][c] > 0 and tw[r + 1][c] <= 0:
+                rows, cols = tower_dims(tw)
+                for c in range(cols):
+                    for r in range(rows - 1):  # not the ground row
+                        if tw[r][c] is not None and tw[r][c] > 0 and tw[r + 1][c] is not None and tw[r + 1][c] <= 0:
                             tw[r][c] = 0.0
                             collapsed.append({"side": side, "r": r, "c": c})
                             changed = True
@@ -248,7 +279,7 @@ def _simulate(state, side, angle_deg, power, weapon, events, target_side=None):
         # tower collision
         for s in (enemy, side):
             for r, c, cx, cy in tower_blocks(state, s):
-                if state["towers"][s][r][c] > 0 and abs(x - cx) <= BLOCK / 2 \
+                if state["towers"][s][r][c] is not None and state["towers"][s][r][c] > 0 and abs(x - cx) <= BLOCK / 2 \
                         and abs(y - cy) <= BLOCK / 2:
                     points.append([round(x, 1), round(y, 1)])
                     return x, y, points, False
@@ -361,7 +392,7 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     facing = 1 if side == "p1" else -1
     sx, sy = muzzle(state, side)
     blocks = [(cx, cy) for r, c, cx, cy in tower_blocks(state, enemy)
-              if state["towers"][enemy][r][c] > 0]
+              if state["towers"][enemy][r][c] is not None and state["towers"][enemy][r][c] > 0]
     if blocks:
         tx = sum(b[0] for b in blocks) / len(blocks)
         ty = sum(b[1] for b in blocks) / len(blocks)

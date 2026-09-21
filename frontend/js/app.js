@@ -441,6 +441,7 @@ const App = {
     if (!this.me) { location.hash = "#/login"; return; }
     const { data } = await API.get("/api/store");
     const { data: coatingData } = await API.get("/api/coatings");
+    const { data: expansionData } = await API.get("/api/expansions");
     const catalog = (data && data.catalog) || {};
     const inv = (data && data.inventory) || {};
     const DEFAULT_STYLE = { colors: ["#3b82f6", "#1e3a8a"], fill: ["#60a5fa", "#1d4ed8"],
@@ -461,7 +462,8 @@ const App = {
         <div id="cust-list" class="custom-list"></div>
       </div>
       <p class="sub" style="margin-top:10px">מראים נוספים מחכים ב<a href="#/store">חנות</a> - כל רכישה מופיעה כאן מיד.</p>
-      <div class="card player-coatings"><h2>🏗️ בניית ציפוי למגדל שלי</h2><div id="player-coating-state"></div></div>`;
+      <div class="card player-coatings"><h2>🏗️ בניית ציפוי למגדל שלי</h2><div id="player-coating-state"></div></div>
+      <div class="card player-expansion"><h2>🧱 הרחבת שטח המגדל</h2><div id="player-expansion-state"></div></div>`;
     const canvas = document.getElementById("cust-canvas");
     const coatingState = document.getElementById("player-coating-state");
     const renderCoatings = () => {
@@ -477,6 +479,12 @@ const App = {
       });
     };
     renderCoatings();
+    const expansionState=document.getElementById("player-expansion-state");
+    const expansionJobs=expansionData.jobs||[];
+    expansionState.innerHTML=`<p>קוביות נוספות: <b>${expansionData.extra_cubes}</b> מתוך ${expansionData.max_extra_cubes}. כל קובייה מוסיפה ${expansionData.cube_hp} נקודות חיים ומרחיבה את שטח הפגיעה.</p>
+      ${expansionJobs.map(j=>`<div class="build-job"><b>קובייה ${j.cube_number}</b> - ${j.status==="building"?"בבנייה":"בתור"}<div class="worker-scene"><span>👷</span><span>🔨</span><span>🧱</span></div></div>`).join("")}
+      <button class="btn" id="build-expansion" ${!expansionData.enabled||expansionData.extra_cubes+expansionJobs.length>=expansionData.max_extra_cubes?"disabled":""}>בנה קובייה · ${expansionData.build_minutes} דקות · 🪙 ${expansionData.cube_price}</button>`;
+    document.getElementById("build-expansion").onclick=async()=>{const {status,data:r}=await API.post("/api/expansions/build",{});if(status===200){toast("הקובייה בתהליך בנייה");this.vCustom(view);window.refreshMe?.();}else toast(r.error_he||"הבנייה נכשלה")};
     const renderList = () => {
       const sel = options.find(o => o.id === this._custSel) || options[0];
       document.getElementById("cust-name").textContent = sel.name_he;
@@ -761,7 +769,7 @@ const App = {
           <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
         ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]])}
         ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]])}
-        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 100, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", 1, 10080, 1]])}
+        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 100, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]])}
         ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
         <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>`;
       document.getElementById("gameplay-save").onclick = async () => {
