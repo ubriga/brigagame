@@ -178,6 +178,17 @@ const GameView = {
     const laid = this.snap && this.snap.tower_x;
     return laid && laid[side] != null ? laid[side] : this.TX[side];
   },
+  obstacleNow() {
+    const ob=this.snap?.obstacle; if(!ob?.motion?.enabled) return ob;
+    const m=ob.motion, dist=Math.max(0,m.max_x-m.min_x), travel=dist/Math.max(1,m.speed);
+    const leg=m.warning_seconds+travel, cycle=Math.max(.001,2*leg);
+    let phase=((Date.now()/1000+this.serverOffset-m.epoch)%cycle+cycle)%cycle;
+    const reverse=phase>=leg; if(reverse) phase-=leg;
+    const warning=phase<m.warning_seconds;
+    const progress=warning||!travel?0:Math.min(1,(phase-m.warning_seconds)/travel);
+    return {...ob,x:reverse?m.max_x-progress*dist:m.min_x+progress*dist,
+      moving:!warning&&dist>0,warning,direction:reverse?-1:1};
+  },
   dims(side) {
     const tower=(this.displayTowers||this.snap?.towers||{})[side];
     return { rows:tower?.length||this.TROWS, cols:tower?.[0]?.length||this.TCOLS };
@@ -821,11 +832,20 @@ const GameView = {
     c.fillStyle = "rgba(244,201,93,.20)";
     for (let x = 8; x < this.W; x += 34) c.fillRect(x, this.GROUND + 8 + (x % 3) * 3, 19, 2);
 
-    const ob = this.snap && this.snap.obstacle;
+    const ob = this.obstacleNow();
     if (ob) {
-      c.fillStyle = "#4b5563"; c.strokeStyle = "#111827"; c.lineWidth = 4;
+      c.save();
+      if(ob.warning){c.shadowColor="#f59e0b";c.shadowBlur=10+7*Math.sin(now/120);}
+      c.fillStyle = ob.warning ? "#6b4f32" : "#4b5563"; c.strokeStyle = "#111827"; c.lineWidth = 4;
       c.fillRect(ob.x, ob.y, ob.w, ob.h); c.strokeRect(ob.x, ob.y, ob.w, ob.h);
       c.fillStyle = "rgba(255,255,255,.14)"; c.fillRect(ob.x + 8, ob.y + 8, ob.w - 16, 8);
+      if(ob.motion?.enabled){
+        c.fillStyle=ob.warning?"#fbbf24":"#d1d5db";c.font="bold 20px sans-serif";c.textAlign="center";
+        c.fillText(ob.warning?"!":(ob.direction>0?"›":"‹"),ob.x+ob.w/2,ob.y+31);
+        c.fillStyle="rgba(251,191,36,.8)";
+        for(let yy=ob.y+46;yy<ob.y+ob.h-4;yy+=18){c.beginPath();c.moveTo(ob.x+6,yy);c.lineTo(ob.x+22,yy-12);c.lineTo(ob.x+34,yy-12);c.lineTo(ob.x+18,yy);c.fill();}
+      }
+      c.restore();
     }
     // towers + HP bars and capped, deterministic idle life.
     for (const side of ["p1", "p2"]) {
