@@ -104,6 +104,10 @@ def user_mods(user_id):
     coating = q("SELECT material, hp, max_hp FROM user_coatings WHERE user_id = ?",
                 (user_id,), one=True)
     mods["coating"] = dict(coating) if coating else None
+    refresh_expansions(user_id)
+    expansion = q("SELECT extra_cubes FROM user_expansions WHERE user_id = ?", (user_id,), one=True)
+    mods["extra_cubes"] = int(expansion["extra_cubes"]) if expansion else 0
+    mods["expansion_cube_hp"] = float(get_gameplay_controls()["tower_expansion"]["cube_hp"])
     return mods
 
 
@@ -176,9 +180,11 @@ DEFAULT_GAMEPLAY_CONTROLS = {
         "iron_price": 600, "iron_minutes": 30, "iron_hp": 130,
     },
     "tower_expansion": {
-        "enabled": False,
+        "enabled": True,
         "max_extra_cubes": 12,
         "build_minutes": 10,
+        "cube_price": 180,
+        "cube_hp": 18,
     },
     "dynamic_obstacle": {
         "enabled": False,
@@ -222,6 +228,31 @@ def rank_xp_config():
             value = DEFAULT_GAMEPLAY_CONTROLS["xp"][key]
         out[key] = max(0.0, min(ceiling, value))
     return out
+
+
+def refresh_expansions(user_id):
+    now = time.time()
+    due = q("SELECT * FROM expansion_jobs WHERE user_id=? AND status IN ('queued','building')"
+            " AND completes_at<=? ORDER BY completes_at,id", (user_id, now))
+    for job in due:
+        execute("INSERT INTO user_expansions(user_id,extra_cubes,updated_at) VALUES(?,?,?)"
+                " ON CONFLICT(user_id) DO UPDATE SET extra_cubes=MAX(extra_cubes,excluded.extra_cubes),"
+                " updated_at=excluded.updated_at", (user_id, job["cube_number"], _now_iso()))
+        execute("UPDATE expansion_jobs SET status='complete' WHERE id=?", (job["id"],))
+    execute("UPDATE expansion_jobs SET status='building' WHERE user_id=? AND status='queued' AND starts_at<=?",
+            (user_id, now))
+
+
+def expansion_payload(user_id):
+    refresh_expansions(user_id)
+    c = get_gameplay_controls()["tower_expansion"]
+    row = q("SELECT extra_cubes FROM user_expansions WHERE user_id=?", (user_id,), one=True)
+    jobs = q("SELECT id,cube_number,status,starts_at,completes_at FROM expansion_jobs"
+             " WHERE user_id=? AND status IN ('queued','building') ORDER BY starts_at,id", (user_id,))
+    return {"enabled": bool(c["enabled"]), "extra_cubes": int(row["extra_cubes"]) if row else 0,
+            "max_extra_cubes": int(c["max_extra_cubes"]), "build_minutes": float(c["build_minutes"]),
+            "cube_price": int(c["cube_price"]), "cube_hp": float(c["cube_hp"]),
+            "jobs": [dict(j) for j in jobs], "server_time": time.time()}
 
 
 COATING_ORDER = ("wood", "tin", "iron")
@@ -478,6 +509,9 @@ def match_snapshot(m, user_id, since):
         "players": players,
         "towers": state.get("towers"),
         "tower_x": state.get("tower_x"),
+        "tower_dims": {side: {"rows": len((state.get("towers") or {}).get(side) or []),
+                               "cols": len(((state.get("towers") or {}).get(side) or [[]])[0])}
+                       for side in ("p1","p2") if (state.get("towers") or {}).get(side)},
         # Waiting matches intentionally have no battlefield yet. Returning null
         # instead of calculating against {} keeps the waiting screen healthy.
         "tower_hp": ({side: tower_hp(state, side) for side in ("p1", "p2")}
@@ -702,7 +736,8 @@ def me():
                     "maintenance": get_maintenance(), "inventory": inv,
                     "daily_available": u["last_daily"] != today,
                     "streak": u["streak"], "server_date": today,
-                    "coating": coating_payload(u["id"])})
+                    "coating": coating_payload(u["id"]),
+                    "expansion": expansion_payload(u["id"])})
 
 
 # --------------------------------------------------------------- store
@@ -805,6 +840,35 @@ def store_equip():
     execute("UPDATE user_items SET equipped = 1 WHERE user_id = ? AND item_id = ?",
             (uid, item_id))
     return jsonify({"ok": True})
+
+
+@app.get("/api/expansions")
+@require_auth
+def expansions_get():
+    return jsonify(expansion_payload(g.user["id"]))
+
+
+@app.post("/api/expansions/build")
+@require_auth
+def expansions_build():
+    err = limited("store")
+    if err: return err
+    uid=g.user["id"]; payload=expansion_payload(uid)
+    if not payload["enabled"]: return jsonify({"error":"disabled","error_he":"ההרחבה אינה זמינה כרגע."}),400
+    queued=[j["cube_number"] for j in payload["jobs"]]
+    next_cube=max([payload["extra_cubes"]]+queued)+1
+    if next_cube>payload["max_extra_cubes"]: return jsonify({"error":"max_level","error_he":"הגעת למגבלת ההרחבה."}),400
+    price=payload["cube_price"]
+    cur=execute("UPDATE users SET coins=coins-? WHERE id=? AND coins>=?",(price,uid,price))
+    if cur.rowcount!=1: return jsonify({"error":"insufficient_funds","error_he":"אין מספיק מטבעות."}),400
+    last=q("SELECT MAX(completes_at) end_at FROM expansion_jobs WHERE user_id=? AND status IN ('queued','building')",(uid,),one=True)
+    starts=max(time.time(),float(last["end_at"] or 0)); completes=starts+payload["build_minutes"]*60
+    execute("INSERT INTO expansion_jobs(user_id,cube_number,status,starts_at,completes_at,created_at) VALUES(?,?,?,?,?,?)",
+            (uid,next_cube,"building" if starts<=time.time() else "queued",starts,completes,_now_iso()))
+    execute("INSERT INTO transactions(user_id,delta,reason,ref,created_at) VALUES(?,?,?,?,?)",
+            (uid,-price,"tower_expansion",str(next_cube),_now_iso()))
+    audit("user.tower_expansion","cube",next_cube,{"price":price,"completes_at":completes})
+    return jsonify({"ok":True,**expansion_payload(uid)})
 
 
 @app.get("/api/coatings")
@@ -1617,8 +1681,10 @@ def admin_gameplay_controls_set():
         },
         "tower_expansion": {
             "enabled": (None, None, bool),
-            "max_extra_cubes": (0, 100, int),
-            "build_minutes": (1, 10080, int),
+            "max_extra_cubes": (0, 24, int),
+            "build_minutes": (0.01, 10080, float),
+            "cube_price": (0, 100000, int),
+            "cube_hp": (1, 10000, float),
         },
         "dynamic_obstacle": {
             "enabled": (None, None, bool),

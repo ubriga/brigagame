@@ -178,13 +178,19 @@ const GameView = {
     const laid = this.snap && this.snap.tower_x;
     return laid && laid[side] != null ? laid[side] : this.TX[side];
   },
+  dims(side) {
+    const tower=(this.displayTowers||this.snap?.towers||{})[side];
+    return { rows:tower?.length||this.TROWS, cols:tower?.[0]?.length||this.TCOLS };
+  },
   muzzle(side) {
-    return { x: this.tx(side) + this.TCOLS * this.BLOCK / 2,
-             y: this.GROUND - this.TROWS * this.BLOCK - 8 };
+    const d=this.dims(side);
+    return { x: this.tx(side) + d.cols * this.BLOCK / 2,
+             y: this.GROUND - d.rows * this.BLOCK - 8 };
   },
   blockCenter(side, r, c) {
+    const d=this.dims(side);
     return { x: this.tx(side) + c * this.BLOCK + this.BLOCK / 2,
-             y: this.GROUND - (this.TROWS - r) * this.BLOCK + this.BLOCK / 2 };
+             y: this.GROUND - (d.rows - r) * this.BLOCK + this.BLOCK / 2 };
   },
 
   bindInput() {
@@ -537,8 +543,8 @@ const GameView = {
   shellHitsTower(x, y) {
     for (const s of ["p1", "p2"]) {
       const tower = this.snap.towers[s];
-      for (let r = 0; r < this.TROWS; r++) {
-        for (let c = 0; c < this.TCOLS; c++) {
+      for (let r = 0; r < tower.length; r++) {
+        for (let c = 0; c < tower[r].length; c++) {
           if (tower[r][c] <= 0) continue;
           const p = this.blockCenter(s, r, c);
           if (Math.abs(x - p.x) <= this.BLOCK / 2 && Math.abs(y - p.y) <= this.BLOCK / 2)
@@ -616,8 +622,8 @@ const GameView = {
 
   beginTowerTransition(oldTowers, newTowers) {
     if (!oldTowers || !newTowers) return;
-    for (const side of ["p1", "p2"]) for (let r = 0; r < this.TROWS; r++) {
-      for (let col = 0; col < this.TCOLS; col++) {
+    for (const side of ["p1", "p2"]) for (let r = 0; r < Math.max(oldTowers[side]?.length||0,newTowers[side]?.length||0); r++) {
+      for (let col = 0; col < Math.max(oldTowers[side]?.[r]?.length||0,newTowers[side]?.[r]?.length||0); col++) {
         const before = oldTowers[side]?.[r]?.[col] || 0;
         const after = newTowers[side]?.[r]?.[col] || 0;
         if (before > 0 && after <= 0 && this.blockTransitions.length < 24)
@@ -949,10 +955,10 @@ const GameView = {
     const tower = (this.displayTowers || this.snap.towers)[side], c = this.ctx;
     c.save(); c.globalAlpha = alpha; c.fillStyle = "#fff";
     c.shadowColor = "#fff"; c.shadowBlur = 20;
-    for (let r = 0; r < this.TROWS; r++) for (let col = 0; col < this.TCOLS; col++) {
-      if (tower[r][col] <= 0) continue;
+    for (let r = 0; r < tower.length; r++) for (let col = 0; col < tower[r].length; col++) {
+      if (tower[r][col] == null || tower[r][col] <= 0) continue;
       const x = this.tx(side) + col * this.BLOCK;
-      const y = this.GROUND - (this.TROWS - r) * this.BLOCK;
+      const y = this.GROUND - (tower.length - r) * this.BLOCK;
       c.fillRect(x + 1, y + 1, this.BLOCK - 2, this.BLOCK - 2);
     }
     c.restore();
@@ -1016,9 +1022,9 @@ const GameView = {
     if (!rank || !rank.insignia) return;
     const img = this.rankImg(rank.insignia);
     if (!img.complete || !img.naturalWidth) return;
-    const c = this.ctx, size = 40;
-    const x = this.tx(side) + this.TCOLS * this.BLOCK / 2 - size / 2;
-    const y = this.GROUND - this.TROWS * this.BLOCK + 4;
+    const c = this.ctx, size = 40, d=this.dims(side);
+    const x = this.tx(side) + d.cols * this.BLOCK / 2 - size / 2;
+    const y = this.GROUND - d.rows * this.BLOCK + 4;
     c.save();
     c.shadowColor = "rgba(0,0,0,.5)"; c.shadowBlur = 6;
     c.drawImage(img, x, y, size, size);
@@ -1036,8 +1042,9 @@ const GameView = {
         m.y - 13 - phase * 28, 3 + phase * 5, 0, Math.PI * 2); c.fill(); c.restore();
     }
     // A small flag gives towers life without particles or extra rAF loops.
-    const poleX = this.tx(side) + (side === "p1" ? 6 : this.TCOLS * this.BLOCK - 6);
-    const topY = this.GROUND - this.TROWS * this.BLOCK - 26;
+    const d=this.dims(side);
+    const poleX = this.tx(side) + (side === "p1" ? 6 : d.cols * this.BLOCK - 6);
+    const topY = this.GROUND - d.rows * this.BLOCK - 26;
     c.save(); c.strokeStyle = "#94a3b8"; c.lineWidth = 2;
     c.beginPath(); c.moveTo(poleX, topY); c.lineTo(poleX, topY + 30); c.stroke();
     const wave = Math.sin(t * 2.1 + (side === "p2" ? 1.4 : 0)) * 3;
@@ -1053,36 +1060,37 @@ const GameView = {
     const style = Array.isArray(rawSkin)
       ? { colors: rawSkin, fill: rawSkin, frame: rawSkin[1], texture: "plain", emblem: "" }
       : rawSkin;
-    const cols = style.colors || ["#3b82f6", "#1e3a8a"];
-    const fill = style.fill || cols;
+    const colors = style.colors || ["#3b82f6", "#1e3a8a"];
+    const fill = style.fill || colors;
     const hpInfo = (this.displayHp || this.snap.tower_hp || {})[side];
-    const blockMax = hpInfo && hpInfo.max ? hpInfo.max / (this.TROWS * this.TCOLS) : 15;
-    const towerX = this.tx(side), towerY = this.GROUND - this.TROWS * this.BLOCK;
+    const rows=tower.length, cols=tower[0].length;
+    const blockMax = hpInfo && hpInfo.max ? hpInfo.max / (rows * cols) : 15;
+    const towerX = this.tx(side), towerY = this.GROUND - rows * this.BLOCK;
 
     if (typeof PremiumTowerArt !== "undefined")
       PremiumTowerArt.draw(c, style.geometry, { x: towerX, y: towerY,
-        w: this.TCOLS * this.BLOCK, h: this.TROWS * this.BLOCK, ground: this.GROUND },
+        w: cols * this.BLOCK, h: rows * this.BLOCK, ground: this.GROUND },
         style, this.idleClock * 1000, side, "back");
 
     // Deep silhouette makes every skin read as the same chunky fortress style.
     c.save(); c.fillStyle = "rgba(2,11,19,.32)";
-    c.beginPath(); c.roundRect(towerX - 7, towerY + 5, this.TCOLS * this.BLOCK + 14,
-      this.TROWS * this.BLOCK - 1, 10); c.fill(); c.restore();
+    c.beginPath(); c.roundRect(towerX - 7, towerY + 5, cols * this.BLOCK + 14,
+      rows * this.BLOCK - 1, 10); c.fill(); c.restore();
 
-    for (let r = 0; r < this.TROWS; r++) for (let col = 0; col < this.TCOLS; col++) {
+    for (let r = 0; r < rows; r++) for (let col = 0; col < cols; col++) {
       const hp = tower[r][col];
       if (hp <= 0) continue;
-      const x = towerX + col * this.BLOCK, y = this.GROUND - (this.TROWS - r) * this.BLOCK;
+      const x = towerX + col * this.BLOCK, y = this.GROUND - (rows - r) * this.BLOCK;
       const frac = Math.min(1, hp / blockMax), stagger = r % 2 ? 2 : 0;
       c.save();
       if (style.glow) { c.shadowColor = style.glow; c.shadowBlur = 8; }
       const grad = c.createLinearGradient(x, y, x + this.BLOCK, y + this.BLOCK);
       grad.addColorStop(0, fill[0]); grad.addColorStop(.62, fill[1] || fill[0]);
-      grad.addColorStop(1, style.frame || cols[1]);
+      grad.addColorStop(1, style.frame || colors[1]);
       c.fillStyle = grad; c.globalAlpha = .48 + .52 * frac;
       c.beginPath(); c.roundRect(x + 1 + stagger * .12, y + 1, this.BLOCK - 2, this.BLOCK - 2, 4); c.fill();
       c.globalAlpha = 1; c.shadowBlur = 0;
-      c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2;
+      c.strokeStyle = style.frame || colors[1]; c.lineWidth = 2;
       c.beginPath(); c.roundRect(x + 1 + stagger * .12, y + 1, this.BLOCK - 2, this.BLOCK - 2, 4); c.stroke();
       // Bevel and mortar lines replace the flat block look.
       c.strokeStyle = "rgba(255,255,255,.22)"; c.lineWidth = 1;
@@ -1110,13 +1118,13 @@ const GameView = {
 
     // Consistent crown, doorway and corner trim turn the destructible grid
     // into a recognisable tower while preserving block-by-block damage.
-    c.save(); c.strokeStyle = style.frame || cols[1]; c.lineWidth = 3;
+    c.save(); c.strokeStyle = style.frame || colors[1]; c.lineWidth = 3;
     c.beginPath(); c.moveTo(towerX - 4, towerY + 2); c.lineTo(towerX - 4, this.GROUND);
-    c.moveTo(towerX + this.TCOLS * this.BLOCK + 4, towerY + 2);
-    c.lineTo(towerX + this.TCOLS * this.BLOCK + 4, this.GROUND); c.stroke();
+    c.moveTo(towerX + cols * this.BLOCK + 4, towerY + 2);
+    c.lineTo(towerX + cols * this.BLOCK + 4, this.GROUND); c.stroke();
     c.fillStyle = "rgba(2,11,19,.45)";
-    c.beginPath(); c.roundRect(towerX + this.TCOLS * this.BLOCK / 2 - 13, this.GROUND - 30, 26, 30, [12,12,2,2]); c.fill();
-    c.fillStyle = "rgba(244,201,93,.62)"; c.beginPath(); c.arc(towerX + this.TCOLS * this.BLOCK / 2 + 6, this.GROUND - 14, 2, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.roundRect(towerX + cols * this.BLOCK / 2 - 13, this.GROUND - 30, 26, 30, [12,12,2,2]); c.fill();
+    c.fillStyle = "rgba(244,201,93,.62)"; c.beginPath(); c.arc(towerX + cols * this.BLOCK / 2 + 6, this.GROUND - 14, 2, 0, Math.PI * 2); c.fill();
     c.restore();
 
     for (const b of this.blockTransitions) if (b.side === side) {
@@ -1125,11 +1133,11 @@ const GameView = {
       const scale = q < .5 ? 1 : 1 - (q - .5) * .55; c.scale(scale, scale);
       c.globalAlpha = 1 - Math.max(0, q - .72) / .28;
       c.fillStyle = fill[0]; c.beginPath(); c.roundRect(-this.BLOCK / 2 + 1, -this.BLOCK / 2 + 1, this.BLOCK - 2, this.BLOCK - 2, 4); c.fill();
-      c.strokeStyle = style.frame || cols[1]; c.lineWidth = 2; c.stroke();
+      c.strokeStyle = style.frame || colors[1]; c.lineWidth = 2; c.stroke();
       c.strokeStyle = "rgba(2,11,19,.75)"; c.beginPath(); c.moveTo(-8,-9); c.lineTo(1,-1); c.lineTo(-5,10); c.moveTo(9,-7); c.lineTo(1,-1); c.lineTo(10,8); c.stroke(); c.restore();
     }
     if (style.emblem) {
-      const w = this.TCOLS * this.BLOCK, h = this.TROWS * this.BLOCK;
+      const w = cols * this.BLOCK, h = rows * this.BLOCK;
       c.save(); c.textAlign = "center"; c.textBaseline = "middle";
       c.font = `bold ${Math.round(this.BLOCK * 1.35)}px sans-serif`;
       c.fillStyle = style.frame || "#fff"; c.shadowColor = style.glow || "transparent"; c.shadowBlur = 12;
@@ -1137,15 +1145,15 @@ const GameView = {
     }
     if (typeof PremiumTowerArt !== "undefined")
       PremiumTowerArt.draw(c, style.geometry, { x: towerX, y: towerY,
-        w: this.TCOLS * this.BLOCK, h: this.TROWS * this.BLOCK, ground: this.GROUND },
+        w: cols * this.BLOCK, h: rows * this.BLOCK, ground: this.GROUND },
         style, this.idleClock * 1000, side, "front");
   },
 
   drawCoating(side) {
     const coating = (this.snap.coatings || {})[side];
     if (!coating || coating.hp <= 0) return;
-    const c=this.ctx, x=this.tx(side), y=this.GROUND-this.TROWS*this.BLOCK;
-    const w=this.TCOLS*this.BLOCK, h=this.TROWS*this.BLOCK;
+    const d=this.dims(side), c=this.ctx, x=this.tx(side), y=this.GROUND-d.rows*this.BLOCK;
+    const w=d.cols*this.BLOCK, h=d.rows*this.BLOCK;
     const frac=Math.max(0,Math.min(1,coating.hp/coating.max_hp));
     const palette={wood:["#92400e","#d97706"],tin:["#94a3b8","#e2e8f0"],iron:["#334155","#94a3b8"]}[coating.material]||["#64748b","#cbd5e1"];
     c.save();c.globalAlpha=.32+.38*frac;c.strokeStyle=palette[1];c.lineWidth=6;
@@ -1162,8 +1170,8 @@ const GameView = {
     const hp = (this.displayHp || this.snap.tower_hp || {})[side];
     if (!hp || !hp.max) return;
     const frac = Math.max(0, hp.hp / hp.max);
-    const w = this.TCOLS * this.BLOCK + 24, h = 14;
-    const x = this.tx(side) - 12, y = this.GROUND - this.TROWS * this.BLOCK - 46;
+    const d=this.dims(side), w = d.cols * this.BLOCK + 24, h = 14;
+    const x = this.tx(side) - 12, y = this.GROUND - d.rows * this.BLOCK - 46;
     c.save();
     c.fillStyle = "rgba(10,15,30,.72)";
     c.beginPath(); c.roundRect(x - 3, y - 3, w + 6, h + 6, 8); c.fill();

@@ -49,7 +49,7 @@ class Config:
     # Deploy version for the client handshake. Bump together with the
     # frontend CONFIG.CLIENT_VERSION on every deploy; the client reloads
     # itself in the lobby when they diverge (never mid-game).
-    SERVER_VERSION = os.environ.get("SERVER_VERSION", "13")
+    SERVER_VERSION = os.environ.get("SERVER_VERSION", "14")
 
     SESSION_TTL_DAYS = 14
     MAX_SESSIONS_PER_USER = 5
