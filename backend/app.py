@@ -19,7 +19,7 @@ from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS,
                      DAILY_BASE, DAILY_CAP, DAILY_STREAK_STEP, DEFAULT_SKIN,
                      MAX_COINS_PER_WIN, MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for,
                      win_reward_coins)
-from game_logic import (ai_choose_shot, cooldown_for, fire_weapon, new_state,
+from game_logic import (TOWER_X_RANGE, ai_choose_shot, cooldown_for, fire_weapon, new_state,
                         tower_hp)
 from ranks import MAX_LEVEL, rank_for_level, rank_payload, rank_up_info
 from security import init_security, limited, request_ip_hash
@@ -136,7 +136,9 @@ def save_match(m):
 
 # Win vs a normal/hard bot counts at reduced weight toward the IDF rank
 # ladder; easy-bot games are practice (0 points). Human wins count full.
-RANK_POINTS_BOT_WIN = 0.5
+RANK_POINTS_BOT_WIN = 6.0
+RANK_POINTS_HUMAN_WIN = 10.0
+RANK_XP_PER_DAMAGE = 0.05
 
 
 def rank_loss_points(current_points, versus_ai=False, ai_rank_level=None):
@@ -204,8 +206,11 @@ def finalize_match(m, winner_side):
         my_r, their_r = u["rating"], (o["rating"] if o else 1000)
         if outcome == "win":
             delta = 0 if practice else elo_delta(my_r, their_r)
-            pts = (0.0 if practice else
-                   (RANK_POINTS_BOT_WIN if m["p2_ai"] else 1.0))
+            # XP is derived only from authoritative damage accumulated by
+            # fire_weapon plus a completed-match win bonus.
+            pts = (0.0 if practice else round(
+                dmg * RANK_XP_PER_DAMAGE +
+                (RANK_POINTS_BOT_WIN if m["p2_ai"] else RANK_POINTS_HUMAN_WIN), 1))
             execute("UPDATE users SET rating = rating + ?, wins = wins + ?,"
                     " rank_points = rank_points + ?,"
                     " matches_played = matches_played + 1 WHERE id = ?",
@@ -217,12 +222,13 @@ def finalize_match(m, winner_side):
             loss_pts = (0.0 if practice else rank_loss_points(
                 u["rank_points"], versus_ai=bool(m["p2_ai"]),
                 ai_rank_level=m["state"].get("ai_rank_level")))
+            damage_xp = 0.0 if practice else round(dmg * RANK_XP_PER_DAMAGE, 1)
             execute("UPDATE users SET rating = MAX(0, rating - ?),"
-                    " rank_points = MAX(0, rank_points - ?),"
+                    " rank_points = MAX(0, rank_points + ? - ?),"
                     " losses = losses + ?,"
                     " matches_played = matches_played + 1 WHERE id = ?",
-                    (delta, loss_pts, 0 if practice else 1, uid))
-            idf_r = rank_payload(max(0, u["rank_points"] - loss_pts))
+                    (delta, damage_xp, loss_pts, 0 if practice else 1, uid))
+            idf_r = rank_payload(max(0, u["rank_points"] + damage_xp - loss_pts))
             up = None
         results[side] = {"outcome": outcome, "coins": total,
                          "hit_coins": hit_coins,
@@ -232,6 +238,7 @@ def finalize_match(m, winner_side):
             results[side]["rank_points_awarded"] = pts
         else:
             results[side]["rank_points_lost"] = loss_pts
+            results[side]["damage_xp_awarded"] = damage_xp
         if practice:
             results[side]["practice"] = True
         if up:
@@ -252,11 +259,20 @@ def finalize_draw(m, reason="time_limit"):
 
 
 def resolve_time_limit(m, now=None):
-    """Resolve an active match at three minutes by tower integrity fraction."""
+    """Enter sudden death at three minutes, then resolve at four minutes."""
     if not m or m["status"] != "active" or not m["state"].get("towers"):
         return []
     now = time.time() if now is None else now
     started = float(m["state"].get("started_at") or now)
+    sudden_at = started + 3 * 60
+    if now >= sudden_at and not m["state"].get("sudden_death"):
+        m["state"]["sudden_death"] = True
+        m["version"] += 1
+        save_match(m)
+        event = {"type": "sudden_death", "damage_multiplier": 2}
+        emit_events(m["id"], m["version"], [event])
+        if now < started + Config.MATCH_DURATION_SECONDS:
+            return [event]
     if now < started + Config.MATCH_DURATION_SECONDS:
         return []
     # Claim resolution before applying economy changes. PythonAnywhere can
@@ -337,6 +353,13 @@ def match_snapshot(m, user_id, since):
         "tower_hp": ({side: tower_hp(state, side) for side in ("p1", "p2")}
                      if state.get("towers") else None),
         "wind": state.get("wind"),
+        "map": state.get("map", "valley"),
+        "obstacle": state.get("obstacle"),
+        "sudden_death": bool(state.get("sudden_death")),
+        "turn_deadline": (state.get("last_turn_at") or {}).get(side_for(m, user_id), 0) + 10,
+        "moves_left": (state.get("moves_left") or {}).get(side_for(m, user_id), 0),
+        "abilities": (state.get("abilities") or {}).get(side_for(m, user_id), {}),
+        "shield": state.get("shield", {}),
         "damage_dealt": state.get("damage_dealt"),
         "skins": {s: skin_style(mods.get(s, {}).get("skin")) for s in ("p1", "p2")},
         "last_shot_at": state.get("last_shot_at"),
@@ -904,7 +927,7 @@ def match_ai():
     # deliberately ignored so it cannot select or forge the opponent rank.
     user_rank_level = rank_payload(g.user["rank_points"])["level"]
     tier_offsets = {"medium": 0, "normal": 0, "ranked": 0,
-                    "hard": 3, "ultra": 6}
+                    "hard": 3, "ultra": 6, "expert": 9}
     if tier == "easy":
         difficulty = "easy"
         ai_rank_level = None
@@ -1010,7 +1033,7 @@ def match_state(mid):
         last = (m["state"].get("last_shot_at") or {}).get("p2") or 0.0
         difficulty = m["state"].get("ai_difficulty", "normal")
         tier = m["state"].get("ai_tier", difficulty)
-        reaction = {"easy": 2.8, "medium": 1.8, "hard": 1.1, "ultra": 0.5}.get(tier, 1.8)
+        reaction = {"easy": 2.8, "medium": 1.8, "hard": 1.1, "ultra": 0.5, "expert": 0.3}.get(tier, 1.8)
         if time.time() - last > cooldown_for("standard") + reaction:
             # A failed bot turn must never wedge the match on permanent 500s:
             # log it, defer the retry by one cooldown, and still serve a
@@ -1080,6 +1103,14 @@ def match_fire(mid):
     weapon = body.get("weapon", "standard")
     if weapon not in ("standard", "double_bomb", "homing_missile", "cluster_shell"):
         return jsonify({"error": "bad_weapon"}), 400
+    # Shot-clock enforcement is server-side too. Clients receive the deadline
+    # for display/auto-fire, but cannot bypass it by hiding or changing JS.
+    deadline = (m["state"].setdefault("last_turn_at", {}).get(side)
+                or m["state"].get("started_at", time.time())) + 10
+    if time.time() > deadline + 1.5:
+        m["state"]["last_turn_at"][side] = time.time()
+        save_match(m)
+        return jsonify({"error": "shot_clock", "error_he": "זמן הירייה נגמר. השעון התחיל מחדש."}), 408
     # cooldown enforcement (server clock)
     last = m["state"]["last_shot_at"][side]
     cd = cooldown_for(weapon)
@@ -1094,7 +1125,15 @@ def match_fire(mid):
         if cur.rowcount != 1:
             return jsonify({"error": "no_ammo",
                             "error_he": "אין לך תחמושת מהסוג הזה."}), 400
-    events, won = fire_weapon(m["state"], side, angle, power, weapon)
+    mega = bool(body.get("mega"))
+    if mega:
+        charges = m["state"].setdefault("abilities", {}).setdefault(side, {}).get("mega", 0)
+        if charges < 1:
+            return jsonify({"error": "no_ability", "error_he": "יכולת המגה כבר נוצלה."}), 400
+        m["state"]["abilities"][side]["mega"] = charges - 1
+    events, won = fire_weapon(m["state"], side, angle, min(100, power * (1.2 if mega else 1)), weapon)
+    if mega:
+        events.append({"type": "ability", "side": side, "ability": "mega"})
     m["version"] += 1
     if won:
         finalize_match(m, side)
@@ -1105,6 +1144,43 @@ def match_fire(mid):
     emit_events(mid, m["version"], events)
     snap = match_snapshot(m, g.user["id"], m["version"] - 1)
     return jsonify(snap)
+
+
+@app.post("/api/matches/<mid>/move")
+@require_auth
+def match_move(mid):
+    m = load_match(mid)
+    side = side_for(m, g.user["id"]) if m else None
+    if not m or side is None or m["status"] != "active":
+        return jsonify({"error": "not_active"}), 400
+    left = m["state"].setdefault("moves_left", {}).get(side, 0)
+    if left < 1:
+        return jsonify({"error": "no_move", "error_he": "ההזזה כבר נוצלה."}), 400
+    direction = -1 if (request.get_json(silent=True) or {}).get("direction") == "left" else 1
+    x = m["state"]["tower_x"][side]
+    lo, hi = TOWER_X_RANGE[side]
+    m["state"]["tower_x"][side] = max(lo, min(hi, x + direction * 45))
+    m["state"]["moves_left"][side] = left - 1
+    m["version"] += 1; save_match(m)
+    emit_events(mid, m["version"], [{"type": "tower_move", "side": side}])
+    return jsonify(match_snapshot(m, g.user["id"], m["version"] - 1))
+
+
+@app.post("/api/matches/<mid>/shield")
+@require_auth
+def match_shield(mid):
+    m = load_match(mid)
+    side = side_for(m, g.user["id"]) if m else None
+    if not m or side is None or m["status"] != "active":
+        return jsonify({"error": "not_active"}), 400
+    charges = m["state"].setdefault("abilities", {}).setdefault(side, {}).get("shield", 0)
+    if charges < 1:
+        return jsonify({"error": "no_ability", "error_he": "המגן כבר נוצל."}), 400
+    m["state"]["abilities"][side]["shield"] = charges - 1
+    m["state"].setdefault("shield", {})[side] = True
+    m["version"] += 1; save_match(m)
+    emit_events(mid, m["version"], [{"type": "shield", "side": side, "active": True}])
+    return jsonify(match_snapshot(m, g.user["id"], m["version"] - 1))
 
 
 @app.post("/api/matches/<mid>/leave")
