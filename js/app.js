@@ -440,6 +440,7 @@ const App = {
   async vCustom(view) {
     if (!this.me) { location.hash = "#/login"; return; }
     const { data } = await API.get("/api/store");
+    const { data: coatingData } = await API.get("/api/coatings");
     const catalog = (data && data.catalog) || {};
     const inv = (data && data.inventory) || {};
     const DEFAULT_STYLE = { colors: ["#3b82f6", "#1e3a8a"], fill: ["#60a5fa", "#1d4ed8"],
@@ -459,8 +460,23 @@ const App = {
         </div>
         <div id="cust-list" class="custom-list"></div>
       </div>
-      <p class="sub" style="margin-top:10px">מראים נוספים מחכים ב<a href="#/store">חנות</a> - כל רכישה מופיעה כאן מיד.</p>`;
+      <p class="sub" style="margin-top:10px">מראים נוספים מחכים ב<a href="#/store">חנות</a> - כל רכישה מופיעה כאן מיד.</p>
+      <div class="card player-coatings"><h2>🏗️ בניית ציפוי למגדל שלי</h2><div id="player-coating-state"></div></div>`;
     const canvas = document.getElementById("cust-canvas");
+    const coatingState = document.getElementById("player-coating-state");
+    const renderCoatings = () => {
+      const order=["wood","tin","iron"], current=coatingData.current;
+      const level=current ? order.indexOf(current.material)+1 : 0;
+      const queued=new Set((coatingData.jobs||[]).map(j=>j.material));
+      coatingState.innerHTML = `${current ? `<p>פעיל: <b>${esc(coatingData.catalog[current.material].name_he)}</b> · ${Math.round(current.hp)}/${Math.round(current.max_hp)} הגנה</p>` : '<p class="sub">עדיין אין ציפוי פעיל.</p>'}
+        ${(coatingData.jobs||[]).map(j=>`<div class="build-job"><b>${esc(coatingData.catalog[j.material].name_he)}</b> - ${j.status==="building"?"בבנייה":"בתור"}<div class="worker-scene"><span>👷</span><span>🔨</span><span>👷</span></div></div>`).join("")}
+        <div class="coating-grid">${order.map((m,i)=>{const x=coatingData.catalog[m],locked=i>level||queued.has(m);return `<div class="card coating-${m}"><h3>${esc(x.name_he)}</h3><p>${Math.round(x.hp)} הגנה · ${x.minutes} דקות · 🪙 ${x.price}</p><button class="btn small" data-player-coating="${m}" ${!coatingData.enabled||locked||i<level?"disabled":""}>${i<level?"הושלם":queued.has(m)?"בתור":i===level?"התחל בנייה":"נעול"}</button></div>`}).join("")}</div>`;
+      coatingState.querySelectorAll("[data-player-coating]").forEach(btn=>btn.onclick=async()=>{
+        const {status,data:r}=await API.post("/api/coatings/build",{material:btn.dataset.playerCoating});
+        if(status===200){toast("הבנייה התחילה - הפועלים כבר עובדים");this.vCustom(view);window.refreshMe?.();} else toast(r.error_he||"הבנייה נכשלה");
+      });
+    };
+    renderCoatings();
     const renderList = () => {
       const sel = options.find(o => o.id === this._custSel) || options[0];
       document.getElementById("cust-name").textContent = sel.name_he;
@@ -666,9 +682,9 @@ const App = {
     view.innerHTML = `
       <h1>🛠️ ניהול</h1>
       <div class="tabs">
-        ${["stats", "users", "gameplay", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
+        ${["stats", "users", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
           `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-            stats: "סטטיסטיקות", users: "משתמשים", gameplay: "שליטת משחק", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
+            stats: "סטטיסטיקות", users: "משתמשים", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
             coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה" }[t]}</button>`).join("")}
       </div>
       <div id="admin-body"></div>`;
@@ -744,7 +760,7 @@ const App = {
           <label>בונוס ניצחון מול מחשב</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.bot_win}" data-control="xp.bot_win">
           <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
         ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]])}
-        ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 10, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", 1, 10080, 1]])}
+        ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]])}
         ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 100, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", 1, 10080, 1]])}
         ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
         <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>`;
@@ -757,6 +773,29 @@ const App = {
         const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated });
         toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");
       };
+    } else if (tab === "coatings") {
+      const { status, data } = await API.get("/api/coatings");
+      if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הציפויים.</p>"; return; }
+      const active = data.current;
+      const order = ["wood", "tin", "iron"];
+      const queued = new Set((data.jobs || []).map(j => j.material));
+      const activeLevel = active ? order.indexOf(active.material) + 1 : 0;
+      const next = order[activeLevel];
+      body.innerHTML = `<div class="card"><h2>🏗️ ציפויים בבנייה</h2>
+        <p>${active ? `ציפוי פעיל: <b>${esc(data.catalog[active.material].name_he)}</b> (${Math.round(active.hp)}/${Math.round(active.max_hp)} הגנה)` : "אין ציפוי פעיל"}</p>
+        ${(data.jobs || []).map(j => `<div class="build-job" data-completes="${j.completes_at}" data-server="${data.server_time}"><b>${esc(data.catalog[j.material].name_he)}</b> - ${j.status === "building" ? "בבנייה" : "בתור"}<span class="build-countdown"></span><div class="worker-scene"><span>👷</span><span>🔨</span><span>👷</span></div></div>`).join("") || '<p class="sub">אין בנייה פעילה.</p>'}
+        <div class="coating-grid">${order.map((m, i) => { const x=data.catalog[m]; const locked=i>activeLevel || queued.has(m); return `<div class="card coating-${m}"><h3>${esc(x.name_he)}</h3><p>${Math.round(x.hp)} הגנה · ${x.minutes} דקות</p><p class="price">🪙 ${x.price}</p><button class="btn small" data-build-coating="${m}" ${!data.enabled || locked || i<activeLevel ? "disabled" : ""}>${i<activeLevel ? "הושלם" : queued.has(m) ? "בתור" : i===activeLevel ? "התחל בנייה" : "נעול"}</button></div>`; }).join("")}</div></div>`;
+      const tick = () => body.querySelectorAll(".build-job").forEach(job => {
+        const left = Math.max(0, Number(job.dataset.completes) - Number(job.dataset.server) - (Date.now() - this._coatingClockStart) / 1000);
+        const min = Math.floor(left / 60), sec = Math.floor(left % 60);
+        job.querySelector(".build-countdown").textContent = ` · ${min}:${String(sec).padStart(2,"0")}`;
+      });
+      this._coatingClockStart = Date.now(); tick(); clearInterval(this._coatingTimer); this._coatingTimer = setInterval(tick, 1000);
+      body.querySelectorAll("[data-build-coating]").forEach(btn => btn.onclick = async () => {
+        const { status: built, data: result } = await API.post("/api/coatings/build", { material: btn.dataset.buildCoating });
+        if (built === 200) { toast("הבנייה התחילה"); this.vAdmin(view, "coatings"); window.refreshMe?.(); }
+        else toast(result.error_he || "הבנייה נכשלה");
+      });
     } else if (tab === "cosmetics") {
       const loadCosmetics = async () => {
         const { status, data } = await API.get("/api/admin/cosmetics");
