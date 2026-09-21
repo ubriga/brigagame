@@ -126,6 +126,23 @@ CREATE TABLE IF NOT EXISTS cosmetic_overrides (
     updated_by INTEGER,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS coating_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    material TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    starts_at REAL NOT NULL,
+    completes_at REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_coating_jobs_user ON coating_jobs(user_id, status, starts_at);
+CREATE TABLE IF NOT EXISTS user_coatings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    material TEXT NOT NULL,
+    hp REAL NOT NULL,
+    max_hp REAL NOT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,
     window_start REAL NOT NULL,

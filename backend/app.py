@@ -101,6 +101,9 @@ def user_mods(user_id):
             mods["hp"] = r["level"]
         elif r["equipped"]:
             mods["skin"] = r["item_id"]
+    coating = q("SELECT material, hp, max_hp FROM user_coatings WHERE user_id = ?",
+                (user_id,), one=True)
+    mods["coating"] = dict(coating) if coating else None
     return mods
 
 
@@ -165,9 +168,12 @@ DEFAULT_GAMEPLAY_CONTROLS = {
         "asset_budget_kb": 80,
     },
     "coatings": {
-        "enabled": False,
-        "max_level": 5,
+        "enabled": True,
+        "max_level": 3,
         "build_minutes": 5,
+        "wood_price": 80, "wood_minutes": 5, "wood_hp": 24,
+        "tin_price": 240, "tin_minutes": 15, "tin_hp": 65,
+        "iron_price": 600, "iron_minutes": 30, "iron_hp": 130,
     },
     "tower_expansion": {
         "enabled": False,
@@ -216,6 +222,51 @@ def rank_xp_config():
             value = DEFAULT_GAMEPLAY_CONTROLS["xp"][key]
         out[key] = max(0.0, min(ceiling, value))
     return out
+
+
+COATING_ORDER = ("wood", "tin", "iron")
+COATING_NAMES = {"wood": "עץ", "tin": "פח", "iron": "ברזל"}
+
+
+def coating_catalog():
+    c = get_gameplay_controls()["coatings"]
+    return {m: {"material": m, "name_he": COATING_NAMES[m],
+                "level": i + 1, "price": int(c[f"{m}_price"]),
+                "minutes": float(c[f"{m}_minutes"]),
+                "hp": float(c[f"{m}_hp"])}
+            for i, m in enumerate(COATING_ORDER)}
+
+
+def refresh_coatings(user_id):
+    """Finish due jobs and start the next queued job, in one server-owned queue."""
+    now = time.time()
+    due = q("SELECT * FROM coating_jobs WHERE user_id = ? AND status IN ('queued','building')"
+            " AND completes_at <= ? ORDER BY completes_at, id", (user_id, now))
+    catalog = coating_catalog()
+    for job in due:
+        spec = catalog.get(job["material"])
+        if not spec:
+            continue
+        execute("INSERT INTO user_coatings (user_id, material, hp, max_hp, updated_at)"
+                " VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET"
+                " material=excluded.material, hp=excluded.hp, max_hp=excluded.max_hp,"
+                " updated_at=excluded.updated_at",
+                (user_id, job["material"], spec["hp"], spec["hp"], _now_iso()))
+        execute("UPDATE coating_jobs SET status='complete' WHERE id = ?", (job["id"],))
+    execute("UPDATE coating_jobs SET status='building' WHERE user_id = ? AND status='queued'"
+            " AND starts_at <= ?", (user_id, now))
+
+
+def coating_payload(user_id):
+    refresh_coatings(user_id)
+    current = q("SELECT material, hp, max_hp, updated_at FROM user_coatings WHERE user_id = ?",
+                (user_id,), one=True)
+    jobs = q("SELECT id, material, status, starts_at, completes_at FROM coating_jobs"
+             " WHERE user_id = ? AND status IN ('queued','building') ORDER BY starts_at, id",
+             (user_id,))
+    return {"enabled": bool(get_gameplay_controls()["coatings"]["enabled"]),
+            "catalog": coating_catalog(), "current": dict(current) if current else None,
+            "jobs": [dict(j) for j in jobs], "server_time": time.time()}
 
 
 def rank_loss_points(current_points, versus_ai=False, ai_rank_level=None):
@@ -440,6 +491,7 @@ def match_snapshot(m, user_id, since):
         "abilities": (state.get("abilities") or {}).get(side_for(m, user_id), {}),
         "shield": state.get("shield", {}),
         "damage_dealt": state.get("damage_dealt"),
+        "coatings": state.get("coatings", {}),
         "skins": {s: skin_style(mods.get(s, {}).get("skin")) for s in ("p1", "p2")},
         "last_shot_at": state.get("last_shot_at"),
         "winner_side": state.get("winner_side"),
@@ -649,7 +701,8 @@ def me():
     return jsonify({"user": public_user(u), "server_version": Config.SERVER_VERSION,
                     "maintenance": get_maintenance(), "inventory": inv,
                     "daily_available": u["last_daily"] != today,
-                    "streak": u["streak"], "server_date": today})
+                    "streak": u["streak"], "server_date": today,
+                    "coating": coating_payload(u["id"])})
 
 
 # --------------------------------------------------------------- store
@@ -752,6 +805,49 @@ def store_equip():
     execute("UPDATE user_items SET equipped = 1 WHERE user_id = ? AND item_id = ?",
             (uid, item_id))
     return jsonify({"ok": True})
+
+
+@app.get("/api/coatings")
+@require_auth
+def coatings_get():
+    return jsonify(coating_payload(g.user["id"]))
+
+
+@app.post("/api/coatings/build")
+@require_auth
+def coatings_build():
+    err = limited("store")
+    if err:
+        return err
+    uid = g.user["id"]
+    payload = coating_payload(uid)
+    if not payload["enabled"]:
+        return jsonify({"error": "disabled", "error_he": "הבנייה אינה זמינה כרגע."}), 400
+    material = (request.get_json(silent=True) or {}).get("material", "")
+    catalog = payload["catalog"]
+    if material not in catalog:
+        return jsonify({"error": "bad_material"}), 400
+    current_level = COATING_ORDER.index(payload["current"]["material"]) + 1 if payload["current"] else 0
+    queued = [COATING_ORDER.index(j["material"]) + 1 for j in payload["jobs"]]
+    expected = max([current_level] + queued) + 1
+    if expected > len(COATING_ORDER) or COATING_ORDER[expected - 1] != material:
+        return jsonify({"error": "wrong_order", "error_he": "יש לבנות את החומרים לפי הסדר."}), 400
+    spec = catalog[material]
+    cur = execute("UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?",
+                  (spec["price"], uid, spec["price"]))
+    if cur.rowcount != 1:
+        return jsonify({"error": "insufficient_funds", "error_he": "אין מספיק מטבעות."}), 400
+    last = q("SELECT MAX(completes_at) end_at FROM coating_jobs WHERE user_id = ?"
+             " AND status IN ('queued','building')", (uid,), one=True)
+    starts = max(time.time(), float(last["end_at"] or 0))
+    completes = starts + spec["minutes"] * 60
+    execute("INSERT INTO coating_jobs (user_id, material, status, starts_at, completes_at, created_at)"
+            " VALUES (?,?,?,?,?,?)", (uid, material, "building" if starts <= time.time() else "queued",
+                                      starts, completes, _now_iso()))
+    execute("INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)",
+            (uid, -spec["price"], "coating_build", material, _now_iso()))
+    audit("user.coating_build", "material", material, {"price": spec["price"], "completes_at": completes})
+    return jsonify({"ok": True, **coating_payload(uid)})
 
 
 @app.post("/api/daily/claim")
@@ -1513,8 +1609,11 @@ def admin_gameplay_controls_set():
         },
         "coatings": {
             "enabled": (None, None, bool),
-            "max_level": (1, 10, int),
-            "build_minutes": (1, 10080, int),
+            "max_level": (1, 3, int),
+            "build_minutes": (0.01, 10080, float),
+            "wood_price": (0, 100000, int), "wood_minutes": (0.01, 10080, float), "wood_hp": (1, 10000, float),
+            "tin_price": (0, 100000, int), "tin_minutes": (0.01, 10080, float), "tin_hp": (1, 10000, float),
+            "iron_price": (0, 100000, int), "iron_minutes": (0.01, 10080, float), "iron_hp": (1, 10000, float),
         },
         "tower_expansion": {
             "enabled": (None, None, bool),

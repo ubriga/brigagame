@@ -148,6 +148,23 @@ check("premium skins expose distinct server-owned geometry",
       len({premium_store["catalog"][k]["style"].get("geometry")
            for k in premium_ids}) == 8)
 
+# --- timed coatings: queue, completion and separate match layer
+s, coating_r = call("GET", "/api/coatings", token=ta)
+check("coating catalog exposes wood tin iron in order",
+      s == 200 and list(coating_r["catalog"]) == ["wood", "tin", "iron"], json.dumps(coating_r))
+call("POST", "/api/admin/users/1/coins", token=tadm, body={"delta": 2000, "reason": "coating_test"})
+s, coating_r = call("POST", "/api/coatings/build", token=ta, body={"material": "wood"})
+check("wood coating build starts server queue", s == 200 and coating_r["jobs"][0]["material"] == "wood", json.dumps(coating_r))
+s, coating_bad = call("POST", "/api/coatings/build", token=ta, body={"material": "iron"})
+check("coatings enforce material order", s == 400 and coating_bad.get("error") == "wrong_order", json.dumps(coating_bad))
+# Complete the short job without waiting five minutes; refresh must install full HP.
+with sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brigagame.db")) as coating_db:
+    coating_db.execute("UPDATE coating_jobs SET completes_at = ? WHERE user_id = 1", (time.time() - 1,))
+s, coating_r = call("GET", "/api/coatings", token=ta)
+check("due coating job installs separate full-HP layer",
+      s == 200 and coating_r["current"]["material"] == "wood"
+      and coating_r["current"]["hp"] == coating_r["catalog"]["wood"]["hp"], json.dumps(coating_r))
+
 # --- store: buy consumable, upgrade, skin
 s, r = call("POST", "/api/store/buy", token=ta, body={"item_id": "double_bomb"})
 check("buy double_bomb (90)", s == 200 and r["coins"] == 110, str(r))
