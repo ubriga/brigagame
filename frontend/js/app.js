@@ -656,9 +656,9 @@ const App = {
     view.innerHTML = `
       <h1>🛠️ ניהול</h1>
       <div class="tabs">
-        ${["stats", "users", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
+        ${["stats", "users", "gameplay", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
           `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-            stats: "סטטיסטיקות", users: "משתמשים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
+            stats: "סטטיסטיקות", users: "משתמשים", gameplay: "שליטת משחק", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
             coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה" }[t]}</button>`).join("")}
       </div>
       <div id="admin-body"></div>`;
@@ -722,6 +722,31 @@ const App = {
       };
       document.getElementById("uq").oninput = () => load();
       load();
+    } else if (tab === "gameplay") {
+      const { status, data } = await API.get("/api/admin/gameplay-controls");
+      if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת השליטה במשחק.</p>"; return; }
+      const c = data.controls;
+      const feature = (key, title, fields) => `<div class="card"><h2>${title}</h2>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="${key}.enabled" ${c[key].enabled ? "checked" : ""} style="width:auto">מופעל</label>
+        ${fields.map(([field, label, min, max, step]) => `<label>${label}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c[key][field]}" data-control="${key}.${field}">`).join("")}</div>`;
+      body.innerHTML = `<div class="card"><h2>קצב התקדמות XP</h2><p class="sub">ערכי ברירת המחדל החדשים מאטים את ההתקדמות בערך פי 5. שינוי חל רק על משחקים שיסתיימו מעכשיו.</p>
+          <label>בונוס ניצחון מול שחקן</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.human_win}" data-control="xp.human_win">
+          <label>בונוס ניצחון מול מחשב</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.bot_win}" data-control="xp.bot_win">
+          <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
+        ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]])}
+        ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 10, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", 1, 10080, 1]])}
+        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 100, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", 1, 10080, 1]])}
+        ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
+        <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>`;
+      document.getElementById("gameplay-save").onclick = async () => {
+        const updated = JSON.parse(JSON.stringify(c));
+        body.querySelectorAll("[data-control]").forEach(input => {
+          const [section, key] = input.dataset.control.split(".");
+          updated[section][key] = input.type === "checkbox" ? input.checked : Number(input.value);
+        });
+        const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated });
+        toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");
+      };
     } else if (tab === "cosmetics") {
       const loadCosmetics = async () => {
         const { status, data } = await API.get("/api/admin/cosmetics");

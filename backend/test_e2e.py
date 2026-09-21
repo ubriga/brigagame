@@ -107,6 +107,30 @@ check("non-admin blocked from admin", s == 403)
 s, r = call("GET", "/api/admin/overview", token=tadm)
 check("admin overview", s == 200 and r["stats"]["users_total"] >= 3)
 
+# Every planned gameplay system starts with a server-owned admin control.
+s, controls_r = call("GET", "/api/admin/gameplay-controls", token=tadm)
+controls = controls_r.get("controls", {})
+check("admin gameplay controls expose every approved stage",
+      s == 200 and set(controls) == {"xp", "premium_skins", "coatings",
+                                      "tower_expansion", "dynamic_obstacle"},
+      json.dumps(controls))
+check("new XP defaults slow progression fivefold",
+      controls.get("xp") == {"human_win": 2.0, "bot_win": 1.0,
+                              "per_damage": 0.01},
+      json.dumps(controls.get("xp")))
+s, _ = call("POST", "/api/admin/gameplay-controls", token=ta,
+            body={"controls": controls})
+check("non-admin cannot change gameplay controls", s == 403)
+s, invalid = call("POST", "/api/admin/gameplay-controls", token=tadm,
+                  body={"controls": {"xp": {"per_damage": -1}}})
+check("admin controls reject unsafe values",
+      s == 400 and invalid.get("error") == "bad_controls", str(invalid))
+s, saved = call("POST", "/api/admin/gameplay-controls", token=tadm,
+                body={"controls": controls})
+check("admin can save gameplay controls",
+      s == 200 and saved.get("controls", {}).get("xp") == controls.get("xp"),
+      json.dumps(saved))
+
 # --- unauth guard
 s, _ = call("GET", "/api/me")
 check("no-token 401", s == 401)
@@ -320,8 +344,8 @@ check("me exposes idf_rank (level 1 turai at start)",
 check("rank thresholds remain rabat 6 XP through top rank 700 XP",
       rank_payload(0)["next"]["wins_required"] == 6
       and rank_payload(700)["level"] == 18)
-check("winner receives server-derived XP from damage plus win",
-      wres["rank_points_awarded"] >= 10
+check("winner receives slowed server-derived XP from damage plus win",
+      2 <= wres["rank_points_awarded"] < 10
       and wres["idf_rank"]["xp"] == wres["rank_points_awarded"],
       json.dumps(wres.get("idf_rank")))
 check("loser progression reflects authoritative damage XP and loss stake",

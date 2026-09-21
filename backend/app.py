@@ -4,6 +4,7 @@ Server-authoritative multiplayer artillery game. The client renders only;
 every game rule, coin movement and validation happens here.
 """
 import json
+import math
 import secrets
 import time
 from datetime import datetime, timezone
@@ -146,9 +147,75 @@ def save_match(m):
 
 # Win vs a normal/hard bot counts at reduced weight toward the IDF rank
 # ladder; easy-bot games are practice (0 points). Human wins count full.
-RANK_POINTS_BOT_WIN = 6.0
-RANK_POINTS_HUMAN_WIN = 10.0
-RANK_XP_PER_DAMAGE = 0.05
+RANK_POINTS_BOT_WIN = 1.0
+RANK_POINTS_HUMAN_WIN = 2.0
+RANK_XP_PER_DAMAGE = 0.01
+
+# Every planned gameplay system starts behind a server-owned admin control.
+# The feature entries are deliberately present before their implementation so
+# later stages cannot ship without an operator kill switch and safe limits.
+DEFAULT_GAMEPLAY_CONTROLS = {
+    "xp": {
+        "human_win": RANK_POINTS_HUMAN_WIN,
+        "bot_win": RANK_POINTS_BOT_WIN,
+        "per_damage": RANK_XP_PER_DAMAGE,
+    },
+    "premium_skins": {
+        "enabled": False,
+        "asset_budget_kb": 80,
+    },
+    "coatings": {
+        "enabled": False,
+        "max_level": 5,
+        "build_minutes": 5,
+    },
+    "tower_expansion": {
+        "enabled": False,
+        "max_extra_cubes": 12,
+        "build_minutes": 10,
+    },
+    "dynamic_obstacle": {
+        "enabled": False,
+        "speed": 20,
+        "warning_seconds": 1.5,
+    },
+}
+
+
+def get_gameplay_controls():
+    """Return validated controls, filling old/missing rows with safe defaults."""
+    controls = json.loads(json.dumps(DEFAULT_GAMEPLAY_CONTROLS))
+    row = q("SELECT value FROM settings WHERE key = 'gameplay_controls'", one=True)
+    if not row:
+        return controls
+    try:
+        saved = json.loads(row["value"])
+    except (TypeError, ValueError):
+        return controls
+    if not isinstance(saved, dict):
+        return controls
+    for section, defaults in controls.items():
+        incoming = saved.get(section)
+        if isinstance(incoming, dict):
+            for key in defaults:
+                if key in incoming:
+                    controls[section][key] = incoming[key]
+    return controls
+
+
+def rank_xp_config():
+    controls = get_gameplay_controls()["xp"]
+    out = {}
+    limits = {"human_win": 100.0, "bot_win": 100.0, "per_damage": 1.0}
+    for key, ceiling in limits.items():
+        try:
+            value = float(controls[key])
+        except (TypeError, ValueError):
+            value = DEFAULT_GAMEPLAY_CONTROLS["xp"][key]
+        if not math.isfinite(value):
+            value = DEFAULT_GAMEPLAY_CONTROLS["xp"][key]
+        out[key] = max(0.0, min(ceiling, value))
+    return out
 
 
 def rank_loss_points(current_points, versus_ai=False, ai_rank_level=None):
@@ -218,9 +285,10 @@ def finalize_match(m, winner_side):
             delta = 0 if practice else elo_delta(my_r, their_r)
             # XP is derived only from authoritative damage accumulated by
             # fire_weapon plus a completed-match win bonus.
+            xp = rank_xp_config()
             pts = (0.0 if practice else round(
-                dmg * RANK_XP_PER_DAMAGE +
-                (RANK_POINTS_BOT_WIN if m["p2_ai"] else RANK_POINTS_HUMAN_WIN), 1))
+                dmg * xp["per_damage"] +
+                (xp["bot_win"] if m["p2_ai"] else xp["human_win"]), 1))
             execute("UPDATE users SET rating = rating + ?, wins = wins + ?,"
                     " rank_points = rank_points + ?,"
                     " matches_played = matches_played + 1 WHERE id = ?",
@@ -232,7 +300,8 @@ def finalize_match(m, winner_side):
             loss_pts = (0.0 if practice else rank_loss_points(
                 u["rank_points"], versus_ai=bool(m["p2_ai"]),
                 ai_rank_level=m["state"].get("ai_rank_level")))
-            damage_xp = 0.0 if practice else round(dmg * RANK_XP_PER_DAMAGE, 1)
+            damage_xp = 0.0 if practice else round(
+                dmg * rank_xp_config()["per_damage"], 1)
             execute("UPDATE users SET rating = MAX(0, rating - ?),"
                     " rank_points = MAX(0, rank_points + ? - ?),"
                     " losses = losses + ?,"
@@ -1409,6 +1478,80 @@ def admin_maintenance_set():
             (json.dumps({"on": on, "message": message}),))
     audit("admin.maintenance", details={"on": on, "message": message})
     return jsonify({"ok": True, "maintenance": get_maintenance()})
+
+
+@app.get("/api/admin/gameplay-controls")
+@require_admin
+def admin_gameplay_controls_get():
+    err = limited("admin")
+    if err:
+        return err
+    return jsonify({"controls": get_gameplay_controls()})
+
+
+@app.post("/api/admin/gameplay-controls")
+@require_admin
+def admin_gameplay_controls_set():
+    err = limited("admin")
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    raw = body.get("controls")
+    if not isinstance(raw, dict):
+        return jsonify({"error": "bad_controls"}), 400
+
+    current = get_gameplay_controls()
+    specs = {
+        "xp": {
+            "human_win": (0.0, 100.0, float),
+            "bot_win": (0.0, 100.0, float),
+            "per_damage": (0.0, 1.0, float),
+        },
+        "premium_skins": {
+            "enabled": (None, None, bool),
+            "asset_budget_kb": (10, 500, int),
+        },
+        "coatings": {
+            "enabled": (None, None, bool),
+            "max_level": (1, 10, int),
+            "build_minutes": (1, 10080, int),
+        },
+        "tower_expansion": {
+            "enabled": (None, None, bool),
+            "max_extra_cubes": (0, 100, int),
+            "build_minutes": (1, 10080, int),
+        },
+        "dynamic_obstacle": {
+            "enabled": (None, None, bool),
+            "speed": (1, 200, float),
+            "warning_seconds": (0, 10, float),
+        },
+    }
+    try:
+        for section, fields in specs.items():
+            incoming = raw.get(section, {})
+            if not isinstance(incoming, dict):
+                raise ValueError
+            for key, (lo, hi, kind) in fields.items():
+                if key not in incoming:
+                    continue
+                value = incoming[key]
+                if kind is bool:
+                    if not isinstance(value, bool):
+                        raise ValueError
+                else:
+                    value = kind(value)
+                    if not math.isfinite(value) or value < lo or value > hi:
+                        raise ValueError
+                current[section][key] = value
+    except (TypeError, ValueError, OverflowError):
+        return jsonify({"error": "bad_controls"}), 400
+
+    execute("INSERT INTO settings (key, value) VALUES ('gameplay_controls', ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(current),))
+    audit("admin.gameplay_controls", details=current)
+    return jsonify({"ok": True, "controls": current})
 
 
 @app.get("/api/admin/cosmetics")
