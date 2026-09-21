@@ -170,6 +170,39 @@ _COSMETIC_SKINS = [
     ("obsidian", "אובסידיאן", "legendary", 1700, "#a78bfa", "#09090b", "◆", "obsidian"),
     ("hologram", "הולוגרמה", "legendary", 1800, "#67e8f9", "#7e22ce", "⌬", "hologram"),
 ]
+
+_COMING_SOON_SKINS = [
+    ("nebula", "ערפילית", "legendary", 1900, "#f0abfc", "#312e81", "✦", "nebula"),
+    ("kraken", "קראקן", "legendary", 1850, "#2dd4bf", "#0f172a", "♆", "scales"),
+    ("phoenix", "פניקס", "legendary", 2000, "#fb923c", "#7f1d1d", "♛", "flame"),
+    ("diamond", "יהלום", "legendary", 2100, "#cffafe", "#0284c7", "♦", "crystal"),
+    ("quantum", "קוונטום", "legendary", 2200, "#a5b4fc", "#581c87", "∞", "quantum"),
+    ("royal_void", "ריק מלכותי", "legendary", 1950, "#d8b4fe", "#020617", "♕", "void"),
+    ("thunder", "אל הרעם", "legendary", 2050, "#fef08a", "#1e3a8a", "ϟ", "storm"),
+    ("atlantis", "אטלנטיס", "legendary", 1900, "#5eead4", "#164e63", "♜", "water"),
+    ("inferno", "אינפרנו", "epic", 980, "#f87171", "#450a0a", "♨", "inferno"),
+    ("matrix", "מטריקס", "epic", 950, "#4ade80", "#052e16", "⌗", "matrix"),
+    ("synthwave", "סינת'ווייב", "epic", 920, "#f472b6", "#312e81", "◭", "grid"),
+    ("magma", "מאגמה", "epic", 900, "#f97316", "#431407", "●", "magma"),
+    ("deep_sea", "מעמקי הים", "epic", 880, "#38bdf8", "#082f49", "≋", "water"),
+    ("jungle", "ג'ונגל פראי", "epic", 870, "#22c55e", "#052e16", "♣", "leaf"),
+    ("temple", "מקדש עתיק", "epic", 930, "#facc15", "#713f12", "⌂", "rune"),
+    ("mecha", "מֶכָה", "epic", 990, "#94a3b8", "#1e293b", "⚙", "metal"),
+    ("coral", "שונית אלמוגים", "rare", 520, "#fb7185", "#0e7490", "❈", "coral"),
+    ("opal", "אופל", "rare", 560, "#f0abfc", "#0f766e", "◈", "opal"),
+    ("origami", "אוריגמי", "rare", 480, "#fda4af", "#4338ca", "◇", "paper"),
+    ("comic", "קומיקס", "rare", 460, "#fde047", "#dc2626", "!", "comic"),
+    ("graffiti", "גרפיטי", "rare", 500, "#a3e635", "#7e22ce", "✎", "paint"),
+    ("marble", "שיש", "rare", 540, "#e2e8f0", "#475569", "◌", "marble"),
+    ("amber", "ענבר", "rare", 510, "#fbbf24", "#78350f", "◆", "crystal"),
+    ("sakura", "סאקורה", "rare", 530, "#f9a8d4", "#881337", "✿", "petal"),
+    ("denim", "דנים", "common", 280, "#60a5fa", "#1e3a8a", "▦", "fabric"),
+    ("clay", "חימר", "common", 260, "#fdba74", "#9a3412", "●", "clay"),
+    ("mint", "מנטה", "common", 270, "#6ee7b7", "#065f46", "+", "soft"),
+    ("paper", "נייר", "common", 240, "#fef3c7", "#78716c", "✎", "paper"),
+    ("navy", "כחול צי", "common", 290, "#60a5fa", "#172554", "⚓", "stripe"),
+    ("copper", "נחושת", "common", 300, "#fb923c", "#7c2d12", "◉", "metal"),
+]
 for _key, _name, _tier, _price, _light, _dark, _emblem, _texture in _COSMETIC_SKINS:
     CATALOG["skin_" + _key] = {
         "kind": "skin", "name": _key.title(), "name_he": _name,
@@ -178,6 +211,19 @@ for _key, _name, _tier, _price, _light, _dark, _emblem, _texture in _COSMETIC_SK
                   "glow": _light + "88", "texture": _texture,
                   "emblem": _emblem, "debris": [_light, _dark, "#f8fafc"]},
         "desc_he": "מראה קוסמטי איכותי בדרגת " + {"common":"רגיל","rare":"נדיר","epic":"אפי","legendary":"אגדי"}[_tier] + ".",
+        "desc_en": "Premium " + _tier + " cosmetic.",
+    }
+
+for _key, _name, _tier, _price, _light, _dark, _emblem, _texture in _COMING_SOON_SKINS:
+    CATALOG["skin_" + _key] = {
+        "kind": "skin", "name": _key.replace("_", " ").title(), "name_he": _name,
+        "tier": _tier, "price": _price, "colors": [_light, _dark],
+        "available": False, "coming_soon": True,
+        "style": {"fill": [_light, _dark], "frame": _light,
+                  "glow": _light + "88", "texture": _texture,
+                  "emblem": _emblem, "debris": [_light, _dark, "#f8fafc"]},
+        "desc_he": "מראה קוסמטי חדש בדרגת " + {"common":"רגיל","rare":"נדיר","epic":"אפי","legendary":"אגדי"}[_tier] + ".",
+        "desc_en": "Upcoming premium " + _tier + " cosmetic.",
     }
 
 DEFAULT_SKIN = {
