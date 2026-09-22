@@ -16,7 +16,9 @@ check("in-match exit button uses the SAME svg markup", game.includes(`id="exit-m
 check("exit confirmation asks לצאת מהמשחק? with explicit יציאה מהמשחק button",
   game.includes("<span>לצאת מהמשחק?</span>") && game.includes('id="exit-match-yes">יציאה מהמשחק</button>'));
 check("confirmation has a cancel path", game.includes('id="exit-match-no">ביטול</button>'));
-check("confirmation warns that leaving an active match counts as a ranked loss", game.includes("יציאה ממשחק פעיל תיספר כהפסד בדירוג"));
+check("confirmation distinguishes ranked and practice exits",
+  game.includes("יציאה ממשחק פעיל תיספר כהפסד בדירוג") &&
+  game.includes("יציאה ממשחק תרגול לא תשפיע על הדירוג") && game.includes("this.snap?.practice"));
 check("leaving an active/waiting match goes through /api/matches/<id>/leave",
   game.includes('st === "active" || st === "waiting"') && game.includes('/api/matches/${this.matchId}/leave'));
 check("exit buttons styled across viewports", css.includes("#exit-match-btn") && css.includes("#exit-confirm"));
