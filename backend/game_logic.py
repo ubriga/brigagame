@@ -419,7 +419,7 @@ def cooldown_for(weapon):
     return WEAPONS.get(weapon, WEAPONS["standard"])["cooldown"]
 
 
-def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
+def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None, profile_override=None):
     """Heuristic shot with human-like noise for the single-player bot.
 
     Aims at the center of the enemy's remaining tower mass (so carved gaps
@@ -454,6 +454,11 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
         }
     else:
         profile = profiles.get(difficulty, profiles["normal"])
+    override = profile_override or state.get("ai_profile") or {}
+    if override:
+        spread = max(0.0, min(0.5, float(override.get("power_spread", 0.1))))
+        profile = {"angle_noise": max(0.0, min(45.0, float(override.get("angle_noise", profile["angle_noise"])))),
+                   "power_min": 1.0 - spread, "power_max": 1.0 + spread}
     angle = 45 + random.uniform(-profile["angle_noise"], profile["angle_noise"])
     rad = math.radians(angle)
     dy = ty - sy  # positive when target is lower (y grows downward)
@@ -462,7 +467,9 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None):
     # gusts into random misses. Medium/ranked bots learn this gradually with
     # rank; hard compensates most of it and ultra compensates fully.
     tier = state.get("ai_tier", "medium")
-    if tier == "expert":
+    if override:
+        wind_skill = max(0.0, min(1.0, float(override.get("wind_skill", 0.0))))
+    elif tier == "expert":
         wind_skill = 1.0
         profile = {"angle_noise": 0.8, "power_min": 0.995, "power_max": 1.005}
     elif tier == "ultra":
