@@ -98,8 +98,11 @@ def new_state(p1_mods, p2_mods):
     """Create a complete server-authoritative battlefield."""
     p1_cols = expanded_dims(p1_mods.get("extra_cubes", 0))[1] + (1 if int(p1_mods.get("extra_cubes", 0) or 0) % TOWER_ROWS else 0)
     p2_cols = expanded_dims(p2_mods.get("extra_cubes", 0))[1] + (1 if int(p2_mods.get("extra_cubes", 0) or 0) % TOWER_ROWS else 0)
-    p1x = random.randint(40, min(240, 420 - p1_cols * BLOCK))
-    p2x = random.randint(max(580, 580 + (p2_cols - TOWER_COLS) * BLOCK), WORLD_W - 40 - p2_cols * BLOCK)
+    p1x = random.randint(TOWER_X_RANGE["p1"][0],
+                         min(TOWER_X_RANGE["p1"][1], 420 - p1_cols * BLOCK))
+    p2x = random.randint(max(TOWER_X_RANGE["p2"][0],
+                             580 + (p2_cols - TOWER_COLS) * BLOCK),
+                         min(TOWER_X_RANGE["p2"][1], WORLD_W - 40 - p2_cols * BLOCK))
     gap_start, gap_end = p1x + p1_cols * BLOCK + 60, p2x - 128
     obstacle_x = random.randint(int(gap_start), int(max(gap_start, gap_end)))
     dyn = p1_mods.get("dynamic_obstacle") or {}

@@ -13,7 +13,7 @@ for (const icon of manifest.icons) check(`icon exists: ${icon.src}`, fs.existsSy
 check("service worker is registered without HTTP cache", /register\("\.\/sw\.js", \{ updateViaCache: "none" \}\)/.test(fs.readFileSync(path.join(root, "js/pwa.js"), "utf8")));
 check("service worker uses network-first asset fetches", sw.includes('fetch(request, { cache: "no-store" })'));
 check("service worker never intercepts API", /if \(url\.origin !== self\.location\.origin \|\| url\.pathname\.includes\("\/api\/"\)\) return;/.test(sw));
-check("cache release follows client version", sw.includes('RELEASE = "13-'));
+check("cache release follows client version", /const RELEASE = "17-[^"]+"/.test(sw));
 check("offline shell includes PWA lifecycle", sw.includes('"./js/pwa.js"'));
 for (const name of ["shot", "explosion", "crumble", "click", "coin", "win", "lose"])
   check(`offline shell includes sound: ${name}`, sw.includes(`"./assets/sfx/${name}.mp3"`));

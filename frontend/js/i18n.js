@@ -45,7 +45,12 @@ const Lang = {
     "התקנת המשחק":"Install game","השתקה":"Mute","סגירת הודעת תחזוקה":"Close maintenance notice","תחזוקה":"Maintenance","אין חיבור לשרת":"No server connection","נסה שוב":"Try again",
     "גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות.":"Drag from your tower to aim and release to fire.","רווח":"Space","צעדים גדולים":"large steps","רגיל (∞)":"Standard (∞)","כפולה":"Double","מסתובב":"Homing","מרושת":"Cluster",
     "הזמן נגמר":"Time is up","למגדל שלך נשארה יותר שלמות.":"Your tower has more integrity remaining.","למגדל היריב נשארה יותר שלמות.":"The enemy tower has more integrity remaining.","דירוג ":"Rating ","קודמת לדרגת":"Promoted to",
-    "מחכים ליריב...":"Waiting for opponent...","משחק מהיר - מחפש יריב":"Quick match - finding an opponent","להיכנס למשחק?":"Enter the match?","כן, מתחילים":"Yes, start","דחית את ההזמנה":"You declined the invitation","ההזמנה פגה":"The invitation expired"
+    "מחכים ליריב...":"Waiting for opponent...","משחק מהיר - מחפש יריב":"Quick match - finding an opponent","להיכנס למשחק?":"Enter the match?","כן, מתחילים":"Yes, start","דחית את ההזמנה":"You declined the invitation","ההזמנה פגה":"The invitation expired",
+    "סדנת המגדל":"Tower workshop","סדנת המגדל שלי":"My tower workshop","כאן משדרגים את המגדל. ציפויים וקוביות נמצאים תמיד בראש העמוד.":"Upgrade your tower here. Coatings and expansion cubes are always at the top.",
+    "ציפוי מגדל":"Tower coating","הוספת קוביות":"Add cubes","מראה המגדל":"Tower appearance","בניית ציפוי למגדל שלי":"Build tower coating","הרחבת שטח המגדל":"Expand tower footprint",
+    "נשקים":"Weapons","שדרוגים":"Upgrades","מראות":"Cosmetics","הכל":"All","מחפש ציפוי או קוביות למגדל?":"Looking for coatings or tower cubes?","הם נמצאים בסדנת המגדל, יחד עם הפועלים וזמני הבנייה.":"Find them in the tower workshop with builders and build times.","לסדנת המגדל":"Open tower workshop",
+    "תנועות אחרונות":"Recent transactions","ציפויים":"Coatings","אין ציפוי פעיל":"No active coating","אין בנייה פעילה.":"No active build.","התחל בנייה":"Start build","הושלם":"Complete","נעול":"Locked","בתור":"Queued","בבנייה":"Building",
+    "טוען…":"Loading…","משחקים פעילים":"Active matches","מטבעות הונפקו":"Coins issued","מטבעות הוצאו":"Coins spent","חסומים":"Blocked"
   })),
   words: [],
   text(value) {

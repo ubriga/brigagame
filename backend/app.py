@@ -27,6 +27,8 @@ from security import init_security, limited, request_ip_hash
 
 app = Flask(__name__)
 app.config.from_object(Config)
+# Preserve semantic catalog order (coatings progress wood -> tin -> iron).
+app.json.sort_keys = False
 init_security(app)
 
 
