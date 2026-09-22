@@ -83,8 +83,13 @@ const GameView = {
     const confirmBar = document.getElementById("exit-confirm");
     exitBtn.onclick = () => {
       Sfx.play("click");
+      const note = confirmBar.querySelector(".exit-note");
+      if (note) note.textContent = this.snap?.practice
+        ? "יציאה ממשחק תרגול לא תשפיע על הדירוג"
+        : "יציאה ממשחק פעיל תיספר כהפסד בדירוג";
       exitBtn.classList.add("hidden");
       confirmBar.classList.remove("hidden");
+      Lang.apply(confirmBar);
     };
     document.getElementById("exit-match-no").onclick = () => {
       Sfx.play("click");
