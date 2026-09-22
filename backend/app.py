@@ -195,6 +195,20 @@ DEFAULT_GAMEPLAY_CONTROLS = {
         "speed": 20,
         "warning_seconds": 1.5,
     },
+    # Every bot tier is server-owned and fully tunable by the admin. Accuracy
+    # values are intentionally much stronger than the old hard-coded profiles.
+    "bot_difficulty": {
+        "easy_angle_noise": 10.0, "easy_power_spread": 0.12, "easy_wind_skill": 0.35,
+        "easy_reaction": 1.8, "easy_rank_offset": 0, "easy_shield_chance": 0.10, "easy_mega_chance": 0.10,
+        "medium_angle_noise": 5.0, "medium_power_spread": 0.06, "medium_wind_skill": 0.70,
+        "medium_reaction": 1.0, "medium_rank_offset": 2, "medium_shield_chance": 0.25, "medium_mega_chance": 0.25,
+        "hard_angle_noise": 2.5, "hard_power_spread": 0.025, "hard_wind_skill": 0.90,
+        "hard_reaction": 0.65, "hard_rank_offset": 5, "hard_shield_chance": 0.45, "hard_mega_chance": 0.45,
+        "ultra_angle_noise": 1.2, "ultra_power_spread": 0.012, "ultra_wind_skill": 1.0,
+        "ultra_reaction": 0.35, "ultra_rank_offset": 9, "ultra_shield_chance": 0.70, "ultra_mega_chance": 0.70,
+        "expert_angle_noise": 0.35, "expert_power_spread": 0.004, "expert_wind_skill": 1.0,
+        "expert_reaction": 0.15, "expert_rank_offset": 12, "expert_shield_chance": 0.90, "expert_mega_chance": 0.90,
+    },
 }
 
 
@@ -1171,8 +1185,11 @@ def match_ai():
     # to a bot rank at or above the player's rank; client-supplied rank is
     # deliberately ignored so it cannot select or forge the opponent rank.
     user_rank_level = rank_payload(g.user["rank_points"])["level"]
-    tier_offsets = {"medium": 0, "normal": 0, "ranked": 0,
-                    "hard": 3, "ultra": 6, "expert": 9}
+    bot_controls = get_gameplay_controls()["bot_difficulty"]
+    tier_offsets = {name: int(bot_controls[f"{name}_rank_offset"])
+                    for name in ("medium", "hard", "ultra", "expert")}
+    tier_offsets.update({"normal": tier_offsets["medium"],
+                         "ranked": tier_offsets["medium"]})
     if tier == "easy":
         difficulty = "easy"
         ai_rank_level = None
@@ -1189,6 +1206,9 @@ def match_ai():
     state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
     state["ai_difficulty"] = difficulty
     state["ai_tier"] = ai_tier
+    state["ai_profile"] = {key[len(ai_tier) + 1:]: value
+                           for key, value in bot_controls.items()
+                           if key.startswith(ai_tier + "_")}
     if ai_rank_level is not None:
         state["ai_rank_level"] = ai_rank_level
     state["ready"] = {"p1": False, "p2": True}
@@ -1278,7 +1298,8 @@ def match_state(mid):
         last = (m["state"].get("last_shot_at") or {}).get("p2") or 0.0
         difficulty = m["state"].get("ai_difficulty", "normal")
         tier = m["state"].get("ai_tier", difficulty)
-        reaction = {"easy": 2.8, "medium": 1.8, "hard": 1.1, "ultra": 0.5, "expert": 0.3}.get(tier, 1.8)
+        profile = m["state"].get("ai_profile") or {}
+        reaction = float(profile.get("reaction", 1.0))
         if time.time() - last > cooldown_for("standard") + reaction:
             # A failed bot turn must never wedge the match on permanent 500s:
             # log it, defer the retry by one cooldown, and still serve a
@@ -1287,8 +1308,19 @@ def match_state(mid):
                 # Ranked tiers use the mapped rank for accuracy; easy remains
                 # the deliberately forgiving practice profile.
                 angle, power, weapon = ai_choose_shot(
-                    m["state"], "p2", difficulty, m["state"].get("ai_rank_level"))
-                events, won = fire_weapon(m["state"], "p2", angle, power, weapon)
+                    m["state"], "p2", difficulty, m["state"].get("ai_rank_level"), profile)
+                abilities = m["state"].setdefault("abilities", {}).setdefault("p2", {})
+                if (abilities.get("shield", 0) > 0 and not m["state"].setdefault("shield", {}).get("p2")
+                        and random.random() < float(profile.get("shield_chance", 0))):
+                    abilities["shield"] -= 1
+                    m["state"]["shield"]["p2"] = True
+                mega = abilities.get("mega", 0) > 0 and random.random() < float(profile.get("mega_chance", 0))
+                if mega:
+                    abilities["mega"] -= 1
+                events, won = fire_weapon(m["state"], "p2", angle,
+                                          min(100, power * (1.2 if mega else 1)), weapon)
+                if mega:
+                    events.append({"type": "ability", "side": "p2", "ability": "mega"})
                 m["version"] += 1
                 if won:
                     finalize_match(m, "p2")
@@ -1694,6 +1726,43 @@ def admin_gameplay_controls_set():
             "enabled": (None, None, bool),
             "speed": (1, 200, float),
             "warning_seconds": (0, 10, float),
+        },
+        "bot_difficulty": {
+            "easy_angle_noise": (0, 45, float),
+            "easy_power_spread": (0, 0.5, float),
+            "easy_wind_skill": (0, 1, float),
+            "easy_reaction": (0, 10, float),
+            "easy_rank_offset": (0, 18, int),
+            "easy_shield_chance": (0, 1, float),
+            "easy_mega_chance": (0, 1, float),
+            "medium_angle_noise": (0, 45, float),
+            "medium_power_spread": (0, 0.5, float),
+            "medium_wind_skill": (0, 1, float),
+            "medium_reaction": (0, 10, float),
+            "medium_rank_offset": (0, 18, int),
+            "medium_shield_chance": (0, 1, float),
+            "medium_mega_chance": (0, 1, float),
+            "hard_angle_noise": (0, 45, float),
+            "hard_power_spread": (0, 0.5, float),
+            "hard_wind_skill": (0, 1, float),
+            "hard_reaction": (0, 10, float),
+            "hard_rank_offset": (0, 18, int),
+            "hard_shield_chance": (0, 1, float),
+            "hard_mega_chance": (0, 1, float),
+            "ultra_angle_noise": (0, 45, float),
+            "ultra_power_spread": (0, 0.5, float),
+            "ultra_wind_skill": (0, 1, float),
+            "ultra_reaction": (0, 10, float),
+            "ultra_rank_offset": (0, 18, int),
+            "ultra_shield_chance": (0, 1, float),
+            "ultra_mega_chance": (0, 1, float),
+            "expert_angle_noise": (0, 45, float),
+            "expert_power_spread": (0, 0.5, float),
+            "expert_wind_skill": (0, 1, float),
+            "expert_reaction": (0, 10, float),
+            "expert_rank_offset": (0, 18, int),
+            "expert_shield_chance": (0, 1, float),
+            "expert_mega_chance": (0, 1, float),
         },
     }
     try:
