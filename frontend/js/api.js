@@ -24,7 +24,7 @@ const API = {
     window.dispatchEvent(new CustomEvent(on ? "brigagame:reconnecting" : "brigagame:reconnected"));
   },
 
-  async call(method, path, body) {
+  async call(method, path, body, options = {}) {
     // Only retry reads. Retrying a POST after an uncertain network failure can
     // duplicate a purchase or other mutation even if the first request landed.
     const attempts = method === "GET" ? 3 : 1;
@@ -32,7 +32,7 @@ const API = {
       const headers = { "Content-Type": "application/json" };
       if (this.token) headers["Authorization"] = "Bearer " + this.token;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
+      const timer = setTimeout(() => ctrl.abort(), options.timeoutMs || this.timeoutMs);
       try {
         const res = await fetch(CONFIG.API_BASE + path, {
           method, headers, body: body ? JSON.stringify(body) : undefined,
@@ -66,7 +66,7 @@ const API = {
     }
   },
   get(p) { return this.call("GET", p); },
-  post(p, b) { return this.call("POST", p, b || {}); },
+  post(p, b, options) { return this.call("POST", p, b || {}, options); },
   del(p) { return this.call("DELETE", p); },
 };
 
