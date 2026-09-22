@@ -12,3 +12,6 @@ const game = fs.readFileSync(__dirname + "/js/game.js", "utf8");
 check("leaving gameplay stops music", app.includes("if (!inGame) Sfx.stopMusic()") && game.includes("Sfx.stopMusic(); location.hash = \"#/lobby\""));
 check("AI rematch submits difficulty only", game.includes('API.post("/api/matches/ai", { difficulty })') && !game.includes("bot_rank_level: Number(value)"));
 check("expert tier is offered", app.includes('option value="expert"') && game.includes('["expert", "מומחה'));
+
+check("admin statistics never masks API failure as zeroes", app.includes("overviewStatus !== 200") && app.includes("לא ניתן לטעון סטטיסטיקות"));
+check("leaderboard exposes rank points and hides Elo", app.includes('נקודות דרגה') && app.includes('p.rank_points') && !app.includes('<th>דירוג</th><th>נצ׳</th>'));

@@ -10,4 +10,4 @@ check('mobile controls meet 44px tap target baseline', css.includes('min-height:
 check('wide admin and ranking tables are contained', css.includes('overflow-x:auto')&&css.includes('table{min-width:max-content}'));
 check('English covers workshop and audit navigation', ['Tower workshop','Add cubes','Recent transactions','Loading…'].every(x=>i18n.includes(x)));
 check('frontend and backend expansion bounds agree', app.includes('0, 24, 1'));
-check("admin has full bot difficulty controls", app.includes('bot_difficulty.easy_angle_noise') && app.includes('bot_difficulty.expert_mega_chance') && app.includes('bot_difficulty.expert_reaction'));
+check("admin has full bot difficulty controls", app.includes('bot_system.${k}') && app.includes('bot_difficulty.${t+') && app.includes('expert') && app.includes('mega_chance') && app.includes('reaction'));

@@ -690,13 +690,13 @@ const App = {
     const { status, data } = await API.get("/api/leaderboard");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }
-    let html = `<h1>🏆 טבלת דירוג</h1><p class="sub">הדירוג עולה ויורד לפי נצחונות והפסדים.</p>
-      <div class="card"><table><tr><th>#</th><th>שחקן</th><th>דרגה</th><th>דירוג</th><th>נצ׳</th><th>הפ׳</th></tr>`;
+    let html = `<h1>🏆 טבלת דירוג</h1><p class="sub">הטבלה מסודרת לפי נקודות דרגה. הנקודות קובעות את הדרגה ואת ההתקדמות לדרגה הבאה.</p>
+      <div class="card"><table><tr><th>#</th><th>שחקן</th><th>דרגה</th><th>נקודות דרגה</th><th>נצ׳</th><th>הפ׳</th></tr>`;
     data.leaderboard.forEach((p, i) => {
       const medal = ["🥇", "🥈", "🥉"][i] || (i + 1);
       html += `<tr style="${p.id === data.me ? "outline:2px solid var(--accent)" : ""}">
         <td>${medal}</td><td>${esc(p.name)}</td><td>${esc(p.idf_rank.name_he)}</td>
-        <td>${p.rating}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
+        <td>${Number(p.rank_points || 0).toFixed(1)}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
     });
     html += `</table></div>`;
     view.removeAttribute("aria-busy");
@@ -740,8 +740,13 @@ const App = {
     const body = document.getElementById("admin-body");
 
     if (tab === "stats") {
-      const { data } = await API.get("/api/admin/overview");
-      const s = data.stats || {};
+      const { status: overviewStatus, data } = await API.get("/api/admin/overview");
+      if (overviewStatus !== 200 || !data || !data.stats) {
+        body.innerHTML = `<div class="card"><h2>לא ניתן לטעון סטטיסטיקות</h2><p class="sub">${esc(data?.error_he || "בדוק את החיבור ונסה שוב.")}</p><button class="btn small" id="stats-retry">נסה שוב</button></div>`;
+        document.getElementById("stats-retry").onclick = () => this.vAdmin(view, "stats");
+        return;
+      }
+      const s = data.stats;
       body.innerHTML = `<div class="stat-cards">
         ${[["משתמשים", s.users_total], ["פעילים היום", s.users_today],
            ["משחקים", s.matches_total], ["משחקים פעילים", s.matches_active],
@@ -810,53 +815,22 @@ const App = {
         ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]])}
         ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]])}
         ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
-        <div class="card bot-admin"><h2>🤖 שליטה מלאה ברמות הבוט</h2><p class="sub">פחות סטייה, יותר פיצוי רוח וזמן תגובה קצר יותר מחזקים את הבוט. הערכים נשמרים בשרת וחלים על משחקי בוט חדשים.</p>
-          <div class="bot-tier-controls"><h3>קל</h3>
-            <label>סטיית זווית מרבית (°)</label><input type="number" min="0" max="45" step="0.1" value="${c.bot_difficulty.easy_angle_noise}" data-control="bot_difficulty.easy_angle_noise">
-            <label>סטיית עוצמה (0-0.5)</label><input type="number" min="0" max="0.5" step="0.001" value="${c.bot_difficulty.easy_power_spread}" data-control="bot_difficulty.easy_power_spread">
-            <label>פיצוי רוח (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.easy_wind_skill}" data-control="bot_difficulty.easy_wind_skill">
-            <label>זמן תגובה (שניות)</label><input type="number" min="0" max="10" step="0.05" value="${c.bot_difficulty.easy_reaction}" data-control="bot_difficulty.easy_reaction">
-            <label>תוספת דרגות מעל השחקן</label><input type="number" min="0" max="18" step="1" value="${c.bot_difficulty.easy_rank_offset}" data-control="bot_difficulty.easy_rank_offset">
-            <label>סיכוי להשתמש במגן (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.easy_shield_chance}" data-control="bot_difficulty.easy_shield_chance">
-            <label>סיכוי להשתמש במגה (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.easy_mega_chance}" data-control="bot_difficulty.easy_mega_chance">
-          </div>
-          <div class="bot-tier-controls"><h3>בינוני</h3>
-            <label>סטיית זווית מרבית (°)</label><input type="number" min="0" max="45" step="0.1" value="${c.bot_difficulty.medium_angle_noise}" data-control="bot_difficulty.medium_angle_noise">
-            <label>סטיית עוצמה (0-0.5)</label><input type="number" min="0" max="0.5" step="0.001" value="${c.bot_difficulty.medium_power_spread}" data-control="bot_difficulty.medium_power_spread">
-            <label>פיצוי רוח (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.medium_wind_skill}" data-control="bot_difficulty.medium_wind_skill">
-            <label>זמן תגובה (שניות)</label><input type="number" min="0" max="10" step="0.05" value="${c.bot_difficulty.medium_reaction}" data-control="bot_difficulty.medium_reaction">
-            <label>תוספת דרגות מעל השחקן</label><input type="number" min="0" max="18" step="1" value="${c.bot_difficulty.medium_rank_offset}" data-control="bot_difficulty.medium_rank_offset">
-            <label>סיכוי להשתמש במגן (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.medium_shield_chance}" data-control="bot_difficulty.medium_shield_chance">
-            <label>סיכוי להשתמש במגה (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.medium_mega_chance}" data-control="bot_difficulty.medium_mega_chance">
-          </div>
-          <div class="bot-tier-controls"><h3>קשה</h3>
-            <label>סטיית זווית מרבית (°)</label><input type="number" min="0" max="45" step="0.1" value="${c.bot_difficulty.hard_angle_noise}" data-control="bot_difficulty.hard_angle_noise">
-            <label>סטיית עוצמה (0-0.5)</label><input type="number" min="0" max="0.5" step="0.001" value="${c.bot_difficulty.hard_power_spread}" data-control="bot_difficulty.hard_power_spread">
-            <label>פיצוי רוח (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.hard_wind_skill}" data-control="bot_difficulty.hard_wind_skill">
-            <label>זמן תגובה (שניות)</label><input type="number" min="0" max="10" step="0.05" value="${c.bot_difficulty.hard_reaction}" data-control="bot_difficulty.hard_reaction">
-            <label>תוספת דרגות מעל השחקן</label><input type="number" min="0" max="18" step="1" value="${c.bot_difficulty.hard_rank_offset}" data-control="bot_difficulty.hard_rank_offset">
-            <label>סיכוי להשתמש במגן (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.hard_shield_chance}" data-control="bot_difficulty.hard_shield_chance">
-            <label>סיכוי להשתמש במגה (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.hard_mega_chance}" data-control="bot_difficulty.hard_mega_chance">
-          </div>
-          <div class="bot-tier-controls"><h3>אולטרה קשה</h3>
-            <label>סטיית זווית מרבית (°)</label><input type="number" min="0" max="45" step="0.1" value="${c.bot_difficulty.ultra_angle_noise}" data-control="bot_difficulty.ultra_angle_noise">
-            <label>סטיית עוצמה (0-0.5)</label><input type="number" min="0" max="0.5" step="0.001" value="${c.bot_difficulty.ultra_power_spread}" data-control="bot_difficulty.ultra_power_spread">
-            <label>פיצוי רוח (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.ultra_wind_skill}" data-control="bot_difficulty.ultra_wind_skill">
-            <label>זמן תגובה (שניות)</label><input type="number" min="0" max="10" step="0.05" value="${c.bot_difficulty.ultra_reaction}" data-control="bot_difficulty.ultra_reaction">
-            <label>תוספת דרגות מעל השחקן</label><input type="number" min="0" max="18" step="1" value="${c.bot_difficulty.ultra_rank_offset}" data-control="bot_difficulty.ultra_rank_offset">
-            <label>סיכוי להשתמש במגן (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.ultra_shield_chance}" data-control="bot_difficulty.ultra_shield_chance">
-            <label>סיכוי להשתמש במגה (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.ultra_mega_chance}" data-control="bot_difficulty.ultra_mega_chance">
-          </div>
-          <div class="bot-tier-controls"><h3>מומחה</h3>
-            <label>סטיית זווית מרבית (°)</label><input type="number" min="0" max="45" step="0.1" value="${c.bot_difficulty.expert_angle_noise}" data-control="bot_difficulty.expert_angle_noise">
-            <label>סטיית עוצמה (0-0.5)</label><input type="number" min="0" max="0.5" step="0.001" value="${c.bot_difficulty.expert_power_spread}" data-control="bot_difficulty.expert_power_spread">
-            <label>פיצוי רוח (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.expert_wind_skill}" data-control="bot_difficulty.expert_wind_skill">
-            <label>זמן תגובה (שניות)</label><input type="number" min="0" max="10" step="0.05" value="${c.bot_difficulty.expert_reaction}" data-control="bot_difficulty.expert_reaction">
-            <label>תוספת דרגות מעל השחקן</label><input type="number" min="0" max="18" step="1" value="${c.bot_difficulty.expert_rank_offset}" data-control="bot_difficulty.expert_rank_offset">
-            <label>סיכוי להשתמש במגן (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.expert_shield_chance}" data-control="bot_difficulty.expert_shield_chance">
-            <label>סיכוי להשתמש במגה (0-1)</label><input type="number" min="0" max="1" step="0.01" value="${c.bot_difficulty.expert_mega_chance}" data-control="bot_difficulty.expert_mega_chance">
+        <div class="card bot-admin"><h2>🤖 מנוע הבוט החכם</h2><p class="sub">כל שינוי חל על משחקי בוט חדשים בלבד. משחק שכבר התחיל שומר snapshot מלא.</p>
+          <div class="bot-system-toggles">
+            ${[["enabled","מנוע חכם"],["special_weapons","נשקים מיוחדים"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מתביית"],["cluster_shell","פגז מצרר"],["movement","תנועה טקטית"],["reactive_shield","מגן תגובתי"],["tactical_mega","Mega טקטי"],["adaptation","הסתגלות בתוך משחק"],["infinite_ammo","תחמושת אינסופית"]].map(([k,l]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_system.${k}" ${c.bot_system[k] ? "checked" : ""} style="width:auto">${l}</label>`).join("")}
           </div></div>
-        <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>`;
+        <div class="card bot-admin"><h2>🎯 כוונון לפי רמה</h2><p class="sub">דיוק, משאבים, הגנה, תנועה, זיכרון ואגרסיביות. הערכים נשמרים בשרת.</p>
+          ${[["easy","קל"],["medium","בינוני"],["hard","קשה"],["ultra","אולטרה קשה"],["expert","מומחה"]].map(([t,label]) => `<div class="bot-tier-controls"><h3>${label}</h3>
+            ${[["angle_noise","סטיית זווית מרבית (°)",0,45,.1],["power_spread","סטיית עוצמה",0,.5,.001],["wind_skill","פיצוי רוח",0,1,.01],["reaction","זמן תגובה",0,10,.05],["rank_offset","תוספת דרגות",0,18,1],["double_ammo","תחמושת כפולה",0,99,1],["homing_ammo","תחמושת מתבייתת",0,99,1],["cluster_ammo","תחמושת מצרר",0,99,1],["weapon_skill","מיומנות בחירת נשק",0,1,.01],["shield_hp","סף HP למגן",0,1,.01],["shield_damage","סף נזק תגובתי",0,1000,1],["move_chance","נטייה לזוז",0,1,.01],["mega_chance","נטייה ל-Mega",0,1,.01],["memory","עומק זיכרון",0,20,1],["correction","חוזק תיקון",0,1,.01],["aggression","אגרסיביות",0,1,.01]].map(([k,l,min,max,step]) => `<label>${l}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c.bot_difficulty[t+"_"+k]}" data-control="bot_difficulty.${t+"_"+k}">`).join("")}
+          </div>`).join("")}</div>
+        <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>
+        <button class="btn secondary" id="gameplay-reset">איפוס לברירות מחדל</button>`;
+      document.getElementById("gameplay-reset").onclick = async () => {
+        if (!confirm("לאפס את כל הגדרות המשחק לברירות המחדל? השינוי יחול על משחקי בוט חדשים.")) return;
+        const { status: reset } = await API.post("/api/admin/gameplay-controls", { reset: true });
+        if (reset === 200) { toast("ההגדרות אופסו"); this.vAdmin(view, "gameplay"); }
+        else toast("האיפוס נכשל");
+      };
       document.getElementById("gameplay-save").onclick = async () => {
         const updated = JSON.parse(JSON.stringify(c));
         body.querySelectorAll("[data-control]").forEach(input => {
