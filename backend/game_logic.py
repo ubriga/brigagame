@@ -5,6 +5,7 @@ Towers are block grids; every hit permanently removes HP from blocks so
 towers visibly crumble. All math happens here on the server; the client
 only renders trajectory points and resulting states it is given.
 """
+import copy
 import math
 import random
 import time
@@ -419,6 +420,42 @@ def cooldown_for(weapon):
     return WEAPONS.get(weapon, WEAPONS["standard"])["cooldown"]
 
 
+
+def _aim_candidates(state, enemy):
+    """Base-row aimpoints: the lowest live block of every tower column.
+
+    Hitting the base undermines the whole column (unsupported blocks
+    crumble) and a low impact point maximizes blast overlap with the
+    structure, so these beat the raw center of mass as aimpoints.
+    """
+    by_col = {}
+    for r, c, cx, cy in tower_blocks(state, enemy):
+        hp = state["towers"][enemy][r][c]
+        if hp is not None and hp > 0:
+            by_col.setdefault(c, []).append((r, cx, cy))
+    out = []
+    for c, lst in by_col.items():
+        r, cx, cy = max(lst)  # largest row index = lowest block = base row
+        out.append((cx, cy))
+    return out
+
+
+def _expected_damage(state, side, x, y, ignore_coating=False):
+    """Simulated structural damage of a standard blast at (x, y).
+
+    Runs the real _explode mechanics on a throwaway copy so armor, coating
+    absorption, shield and distance falloff all count exactly as they would
+    in a live shot. Coating-aware by default; ignore_coating=True gives the
+    pre-absorption overlap used as a tie-breaker (wearing a coating down
+    still matters when every hit is absorbed).
+    """
+    st = copy.deepcopy(state)
+    if ignore_coating:
+        st["coatings"] = {s: None for s in ("p1", "p2")}
+    w = WEAPONS["standard"]
+    return _explode(st, x, y, w["damage"], w["radius"], side, [])
+
+
 def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None, profile_override=None):
     """Heuristic shot with human-like noise for the single-player bot.
 
@@ -459,10 +496,6 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None, profi
         spread = max(0.0, min(0.5, float(override.get("power_spread", 0.1))))
         profile = {"angle_noise": max(0.0, min(45.0, float(override.get("angle_noise", profile["angle_noise"])))),
                    "power_min": 1.0 - spread, "power_max": 1.0 + spread}
-    angle = 45 + random.uniform(-profile["angle_noise"], profile["angle_noise"])
-    rad = math.radians(angle)
-    dy = ty - sy  # positive when target is lower (y grows downward)
-
     # Better bots compensate for the current wind rather than turning strong
     # gusts into random misses. Medium/ranked bots learn this gradually with
     # rank; hard compensates most of it and ultra compensates fully.
@@ -481,6 +514,43 @@ def ai_choose_shot(state, side="p2", difficulty="normal", rank_level=None, profi
     else:
         wind_skill = 0.0
     along_accel = state.get("wind", 0.0) * WIND_ACCEL * facing * wind_skill
+
+    # Deep aim (admin-tunable via bot_system.deep_aim): instead of the raw
+    # center of mass, pick the aimpoint with the best simulated blast
+    # overlap among every column's base-row block (plus the center of mass
+    # as a fallback candidate). Structural damage is measured after coating
+    # absorption; pre-absorption overlap breaks ties so coated targets still
+    # get the most direct hit available.
+    if blocks and (state.get("bot_controls") or {}).get("deep_aim", True):
+        candidates = _aim_candidates(state, enemy)
+        candidates.append((tx, ty))
+        best_score, best_target = None, (tx, ty)
+        rad0 = math.radians(45.0)
+        tan0 = math.tan(rad0)
+        cos0 = math.cos(rad0)
+        for cx, cy in candidates:
+            dist_c = max(60.0, abs(cx - sx))
+            dy_c = cy - sy
+            t2n = 2 * (dy_c + dist_c * tan0)
+            t2d = GRAVITY + along_accel * tan0
+            ft = math.sqrt(max(0.01, t2n / max(1.0, t2d)))
+            v0 = (dist_c - 0.5 * along_accel * ft * ft) / max(0.05, cos0 * ft)
+            p0 = min(96.0, max(30.0, v0 / POWER_SCALE))
+            ev = []
+            ix, iy, _pts, _off = _simulate(state, side, 45.0, p0, "standard", ev)
+            if ix is None:
+                continue
+            dealt = _expected_damage(state, side, ix, iy)
+            raw = _expected_damage(state, side, ix, iy, ignore_coating=True)
+            score = (round(dealt, 1), round(raw, 1), round(cy, 1))
+            if best_score is None or score > best_score:
+                best_score, best_target = score, (cx, cy)
+        tx, ty = best_target
+        dist = max(60.0, abs(tx - sx))
+
+    angle = 45 + random.uniform(-profile["angle_noise"], profile["angle_noise"])
+    rad = math.radians(angle)
+    dy = ty - sy  # positive when target is lower (y grows downward)
 
     # Closed-form ballistic solution with constant horizontal acceleration.
     # In coordinates facing the enemy: dist = v*cos(a)*t + .5*A*t^2.

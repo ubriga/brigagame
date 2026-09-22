@@ -201,6 +201,17 @@ DEFAULT_GAMEPLAY_CONTROLS = {
         "double_bomb": True, "homing_missile": True, "cluster_shell": True,
         "movement": True, "reactive_shield": True, "tactical_mega": True,
         "adaptation": True, "infinite_ammo": False,
+        "deep_aim": True, "coating_aware": True,
+    },
+    # Bot tower parity (v23 item A): the AI's tower is scaled to a tier-set
+    # percentage of the PLAYER's tower max HP, so upgraded players meet a
+    # real opponent instead of a stock 432-HP tower. match_coating mirrors
+    # the player's coating material at full strength onto the bot.
+    "bot_tower_parity": {
+        "enabled": True,
+        "easy_pct": 0.60, "medium_pct": 0.75, "hard_pct": 0.90,
+        "ultra_pct": 1.00, "expert_pct": 1.15,
+        "match_coating": True,
     },
     # Every bot tier is server-owned and fully tunable by the admin. Accuracy
     # values are intentionally much stronger than the old hard-coded profiles.
@@ -1213,6 +1224,32 @@ def match_ai():
     mid = secrets.token_hex(6)
     now = _now_iso()
     state = new_state(user_mods(uid), {"armor": 0, "hp": 0, "skin": None})
+    # v23 item A: bot tower parity. Scale the bot's stock tower to the
+    # tier's percentage of the player's tower max HP (server-enforced,
+    # admin-tunable). Geometry stays the standard 4x6; durability scales.
+    parity = get_gameplay_controls().get("bot_tower_parity") or {}
+    if parity.get("enabled", True):
+        try:
+            pct = float(parity.get(ai_tier + "_pct", 1.0))
+        except (TypeError, ValueError):
+            pct = 1.0
+        pct = max(0.1, min(2.0, pct))
+        player_max = float((state.get("tower_max_hp") or {}).get("p1") or 432.0)
+        tw = state["towers"]["p2"]
+        cells = [(r, c) for r, row in enumerate(tw)
+                 for c, v in enumerate(row) if v is not None]
+        if cells:
+            per = round(player_max * pct / len(cells), 1)
+            for r, c in cells:
+                tw[r][c] = per
+            state.setdefault("tower_max_hp", {})["p2"] = round(per * len(cells), 1)
+        if parity.get("match_coating", True):
+            p1_coating = (state.get("coatings") or {}).get("p1")
+            if p1_coating and float(p1_coating.get("max_hp") or 0) > 0:
+                state["coatings"]["p2"] = {
+                    "material": p1_coating.get("material"),
+                    "hp": float(p1_coating["max_hp"]),
+                    "max_hp": float(p1_coating["max_hp"])}
     state["ai_difficulty"] = difficulty
     state["ai_tier"] = ai_tier
     state["ai_profile"] = {key[len(ai_tier) + 1:]: value
@@ -1342,9 +1379,23 @@ def match_state(mid):
                     elif float(last_result.get("damage", 0)) <= 0:
                         impact = last_result.get("impact_x"); target = last_result.get("target_x")
                         if impact is not None and target is not None:
+                            # v23 item D: damped adaptation. The correction
+                            # step scales with the miss distance (a full
+                            # 10-point step only for 250+ px misses) instead
+                            # of the old flat +-10 that oscillated, and the
+                            # same-sign push is never repeated right after an
+                            # off-world shot.
+                            miss = float(impact) - float(target)
                             # p2 fires left: impact to the right of target is short.
-                            power += (1 if impact > target else -1) * 10.0 * correction
-                            power = max(30.0, min(96.0, power))
+                            desired = 1 if miss > 0 else -1
+                            step = min(10.0, abs(miss) / 25.0) * correction
+                            tactics = m["state"].setdefault("bot_tactics", {})
+                            same_sign_repeat = (last_result.get("off_world")
+                                                and tactics.get("last_adjust_sign") == desired)
+                            if not same_sign_repeat and step > 0:
+                                power += desired * step
+                                power = max(30.0, min(96.0, power))
+                                tactics["last_adjust_sign"] = desired
                 weapon = _bot_choose_weapon(m["state"])
                 abilities = m["state"].setdefault("abilities", {}).setdefault("p2", {})
                 mega = bool((m["state"].get("bot_controls") or {}).get("tactical_mega", True)
@@ -1409,6 +1460,15 @@ def _bot_choose_weapon(state):
               "double_bomb": .45 + (1-enemy_ratio)*.45,
               "homing_missile": .45 + min(1, abs(float(state.get("wind",0)))/30)*.65,
               "cluster_shell": .45 + enemy_ratio*.55}
+    # v23 item C: coating-aware weapons. A live coating absorbs glancing
+    # blasts entirely, so prefer weapons that steer into the structure and
+    # wear the coating fast; scattered cluster shots convert worst.
+    if controls.get("coating_aware", True):
+        ecoat = (state.get("coatings") or {}).get("p1")
+        if ecoat and float(ecoat.get("hp") or 0) > 0:
+            scores["homing_missile"] += 0.5
+            scores["double_bomb"] += 0.15
+            scores["cluster_shell"] -= 0.35
     # Better tiers use the best situational weapon; lower tiers sometimes conserve it.
     best = max(available, key=lambda w: scores[w])
     return best if random.random() < min(1.0, skill*(.7+.3*aggression)) else "standard"
@@ -1466,7 +1526,8 @@ def _execute_shot(m, side, angle, power, weapon="standard", mega=False, user_id=
         points=shot.get("points") or []; impact_x=(points[-1][0] if points else None)
         target_x=sum(x for _,_,x,_ in tower_blocks(state,"p1"))/max(1,sum(1 for _ in tower_blocks(state,"p1")))
         ob=obstacle_at(state); blocked=bool(points and ob and ob.get("x",0)<=points[-1][0]<=ob.get("x",0)+ob.get("w",0) and ob.get("y",0)<=points[-1][1]<=520)
-        result={"weapon":weapon,"damage":round(max(0,before-after),1),"angle":round(angle,2),"power":round(power,2),"blocked":blocked,"impact_x":round(impact_x,1) if impact_x is not None else None,"target_x":round(target_x,1)}
+        off_world=any(e.get("type")=="explosion" and e.get("cosmetic") for e in events)
+        result={"weapon":weapon,"damage":round(max(0,before-after),1),"angle":round(angle,2),"power":round(power,2),"blocked":blocked,"off_world":off_world,"impact_x":round(impact_x,1) if impact_x is not None else None,"target_x":round(target_x,1)}
         history.append(result); depth=int((state.get("ai_profile") or {}).get("memory",3)); del history[:-max(1,depth)]
         tactics.update({"last_weapon":weapon,"last_result":result})
         events.append({"type":"bot_decision","weapon":weapon,"mega":mega,"ammo":dict(state.get("bot_ammo") or {}),"result":result})
@@ -1837,6 +1898,14 @@ def admin_gameplay_controls_set():
             "cluster_shell": (None, None, bool), "movement": (None, None, bool),
             "reactive_shield": (None, None, bool), "tactical_mega": (None, None, bool),
             "adaptation": (None, None, bool), "infinite_ammo": (None, None, bool),
+            "deep_aim": (None, None, bool), "coating_aware": (None, None, bool),
+        },
+        "bot_tower_parity": {
+            "enabled": (None, None, bool),
+            "easy_pct": (0.1, 2.0, float), "medium_pct": (0.1, 2.0, float),
+            "hard_pct": (0.1, 2.0, float), "ultra_pct": (0.1, 2.0, float),
+            "expert_pct": (0.1, 2.0, float),
+            "match_coating": (None, None, bool),
         },
         "bot_difficulty": {
             "easy_angle_noise": (0, 45, float),
