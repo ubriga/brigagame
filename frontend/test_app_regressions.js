@@ -1,6 +1,7 @@
 // Static guard for game-start failures that used to collapse to bare "שגיאה".
 const fs = require("fs");
 const app = fs.readFileSync(__dirname + "/js/app.js", "utf8");
+const api = fs.readFileSync(__dirname + "/js/api.js", "utf8");
 function check(label, ok) { if (!ok) throw new Error(label); console.log(`PASS ${label}`); }
 check("network failures get a useful Hebrew message", app.includes('result.networkError') && app.includes('אין חיבור לשרת'));
 for (const kind of ["משחק מהיר", "משחק מול בוט", "משחק חברים"])
@@ -15,3 +16,7 @@ check("expert tier is offered", app.includes('option value="expert"') && game.in
 
 check("admin statistics never masks API failure as zeroes", app.includes("overviewStatus !== 200") && app.includes("לא ניתן לטעון סטטיסטיקות"));
 check("leaderboard exposes rank points and hides Elo", app.includes('נקודות דרגה') && app.includes('p.rank_points') && !app.includes('<th>דירוג</th><th>נצ׳</th>'));
+
+check("expert angle noise accepts 0.35 production default", app.includes('["angle_noise","סטיית זווית מרבית (°)",0,45,.05]'));
+check("game controls save gets a longer bounded timeout", app.includes('API.post("/api/admin/gameplay-controls", { controls: updated }, { timeoutMs: 30000 })'));
+check("API accepts per-call timeout without changing default", api.includes('options.timeoutMs || this.timeoutMs') && api.includes('post(p, b, options)'));
