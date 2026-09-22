@@ -740,8 +740,13 @@ const App = {
     const body = document.getElementById("admin-body");
 
     if (tab === "stats") {
-      const { data } = await API.get("/api/admin/overview");
-      const s = data.stats || {};
+      const { status: overviewStatus, data } = await API.get("/api/admin/overview");
+      if (overviewStatus !== 200 || !data || !data.stats) {
+        body.innerHTML = `<div class="card"><h2>לא ניתן לטעון סטטיסטיקות</h2><p class="sub">${esc(data?.error_he || "בדוק את החיבור ונסה שוב.")}</p><button class="btn small" id="stats-retry">נסה שוב</button></div>`;
+        document.getElementById("stats-retry").onclick = () => this.vAdmin(view, "stats");
+        return;
+      }
+      const s = data.stats;
       body.innerHTML = `<div class="stat-cards">
         ${[["משתמשים", s.users_total], ["פעילים היום", s.users_today],
            ["משחקים", s.matches_total], ["משחקים פעילים", s.matches_active],
