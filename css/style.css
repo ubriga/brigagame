@@ -366,3 +366,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   #maintenance-banner.maintenance-collapsed{inset-inline-end:8px;top:112px}
   body{overflow-x:hidden}
 }
+.bot-admin { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: 14px; }
+.bot-admin > h2, .bot-admin > p { grid-column: 1 / -1; }
+.bot-tier-controls { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: rgba(255,255,255,.025); }
+.bot-tier-controls h3 { margin-top: 0; }
+.bot-tier-controls label { display: block; margin-top: 8px; }
