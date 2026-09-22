@@ -9,7 +9,9 @@ function apiError(result, fallback = "שגיאה") {
 
 // Router + views (login, lobby, store, leaderboard, messages, admin).
 const App = {
-  me: null, inventory: {},
+  me: null, inventory: {}, _routeSeq: 0,
+
+  routeCurrent(seq) { return seq === this._routeSeq; },
 
   async boot() {
     Lang.boot();
@@ -144,6 +146,7 @@ const App = {
 
   route() {
     if (GameView.canvas) GameView.destroy();
+    const seq = ++this._routeSeq;
     const hash = location.hash || "#/lobby";
     const inGame = hash.startsWith("#/game/");
     // Match music belongs to the battlefield. Always stop it when routing to
@@ -154,17 +157,19 @@ const App = {
     document.body.classList.toggle("game-active", inGame);
     document.body.classList.toggle("login-active", hash.startsWith("#/login"));
     const view = document.getElementById("view");
+    view.setAttribute("aria-busy", "true");
+    view.innerHTML = `<div class="route-loading" role="status">${Lang.current === "en" ? "Loading…" : "טוען…"}</div>`;
     document.querySelectorAll("#topbar nav a").forEach(a =>
       a.classList.toggle("active", hash.startsWith("#/" + a.dataset.nav)));
     if (!API.token && !hash.startsWith("#/login")) { location.hash = "#/login"; return; }
-    if (hash.startsWith("#/game/")) this.vGame(view, hash.split("/")[2]);
-    else if (hash.startsWith("#/store")) this.vStore(view);
-    else if (hash.startsWith("#/custom")) this.vCustom(view);
-    else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view);
-    else if (hash.startsWith("#/messages")) this.vMessages(view);
-    else if (hash.startsWith("#/admin")) this.vAdmin(view, hash.split("/")[2] || "stats");
-    else if (hash.startsWith("#/login")) this.vLogin(view);
-    else this.vLobby(view);
+    if (hash.startsWith("#/game/")) this.vGame(view, hash.split("/")[2], seq);
+    else if (hash.startsWith("#/store")) this.vStore(view, seq);
+    else if (hash.startsWith("#/custom")) this.vCustom(view, seq);
+    else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view, seq);
+    else if (hash.startsWith("#/messages")) this.vMessages(view, seq);
+    else if (hash.startsWith("#/admin")) this.vAdmin(view, hash.split("/")[2] || "stats", seq);
+    else if (hash.startsWith("#/login")) { this.vLogin(view); view.removeAttribute("aria-busy"); }
+    else this.vLobby(view, seq);
   },
 
   // ---------------- login ----------------
@@ -238,9 +243,11 @@ const App = {
   },
 
   // ---------------- lobby ----------------
-  async vLobby(view) {
+  async vLobby(view, seq = this._routeSeq) {
+    if (!this.routeCurrent(seq)) return;
     if (!this.me) { location.hash = "#/login"; return; }
     const u = this.me;
+    view.removeAttribute("aria-busy");
     view.innerHTML = `
       <h1>שלום, ${esc(u.name)} 👋</h1>
       <p class="sub">הפל את מגדל היריב לפני שהוא מפיל את שלך.</p>
@@ -401,8 +408,9 @@ const App = {
   },
 
   // ---------------- game ----------------
-  async vGame(view, matchId) {
+  async vGame(view, matchId, seq = this._routeSeq) {
     const me = await API.get("/api/me");
+    if (!this.routeCurrent(seq)) return;
     if (me.status === 200) { this.setMe(me.data); GameView.setInventory(me.data.inventory); }
     window.refreshMe = async () => {
       const m = await API.get("/api/me");
@@ -437,11 +445,12 @@ const App = {
   // ---------------- store ----------------
   // --- א3: "My customization" - dedicated tab with a live animated tower
   // preview, every owned skin selectable, apply-on-click.
-  async vCustom(view) {
+  async vCustom(view, seq = this._routeSeq) {
     if (!this.me) { location.hash = "#/login"; return; }
     const { data } = await API.get("/api/store");
     const { data: coatingData } = await API.get("/api/coatings");
     const { data: expansionData } = await API.get("/api/expansions");
+    if (!this.routeCurrent(seq)) return;
     const catalog = (data && data.catalog) || {};
     const inv = (data && data.inventory) || {};
     const DEFAULT_STYLE = { colors: ["#3b82f6", "#1e3a8a"], fill: ["#60a5fa", "#1d4ed8"],
@@ -452,6 +461,7 @@ const App = {
         .map(([id, it]) => ({ id, name_he: it.name_he, desc_he: it.desc_he, style: { colors: it.colors, ...(it.style || {}) } })));
     let applied = Object.keys(inv).find(id => id.startsWith("skin_") && inv[id].equipped) || "skin_default";
     this._custSel = applied;
+    view.removeAttribute("aria-busy");
     view.innerHTML = `
       <h1>🏗️ סדנת המגדל שלי</h1>
       <p class="sub workshop-intro">כאן משדרגים את המגדל. ציפויים וקוביות נמצאים תמיד בראש העמוד.</p>
@@ -580,8 +590,9 @@ const App = {
     c.fillRect(tx - 30, ground, COLS * BLOCK + 60, 4);
   },
 
-  async vStore(view) {
+  async vStore(view, seq = this._routeSeq) {
     const { status, data } = await API.get("/api/store");
+    if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה בטעינת החנות"); return; }
     const { catalog, inventory } = data;
     this.inventory = inventory;
@@ -630,6 +641,7 @@ const App = {
       }
       html += `</div></section>`;
     }
+    view.removeAttribute("aria-busy");
     view.innerHTML = html;
     const setStoreFilter = kind => {
       view.querySelectorAll("[data-store-filter]").forEach(b => b.classList.toggle("active", b.dataset.storeFilter === kind));
@@ -674,8 +686,9 @@ const App = {
   },
 
   // ---------------- leaderboard ----------------
-  async vLeaderboard(view) {
+  async vLeaderboard(view, seq = this._routeSeq) {
     const { status, data } = await API.get("/api/leaderboard");
+    if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }
     let html = `<h1>🏆 טבלת דירוג</h1><p class="sub">הדירוג עולה ויורד לפי נצחונות והפסדים.</p>
       <div class="card"><table><tr><th>#</th><th>שחקן</th><th>דרגה</th><th>דירוג</th><th>נצ׳</th><th>הפ׳</th></tr>`;
@@ -686,12 +699,14 @@ const App = {
         <td>${p.rating}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
     });
     html += `</table></div>`;
+    view.removeAttribute("aria-busy");
     view.innerHTML = html;
   },
 
   // ---------------- messages ----------------
-  async vMessages(view) {
+  async vMessages(view, seq = this._routeSeq) {
     const { status, data } = await API.get("/api/messages");
+    if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }
     let html = `<h1>✉️ הודעות</h1>`;
     if (!data.messages.length) html += `<p class="sub">אין הודעות עדיין.</p>`;
@@ -700,14 +715,17 @@ const App = {
         <b>${esc(m.title)}</b> <span class="t">${esc(m.created_at.slice(0, 16).replace("T", " "))}</span>
         <p>${esc(m.body)}</p></div>`;
     }
+    view.removeAttribute("aria-busy");
     view.innerHTML = html;
     this.setUnread(0);
   },
 
   // ---------------- admin ----------------
-  async vAdmin(view, tab) {
+  async vAdmin(view, tab, seq = this._routeSeq) {
+    if (!this.routeCurrent(seq)) return;
     if (!this.me?.is_admin) { view.innerHTML = "<p>אין הרשאה.</p>"; return; }
     tab = tab || "stats";
+    view.removeAttribute("aria-busy");
     view.innerHTML = `
       <h1>🛠️ ניהול</h1>
       <div class="tabs">
@@ -790,7 +808,7 @@ const App = {
           <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
         ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]])}
         ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]])}
-        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 100, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]])}
+        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]])}
         ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
         <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>`;
       document.getElementById("gameplay-save").onclick = async () => {
