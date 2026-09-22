@@ -1923,6 +1923,42 @@ def admin_gameplay_controls_set():
     return jsonify({"ok": True, "controls": current})
 
 
+@app.post("/api/admin/normalize-legacy-rank-points")
+@require_admin
+def admin_normalize_legacy_rank_points():
+    """One-time approved migration from the pre-2026-09-21 5x XP economy."""
+    marker = q("SELECT value FROM settings WHERE key='rank_normalization_20260922'", one=True)
+    if marker:
+        return jsonify({"ok": True, "already_applied": True, "report": json.loads(marker["value"])})
+    cutoff = "2026-09-21T20:22:51+00:00"  # deployment time of the 5x slowdown
+    users = q("SELECT id,name,rank_points FROM users ORDER BY id")
+    execute("CREATE TABLE IF NOT EXISTS rank_points_backup_20260922 (id INTEGER PRIMARY KEY,name TEXT,rank_points REAL)")
+    for u in users:
+        execute("INSERT OR REPLACE INTO rank_points_backup_20260922(id,name,rank_points) VALUES(?,?,?)", (u["id"],u["name"],u["rank_points"]))
+    post = {u["id"]: 0.0 for u in users}
+    matches = q("SELECT p1,p2,p2_ai,state FROM matches WHERE status='finished' AND updated_at>=?", (cutoff,))
+    for m in matches:
+        try: results=json.loads(m["state"] or "{}").get("results") or {}
+        except (TypeError,ValueError): results={}
+        for side,uid in (("p1",m["p1"]),("p2",m["p2"])):
+            if not uid or uid not in post: continue
+            r=results.get(side) or {}
+            if r.get("practice"): continue
+            if r.get("outcome")=="win": post[uid]+=float(r.get("rank_points_awarded",0) or 0)
+            elif r.get("outcome")=="loss": post[uid]+=float(r.get("damage_xp_awarded",0) or 0)-float(r.get("rank_points_lost",0) or 0)
+    report=[]
+    for u in users:
+        old=float(u["rank_points"]); recent=post.get(u["id"],0.0)
+        legacy=max(0.0,old-recent); new=round(max(0.0,legacy*.2+recent),1)
+        before=rank_payload(old); after=rank_payload(new)
+        execute("UPDATE users SET rank_points=? WHERE id=?",(new,u["id"]))
+        report.append({"id":u["id"],"name":u["name"],"old_points":round(old,1),"new_points":new,"post_slowdown_net":round(recent,1),"old_rank":before["name_he"],"new_rank":after["name_he"]})
+    payload={"cutoff":cutoff,"rule":"legacy points x0.2; post-slowdown net preserved exactly from match result history; clamp at zero","users":report}
+    execute("INSERT INTO settings(key,value) VALUES('rank_normalization_20260922',?)",(json.dumps(payload,ensure_ascii=False),))
+    audit("admin.rank_normalization",details={"users":len(report),"cutoff":cutoff})
+    return jsonify({"ok":True,"already_applied":False,"report":payload})
+
+
 @app.get("/api/admin/cosmetics")
 @require_admin
 def admin_cosmetics_list():
