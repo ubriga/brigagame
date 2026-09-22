@@ -453,7 +453,12 @@ const App = {
     let applied = Object.keys(inv).find(id => id.startsWith("skin_") && inv[id].equipped) || "skin_default";
     this._custSel = applied;
     view.innerHTML = `
-      <h1>🎨 ההתאמה שלי</h1>
+      <h1>🏗️ סדנת המגדל שלי</h1>
+      <p class="sub workshop-intro">כאן משדרגים את המגדל. ציפויים וקוביות נמצאים תמיד בראש העמוד.</p>
+      <div class="workshop-jump"><a href="#coating-workshop">ציפוי מגדל</a><a href="#expansion-workshop">הוספת קוביות</a><a href="#appearance-workshop">מראה המגדל</a></div>
+      <div class="card player-coatings" id="coating-workshop"><h2>🏗️ בניית ציפוי למגדל שלי</h2><div id="player-coating-state"></div></div>
+      <div class="card player-expansion" id="expansion-workshop"><h2>🧱 הרחבת שטח המגדל</h2><div id="player-expansion-state"></div></div>
+      <h2 id="appearance-workshop">🎨 מראה המגדל</h2>
       <div class="custom-wrap">
         <div class="card custom-preview">
           <canvas id="cust-canvas" width="300" height="240"></canvas>
@@ -461,9 +466,7 @@ const App = {
         </div>
         <div id="cust-list" class="custom-list"></div>
       </div>
-      <p class="sub" style="margin-top:10px">מראים נוספים מחכים ב<a href="#/store">חנות</a> - כל רכישה מופיעה כאן מיד.</p>
-      <div class="card player-coatings"><h2>🏗️ בניית ציפוי למגדל שלי</h2><div id="player-coating-state"></div></div>
-      <div class="card player-expansion"><h2>🧱 הרחבת שטח המגדל</h2><div id="player-expansion-state"></div></div>`;
+      <p class="sub" style="margin-top:10px">מראים נוספים מחכים ב<a href="#/store">חנות</a> - כל רכישה מופיעה כאן מיד.</p>`;
     const canvas = document.getElementById("cust-canvas");
     const coatingState = document.getElementById("player-coating-state");
     const renderCoatings = () => {
@@ -588,11 +591,15 @@ const App = {
     const tierOrder = { common: 1, rare: 2, epic: 3, legendary: 4 };
     groups.skin.sort((a, b) => (tierOrder[a[1].tier] || 0) - (tierOrder[b[1].tier] || 0) || a[1].price - b[1].price);
     let html = `<h1>🛒 חנות</h1><p class="sub">יתרה: 🪙 ${data.coins} מטבעות</p>
-      <div class="card"><h2>🎟️ מימוש קופון</h2>
+      <div class="card store-workshop-callout"><div><b>מחפש ציפוי או קוביות למגדל?</b><span>הם נמצאים בסדנת המגדל, יחד עם הפועלים וזמני הבנייה.</span></div><a class="btn" href="#/custom">לסדנת המגדל</a></div>
+      <div class="store-category-bar" role="tablist" aria-label="קטגוריות חנות">
+        <button class="active" data-store-filter="consumable">⚔️ נשקים</button><button data-store-filter="upgrade">🛡️ שדרוגים</button><button data-store-filter="skin">🎨 מראות</button><button data-store-filter="all">הכל</button>
+      </div>
+      <div class="card store-coupon"><h2>🎟️ מימוש קופון</h2>
         <div style="display:flex;gap:8px"><input id="coupon-in" placeholder="קוד קופון">
         <button class="btn" id="coupon-btn">ממש</button></div></div>`;
     for (const kind of ["consumable", "upgrade", "skin"]) {
-      html += `<h2>${sec[kind]}</h2><div class="grid cols3">`;
+      html += `<section class="store-section ${kind === "consumable" ? "" : "hidden"}" data-store-section="${kind}"><h2>${sec[kind]}</h2><div class="grid cols3">`;
       for (const [id, it] of groups[kind]) {
         const inv = inventory[id];
         let body = "";
@@ -621,12 +628,24 @@ const App = {
           <button class="btn small" data-buy="${id}" ${kind === "skin" && (inv && inv.equipped || it.available === false) ? "disabled" : ""}>${it.available === false ? "לא זמין" : skinBtn}</button>
         </div>`;
       }
-      html += `</div>`;
+      html += `</div></section>`;
     }
     view.innerHTML = html;
+    const setStoreFilter = kind => {
+      view.querySelectorAll("[data-store-filter]").forEach(b => b.classList.toggle("active", b.dataset.storeFilter === kind));
+      view.querySelectorAll("[data-store-section]").forEach(sec => sec.classList.toggle("hidden", kind !== "all" && sec.dataset.storeSection !== kind));
+      requestAnimationFrame(() => view.querySelectorAll("canvas[data-skin-preview]").forEach(canvas => {
+        if (canvas.dataset.rendered) return;
+        const it=catalog[canvas.dataset.skinPreview];
+        try { this.drawSkinPreview(canvas,{colors:it.colors,...(it.style||{})},0); canvas.dataset.rendered="1"; }
+        catch(e){ console.error("skin preview",canvas.dataset.skinPreview,e); }
+      }));
+    };
+    view.querySelectorAll("[data-store-filter]").forEach(b => b.onclick=()=>setStoreFilter(b.dataset.storeFilter));
     view.querySelectorAll("[data-skin-preview]").forEach(canvas => {
       const it = catalog[canvas.dataset.skinPreview];
-      this.drawSkinPreview(canvas, { colors: it.colors, ...(it.style || {}) }, 0);
+      try { this.drawSkinPreview(canvas, { colors: it.colors, ...(it.style || {}) }, 0); canvas.dataset.rendered="1"; }
+      catch (e) { console.error("skin preview", canvas.dataset.skinPreview, e); }
     });
     document.getElementById("coupon-btn").onclick = async () => {
       const code = document.getElementById("coupon-in").value.trim();
@@ -637,9 +656,11 @@ const App = {
     view.querySelectorAll("[data-buy]").forEach(btn => btn.onclick = async () => {
       const id = btn.dataset.buy;
       const inv = this.inventory[id];
+      const oldText=btn.textContent; btn.disabled=true; btn.textContent="...";
       if (catalog[id].kind === "skin" && inv) {
         const { status: s } = await API.post("/api/store/equip", { item_id: id });
         if (s === 200) { Sfx.play("coin"); toast("המראה הוחל - יופיע במשחק הבא"); this.vStore(view); window.refreshMe?.(); }
+        else { btn.disabled=false; btn.textContent=oldText; toast("ההחלה נכשלה - נסה שוב"); }
         return;
       }
       const { status: s, data: d } = await API.post("/api/store/buy", { item_id: id });
@@ -648,7 +669,7 @@ const App = {
         toast(catalog[id].kind === "skin" ? "נקנה והוחל! יופיע במשחק הבא" : "נקנה בהצלחה!");
         this.vStore(view); window.refreshMe?.();
       }
-      else toast(d.error_he || "הקנייה נכשלה");
+      else { btn.disabled=false; btn.textContent=oldText; toast(d.error_he || (s === 0 ? "בעיית חיבור - לא בוצעה רכישה" : "הקנייה נכשלה")); }
     });
   },
 
