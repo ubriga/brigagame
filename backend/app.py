@@ -5,6 +5,7 @@ every game rule, coin movement and validation happens here.
 """
 import json
 import math
+import random
 import secrets
 import time
 from datetime import datetime, timezone
