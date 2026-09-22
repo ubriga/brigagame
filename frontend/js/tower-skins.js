@@ -22,7 +22,7 @@ const PremiumTowerArt = {
         poly([[x+w-5,ground-50],[x+w+22,ground-8],[x+w-14,ground-18]]); fillStroke(dark);
       } else if (geometry === "spaceship") {
         ctx.beginPath(); ctx.ellipse(x+w/2,y+12,w*.72,25,0,0,Math.PI*2); fillStroke(dark);
-        ctx.beginPath(); ctx.ellipse(x+w/2,y+2,w*.28,27,0,Math.PI*2); fillStroke(light);
+        ctx.beginPath(); ctx.ellipse(x+w/2,y+2,w*.28,27,0,0,Math.PI*2); fillStroke(light);
         for (const ox of [-.48,-.25,0,.25,.48]) { ctx.fillStyle = ox === 0 ? "#fef08a" : "#67e8f9"; ctx.beginPath(); ctx.arc(x+w/2+w*ox,y+14,4,0,7); ctx.fill(); }
       } else if (geometry === "tank") {
         ctx.fillStyle = dark; ctx.beginPath(); ctx.roundRect(x-18,ground-28,w+36,28,12); ctx.fill();
