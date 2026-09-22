@@ -690,13 +690,13 @@ const App = {
     const { status, data } = await API.get("/api/leaderboard");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }
-    let html = `<h1>🏆 טבלת דירוג</h1><p class="sub">הדירוג עולה ויורד לפי נצחונות והפסדים.</p>
-      <div class="card"><table><tr><th>#</th><th>שחקן</th><th>דרגה</th><th>דירוג</th><th>נצ׳</th><th>הפ׳</th></tr>`;
+    let html = `<h1>🏆 טבלת דירוג</h1><p class="sub">הטבלה מסודרת לפי נקודות דרגה. הנקודות קובעות את הדרגה ואת ההתקדמות לדרגה הבאה.</p>
+      <div class="card"><table><tr><th>#</th><th>שחקן</th><th>דרגה</th><th>נקודות דרגה</th><th>נצ׳</th><th>הפ׳</th></tr>`;
     data.leaderboard.forEach((p, i) => {
       const medal = ["🥇", "🥈", "🥉"][i] || (i + 1);
       html += `<tr style="${p.id === data.me ? "outline:2px solid var(--accent)" : ""}">
         <td>${medal}</td><td>${esc(p.name)}</td><td>${esc(p.idf_rank.name_he)}</td>
-        <td>${p.rating}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
+        <td>${Number(p.rank_points || 0).toFixed(1)}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
     });
     html += `</table></div>`;
     view.removeAttribute("aria-busy");
