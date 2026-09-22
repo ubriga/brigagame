@@ -17,12 +17,12 @@ from auth import (create_session, current_user, destroy_session,
                   user_blocked_reason, verify_google_credential)
 from config import Config
 from db import execute, get_db, init_db, q
-from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS,
+from economy import (CATALOG, COINS_PER_DAMAGE, COINS_PER_LOSS, WEAPONS,
                      DAILY_BASE, DAILY_CAP, DAILY_STREAK_STEP, DEFAULT_SKIN,
                      MAX_COINS_PER_WIN, MAX_HIT_COINS_PER_MATCH, elo_delta, rank_for,
                      win_reward_coins)
 from game_logic import (TOWER_X_RANGE, ai_choose_shot, cooldown_for, fire_weapon, new_state,
-                        obstacle_at, tower_hp)
+                        obstacle_at, tower_blocks, tower_hp)
 from ranks import MAX_LEVEL, rank_for_level, rank_payload, rank_up_info
 from security import init_security, limited, request_ip_hash
 
@@ -196,19 +196,25 @@ DEFAULT_GAMEPLAY_CONTROLS = {
         "speed": 20,
         "warning_seconds": 1.5,
     },
+    "bot_system": {
+        "enabled": True, "special_weapons": True,
+        "double_bomb": True, "homing_missile": True, "cluster_shell": True,
+        "movement": True, "reactive_shield": True, "tactical_mega": True,
+        "adaptation": True, "infinite_ammo": False,
+    },
     # Every bot tier is server-owned and fully tunable by the admin. Accuracy
     # values are intentionally much stronger than the old hard-coded profiles.
     "bot_difficulty": {
         "easy_angle_noise": 10.0, "easy_power_spread": 0.12, "easy_wind_skill": 0.35,
-        "easy_reaction": 1.8, "easy_rank_offset": 0, "easy_shield_chance": 0.10, "easy_mega_chance": 0.10,
+        "easy_reaction": 1.8, "easy_rank_offset": 0, "easy_shield_chance": 0.10, "easy_mega_chance": 0.10, "easy_double_ammo": 1, "easy_homing_ammo": 1, "easy_cluster_ammo": 1, "easy_weapon_skill": .30, "easy_shield_hp": .28, "easy_shield_damage": 90, "easy_move_chance": .25, "easy_memory": 1, "easy_correction": .25, "easy_aggression": .30,
         "medium_angle_noise": 5.0, "medium_power_spread": 0.06, "medium_wind_skill": 0.70,
-        "medium_reaction": 1.0, "medium_rank_offset": 2, "medium_shield_chance": 0.25, "medium_mega_chance": 0.25,
+        "medium_reaction": 1.0, "medium_rank_offset": 2, "medium_shield_chance": 0.25, "medium_mega_chance": 0.25, "medium_double_ammo": 2, "medium_homing_ammo": 2, "medium_cluster_ammo": 2, "medium_weapon_skill": .55, "medium_shield_hp": .38, "medium_shield_damage": 70, "medium_move_chance": .45, "medium_memory": 2, "medium_correction": .50, "medium_aggression": .50,
         "hard_angle_noise": 2.5, "hard_power_spread": 0.025, "hard_wind_skill": 0.90,
-        "hard_reaction": 0.65, "hard_rank_offset": 5, "hard_shield_chance": 0.45, "hard_mega_chance": 0.45,
+        "hard_reaction": 0.65, "hard_rank_offset": 5, "hard_shield_chance": 0.45, "hard_mega_chance": 0.45, "hard_double_ammo": 3, "hard_homing_ammo": 3, "hard_cluster_ammo": 3, "hard_weapon_skill": .75, "hard_shield_hp": .50, "hard_shield_damage": 50, "hard_move_chance": .65, "hard_memory": 3, "hard_correction": .72, "hard_aggression": .72,
         "ultra_angle_noise": 1.2, "ultra_power_spread": 0.012, "ultra_wind_skill": 1.0,
-        "ultra_reaction": 0.35, "ultra_rank_offset": 9, "ultra_shield_chance": 0.70, "ultra_mega_chance": 0.70,
+        "ultra_reaction": 0.35, "ultra_rank_offset": 9, "ultra_shield_chance": 0.70, "ultra_mega_chance": 0.70, "ultra_double_ammo": 4, "ultra_homing_ammo": 4, "ultra_cluster_ammo": 4, "ultra_weapon_skill": .90, "ultra_shield_hp": .62, "ultra_shield_damage": 35, "ultra_move_chance": .82, "ultra_memory": 5, "ultra_correction": .88, "ultra_aggression": .88,
         "expert_angle_noise": 0.35, "expert_power_spread": 0.004, "expert_wind_skill": 1.0,
-        "expert_reaction": 0.15, "expert_rank_offset": 12, "expert_shield_chance": 0.90, "expert_mega_chance": 0.90,
+        "expert_reaction": 0.15, "expert_rank_offset": 12, "expert_shield_chance": 0.90, "expert_mega_chance": 0.90, "expert_double_ammo": 6, "expert_homing_ammo": 6, "expert_cluster_ammo": 6, "expert_weapon_skill": 1.0, "expert_shield_hp": .75, "expert_shield_damage": 20, "expert_move_chance": 1.0, "expert_memory": 8, "expert_correction": 1.0, "expert_aggression": 1.0,
     },
 }
 
@@ -515,7 +521,7 @@ def match_snapshot(m, user_id, since):
                                  "rank": None, "idf_rank": None}
         elif side == "p2" and m["p2_ai"]:
             bot_rank = (rank_for_level(state.get("ai_rank_level", 1))
-                        if state.get("ai_difficulty") == "ranked" else None)
+                        if state.get("ai_rank_level") else None)
             players[side] = {"id": None, "name": "OrelAI Bot", "picture": "",
                              "rating": None,
                              "rank": (bot_rank["abbr_he"] if bot_rank else "AI"),
@@ -557,6 +563,8 @@ def match_snapshot(m, user_id, since):
         "ai_difficulty": state.get("ai_difficulty"),
         "ai_tier": state.get("ai_tier"),
         "ai_rank_level": state.get("ai_rank_level"),
+        "bot_ammo": state.get("bot_ammo") if m["p2_ai"] else None,
+        "bot_tactics": state.get("bot_tactics") if m["p2_ai"] else None,
         # Easy-bot games are practice matches: they never advance rank.
         "practice": bool(m["p2_ai"] and state.get("ai_difficulty") == "easy"),
         "server_time": time.time(),
@@ -1193,7 +1201,7 @@ def match_ai():
                          "ranked": tier_offsets["medium"]})
     if tier == "easy":
         difficulty = "easy"
-        ai_rank_level = None
+        ai_rank_level = min(MAX_LEVEL, user_rank_level + int(bot_controls["easy_rank_offset"]))
         ai_tier = "easy"
     elif tier in tier_offsets:
         difficulty = "ranked"
@@ -1210,6 +1218,19 @@ def match_ai():
     state["ai_profile"] = {key[len(ai_tier) + 1:]: value
                            for key, value in bot_controls.items()
                            if key.startswith(ai_tier + "_")}
+    # Rank-relative pressure slightly strengthens decisions as the player climbs,
+    # while the selected tier remains the dominant behavior profile.
+    rank_pressure = max(0.0, min(1.0, (ai_rank_level or user_rank_level) / MAX_LEVEL))
+    for key in ("weapon_skill", "correction", "aggression", "wind_skill"):
+        if key in state["ai_profile"]:
+            state["ai_profile"][key] = min(1.0, float(state["ai_profile"][key]) + rank_pressure * .08)
+    state["bot_controls"] = json.loads(json.dumps(get_gameplay_controls()["bot_system"]))
+    state["bot_ammo"] = {
+        "double_bomb": int(state["ai_profile"].get("double_ammo", 0)),
+        "homing_missile": int(state["ai_profile"].get("homing_ammo", 0)),
+        "cluster_shell": int(state["ai_profile"].get("cluster_ammo", 0)),
+    }
+    state["bot_tactics"] = {"history": [], "last_weapon": "standard", "last_damage_seen": 0.0}
     if ai_rank_level is not None:
         state["ai_rank_level"] = ai_rank_level
     state["ready"] = {"p1": False, "p2": True}
@@ -1301,33 +1322,45 @@ def match_state(mid):
         tier = m["state"].get("ai_tier", difficulty)
         profile = m["state"].get("ai_profile") or {}
         reaction = float(profile.get("reaction", 1.0))
-        if time.time() - last > cooldown_for("standard") + reaction:
+        bot_weapon = (m["state"].get("bot_tactics") or {}).get("last_weapon", "standard")
+        if time.time() - last > cooldown_for(bot_weapon) + reaction:
             # A failed bot turn must never wedge the match on permanent 500s:
             # log it, defer the retry by one cooldown, and still serve a
             # healthy snapshot so the client stays connected and recovers.
             try:
                 # Ranked tiers use the mapped rank for accuracy; easy remains
                 # the deliberately forgiving practice profile.
-                angle, power, weapon = ai_choose_shot(
+                angle, power, _ = ai_choose_shot(
                     m["state"], "p2", difficulty, m["state"].get("ai_rank_level"), profile)
+                pre_events = _apply_bot_tactics(m)
+                controls = m["state"].get("bot_controls") or {}
+                last_result = (m["state"].get("bot_tactics") or {}).get("last_result") or {}
+                if controls.get("adaptation", True) and last_result:
+                    correction = float(profile.get("correction", 0))
+                    if last_result.get("blocked"):
+                        angle = min(78.0, angle + 10.0 * correction)
+                    elif float(last_result.get("damage", 0)) <= 0:
+                        impact = last_result.get("impact_x"); target = last_result.get("target_x")
+                        if impact is not None and target is not None:
+                            # p2 fires left: impact to the right of target is short.
+                            power += (1 if impact > target else -1) * 10.0 * correction
+                            power = max(30.0, min(96.0, power))
+                weapon = _bot_choose_weapon(m["state"])
                 abilities = m["state"].setdefault("abilities", {}).setdefault("p2", {})
-                if (abilities.get("shield", 0) > 0 and not m["state"].setdefault("shield", {}).get("p2")
-                        and random.random() < float(profile.get("shield_chance", 0))):
-                    abilities["shield"] -= 1
-                    m["state"]["shield"]["p2"] = True
-                mega = abilities.get("mega", 0) > 0 and random.random() < float(profile.get("mega_chance", 0))
-                if mega:
-                    abilities["mega"] -= 1
-                events, won = fire_weapon(m["state"], "p2", angle,
-                                          min(100, power * (1.2 if mega else 1)), weapon)
-                if mega:
-                    events.append({"type": "ability", "side": "p2", "ability": "mega"})
+                mega = bool((m["state"].get("bot_controls") or {}).get("tactical_mega", True)
+                            and abilities.get("mega", 0) > 0
+                            and (_tower_ratio(m["state"], "p1") <= float(profile.get("mega_chance",0))*.55
+                                 or (float(profile.get("aggression",0)) > .75 and random.random() < float(profile.get("mega_chance",0))*.3)))
+                result, error = _execute_shot(m, "p2", angle, power, weapon, mega)
+                if error and weapon != "standard":
+                    result, error = _execute_shot(m, "p2", angle, power, "standard", mega)
+                if error: raise RuntimeError("bot shot rejected")
+                events, won = result; events = pre_events + events
                 m["version"] += 1
                 if won:
                     finalize_match(m, "p2")
                     m["state"]["finish_reason"] = "tower_destroyed"
-                    events.append({"type": "match_end", "winner_side": "p2",
-                                   "reason": "tower_destroyed"})
+                    events.append({"type": "match_end", "winner_side": "p2", "reason": "tower_destroyed"})
                 save_match(m)
                 emit_events(mid, m["version"], events)
             except Exception:
@@ -1353,6 +1386,91 @@ def match_ready(mid):
     m["state"].setdefault("ready", {})[side] = True
     save_match(m)
     return jsonify({"ok": True, "side": side})
+
+
+def _tower_ratio(state, side):
+    hp = tower_hp(state, side)
+    return hp["hp"] / max(1.0, hp["max"])
+
+
+def _bot_choose_weapon(state):
+    controls = state.get("bot_controls") or {}
+    profile = state.get("ai_profile") or {}
+    ammo = state.setdefault("bot_ammo", {})
+    if not controls.get("enabled", True) or not controls.get("special_weapons", True):
+        return "standard"
+    available = [w for w in ("double_bomb", "homing_missile", "cluster_shell")
+                 if controls.get(w, True) and (controls.get("infinite_ammo") or ammo.get(w, 0) > 0)]
+    if not available:
+        return "standard"
+    skill = float(profile.get("weapon_skill", 0.5)); aggression = float(profile.get("aggression", 0.5))
+    enemy_ratio = _tower_ratio(state, "p1")
+    scores = {"standard": .35 + (1-aggression)*.35,
+              "double_bomb": .45 + (1-enemy_ratio)*.45,
+              "homing_missile": .45 + min(1, abs(float(state.get("wind",0)))/30)*.65,
+              "cluster_shell": .45 + enemy_ratio*.55}
+    # Better tiers use the best situational weapon; lower tiers sometimes conserve it.
+    best = max(available, key=lambda w: scores[w])
+    return best if random.random() < min(1.0, skill*(.7+.3*aggression)) else "standard"
+
+
+def _apply_bot_tactics(m):
+    state=m["state"]; controls=state.get("bot_controls") or {}; profile=state.get("ai_profile") or {}
+    events=[]; tactics=state.setdefault("bot_tactics", {"history":[]})
+    if not controls.get("enabled", True): return events
+    # Reactive shield is based on real HP/loss, never an unconditional pre-shot roll.
+    current=tower_hp(state,"p2")["hp"]; previous=float(tactics.get("last_hp",current)); loss=max(0,previous-current)
+    abilities=state.setdefault("abilities",{}).setdefault("p2",{})
+    if (controls.get("reactive_shield",True) and abilities.get("shield",0)>0
+        and not state.setdefault("shield",{}).get("p2")
+        and (_tower_ratio(state,"p2") <= float(profile.get("shield_hp",.4))
+             or loss >= float(profile.get("shield_damage",60)))):
+        abilities["shield"]-=1; state["shield"]["p2"]=True
+        events.append({"type":"shield","side":"p2","active":True,"reason":"reactive"})
+    tactics["last_hp"]=current
+    # One legal movement, selected only when risk/obstacle makes it useful.
+    if (controls.get("movement",True) and state.setdefault("moves_left",{}).get("p2",0)>0
+        and random.random() < float(profile.get("move_chance",0))):
+        old=state["tower_x"]["p2"]; ob=obstacle_at(state); direction=1 if old < TOWER_X_RANGE["p2"][1]-30 else -1
+        if ob and ob.get("x",0)>500: direction = 1 if ob["x"] < old else -1
+        state["tower_x"]["p2"]=max(TOWER_X_RANGE["p2"][0],min(TOWER_X_RANGE["p2"][1],old+direction*45))
+        if state["tower_x"]["p2"] != old:
+            state["moves_left"]["p2"]-=1; events.append({"type":"tower_move","side":"p2","direction":"right" if direction>0 else "left","reason":"tactical"})
+    return events
+
+
+def _execute_shot(m, side, angle, power, weapon="standard", mega=False, user_id=None):
+    if weapon not in WEAPONS: return None, (jsonify({"error":"bad_weapon"}),400)
+    state=m["state"]; last=state["last_shot_at"][side]; remaining=cooldown_for(weapon)-(time.time()-last)
+    if remaining>.05: return None,(jsonify({"error":"reloading","remaining":round(remaining,2),"error_he":"התותח בטעינה."}),429)
+    if weapon != "standard":
+        if side=="p2" and m.get("p2_ai"):
+            controls=state.get("bot_controls") or {}; ammo=state.setdefault("bot_ammo",{})
+            if not controls.get("infinite_ammo"):
+                if ammo.get(weapon,0)<1: return None,(jsonify({"error":"no_ammo"}),400)
+                ammo[weapon]-=1
+        else:
+            cur=execute("UPDATE user_items SET qty=qty-1 WHERE user_id=? AND item_id=? AND qty>0",(user_id,weapon))
+            if cur.rowcount!=1: return None,(jsonify({"error":"no_ammo","error_he":"אין לך תחמושת מהסוג הזה."}),400)
+    if mega:
+        charges=state.setdefault("abilities",{}).setdefault(side,{}).get("mega",0)
+        if charges<1: return None,(jsonify({"error":"no_ability","error_he":"יכולת המגה כבר נוצלה."}),400)
+        state["abilities"][side]["mega"]=charges-1
+    before=tower_hp(state,"p1" if side=="p2" else "p2")["hp"]
+    events,won=fire_weapon(state,side,angle,min(100,power*(1.2 if mega else 1)),weapon)
+    if mega: events.append({"type":"ability","side":side,"ability":"mega"})
+    after=tower_hp(state,"p1" if side=="p2" else "p2")["hp"]
+    if side=="p2" and m.get("p2_ai"):
+        tactics=state.setdefault("bot_tactics",{}); history=tactics.setdefault("history",[])
+        shot=next((e for e in events if e.get("type")=="shot"),{})
+        points=shot.get("points") or []; impact_x=(points[-1][0] if points else None)
+        target_x=sum(x for _,_,x,_ in tower_blocks(state,"p1"))/max(1,sum(1 for _ in tower_blocks(state,"p1")))
+        ob=obstacle_at(state); blocked=bool(points and ob and ob.get("x",0)<=points[-1][0]<=ob.get("x",0)+ob.get("w",0) and ob.get("y",0)<=points[-1][1]<=520)
+        result={"weapon":weapon,"damage":round(max(0,before-after),1),"angle":round(angle,2),"power":round(power,2),"blocked":blocked,"impact_x":round(impact_x,1) if impact_x is not None else None,"target_x":round(target_x,1)}
+        history.append(result); depth=int((state.get("ai_profile") or {}).get("memory",3)); del history[:-max(1,depth)]
+        tactics.update({"last_weapon":weapon,"last_result":result})
+        events.append({"type":"bot_decision","weapon":weapon,"mega":mega,"ammo":dict(state.get("bot_ammo") or {}),"result":result})
+    return (events,won),None
 
 
 @app.post("/api/matches/<mid>/fire")
@@ -1389,29 +1507,9 @@ def match_fire(mid):
         m["state"]["last_turn_at"][side] = time.time()
         save_match(m)
         return jsonify({"error": "shot_clock", "error_he": "זמן הירייה נגמר. השעון התחיל מחדש."}), 408
-    # cooldown enforcement (server clock)
-    last = m["state"]["last_shot_at"][side]
-    cd = cooldown_for(weapon)
-    remaining = cd - (time.time() - last)
-    if remaining > 0.05:
-        return jsonify({"error": "reloading", "remaining": round(remaining, 2),
-                        "error_he": "התותח בטעינה."}), 429
-    # consumable ownership check + atomic decrement
-    if weapon != "standard":
-        cur = execute("UPDATE user_items SET qty = qty - 1 WHERE user_id = ?"
-                      " AND item_id = ? AND qty > 0", (g.user["id"], weapon))
-        if cur.rowcount != 1:
-            return jsonify({"error": "no_ammo",
-                            "error_he": "אין לך תחמושת מהסוג הזה."}), 400
-    mega = bool(body.get("mega"))
-    if mega:
-        charges = m["state"].setdefault("abilities", {}).setdefault(side, {}).get("mega", 0)
-        if charges < 1:
-            return jsonify({"error": "no_ability", "error_he": "יכולת המגה כבר נוצלה."}), 400
-        m["state"]["abilities"][side]["mega"] = charges - 1
-    events, won = fire_weapon(m["state"], side, angle, min(100, power * (1.2 if mega else 1)), weapon)
-    if mega:
-        events.append({"type": "ability", "side": side, "ability": "mega"})
+    result, error = _execute_shot(m, side, angle, power, weapon, bool(body.get("mega")), g.user["id"])
+    if error: return error
+    events, won = result
     m["version"] += 1
     if won:
         finalize_match(m, side)
@@ -1693,6 +1791,11 @@ def admin_gameplay_controls_set():
     if err:
         return err
     body = request.get_json(silent=True) or {}
+    if body.get("reset") is True:
+        current = json.loads(json.dumps(DEFAULT_GAMEPLAY_CONTROLS))
+        execute("INSERT INTO settings (key, value) VALUES ('gameplay_controls', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps(current),))
+        audit("admin.gameplay_controls_reset", details=current)
+        return jsonify({"ok": True, "controls": current})
     raw = body.get("controls")
     if not isinstance(raw, dict):
         return jsonify({"error": "bad_controls"}), 400
@@ -1728,6 +1831,13 @@ def admin_gameplay_controls_set():
             "speed": (1, 200, float),
             "warning_seconds": (0, 10, float),
         },
+        "bot_system": {
+            "enabled": (None, None, bool), "special_weapons": (None, None, bool),
+            "double_bomb": (None, None, bool), "homing_missile": (None, None, bool),
+            "cluster_shell": (None, None, bool), "movement": (None, None, bool),
+            "reactive_shield": (None, None, bool), "tactical_mega": (None, None, bool),
+            "adaptation": (None, None, bool), "infinite_ammo": (None, None, bool),
+        },
         "bot_difficulty": {
             "easy_angle_noise": (0, 45, float),
             "easy_power_spread": (0, 0.5, float),
@@ -1736,6 +1846,10 @@ def admin_gameplay_controls_set():
             "easy_rank_offset": (0, 18, int),
             "easy_shield_chance": (0, 1, float),
             "easy_mega_chance": (0, 1, float),
+            "easy_double_ammo": (0, 99, int), "easy_homing_ammo": (0, 99, int), "easy_cluster_ammo": (0, 99, int),
+            "easy_weapon_skill": (0, 1, float), "easy_shield_hp": (0, 1, float),
+            "easy_shield_damage": (0, 1000, float), "easy_move_chance": (0, 1, float),
+            "easy_memory": (0, 20, int), "easy_correction": (0, 1, float), "easy_aggression": (0, 1, float),
             "medium_angle_noise": (0, 45, float),
             "medium_power_spread": (0, 0.5, float),
             "medium_wind_skill": (0, 1, float),
@@ -1743,6 +1857,10 @@ def admin_gameplay_controls_set():
             "medium_rank_offset": (0, 18, int),
             "medium_shield_chance": (0, 1, float),
             "medium_mega_chance": (0, 1, float),
+            "medium_double_ammo": (0, 99, int), "medium_homing_ammo": (0, 99, int), "medium_cluster_ammo": (0, 99, int),
+            "medium_weapon_skill": (0, 1, float), "medium_shield_hp": (0, 1, float),
+            "medium_shield_damage": (0, 1000, float), "medium_move_chance": (0, 1, float),
+            "medium_memory": (0, 20, int), "medium_correction": (0, 1, float), "medium_aggression": (0, 1, float),
             "hard_angle_noise": (0, 45, float),
             "hard_power_spread": (0, 0.5, float),
             "hard_wind_skill": (0, 1, float),
@@ -1750,6 +1868,10 @@ def admin_gameplay_controls_set():
             "hard_rank_offset": (0, 18, int),
             "hard_shield_chance": (0, 1, float),
             "hard_mega_chance": (0, 1, float),
+            "hard_double_ammo": (0, 99, int), "hard_homing_ammo": (0, 99, int), "hard_cluster_ammo": (0, 99, int),
+            "hard_weapon_skill": (0, 1, float), "hard_shield_hp": (0, 1, float),
+            "hard_shield_damage": (0, 1000, float), "hard_move_chance": (0, 1, float),
+            "hard_memory": (0, 20, int), "hard_correction": (0, 1, float), "hard_aggression": (0, 1, float),
             "ultra_angle_noise": (0, 45, float),
             "ultra_power_spread": (0, 0.5, float),
             "ultra_wind_skill": (0, 1, float),
@@ -1757,6 +1879,10 @@ def admin_gameplay_controls_set():
             "ultra_rank_offset": (0, 18, int),
             "ultra_shield_chance": (0, 1, float),
             "ultra_mega_chance": (0, 1, float),
+            "ultra_double_ammo": (0, 99, int), "ultra_homing_ammo": (0, 99, int), "ultra_cluster_ammo": (0, 99, int),
+            "ultra_weapon_skill": (0, 1, float), "ultra_shield_hp": (0, 1, float),
+            "ultra_shield_damage": (0, 1000, float), "ultra_move_chance": (0, 1, float),
+            "ultra_memory": (0, 20, int), "ultra_correction": (0, 1, float), "ultra_aggression": (0, 1, float),
             "expert_angle_noise": (0, 45, float),
             "expert_power_spread": (0, 0.5, float),
             "expert_wind_skill": (0, 1, float),
@@ -1764,6 +1890,10 @@ def admin_gameplay_controls_set():
             "expert_rank_offset": (0, 18, int),
             "expert_shield_chance": (0, 1, float),
             "expert_mega_chance": (0, 1, float),
+            "expert_double_ammo": (0, 99, int), "expert_homing_ammo": (0, 99, int), "expert_cluster_ammo": (0, 99, int),
+            "expert_weapon_skill": (0, 1, float), "expert_shield_hp": (0, 1, float),
+            "expert_shield_damage": (0, 1000, float), "expert_move_chance": (0, 1, float),
+            "expert_memory": (0, 20, int), "expert_correction": (0, 1, float), "expert_aggression": (0, 1, float),
         },
     }
     try:
