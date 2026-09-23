@@ -12,6 +12,7 @@ import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { handleAdminApi } from "./api/admin.js";
 import { d1, getControls, userMods } from "./util.js";
+import { MAX_LEVEL, rankPayload } from "./game/ranks.js";
 
 export { MatchRoom };
 
@@ -26,10 +27,6 @@ function matchId(): string {
 }
 
 
-
-const BOT_PROFILE_KEYS: Record<string, string> = {
-  easy: "easy", medium: "medium", hard: "hard", ultra: "ultra", expert: "expert",
-};
 
 function botProfile(controls: any, tier: string): any {
   const d = controls.bot_difficulty;
@@ -82,19 +79,39 @@ export default {
       const rlAi = await limited(env, request, "mutation", user);
       if (rlAi) return rlAi;
       const body: any = await request.json().catch(() => ({}));
-      const tier = String(body.tier ?? "medium");
-      if (!(tier in BOT_PROFILE_KEYS)) return json({ error: "bad_tier" }, 400);
+      // app.py parity: the client sends { difficulty }; the server privately
+      // maps the tier to a bot rank at or above the player's rank.
+      const tier = String(body.difficulty ?? body.tier ?? "medium").toLowerCase();
       const controls = await getControls(env);
+      const botControls = (controls as any).bot_difficulty ?? {};
+      const userRankLevel = Number(rankPayload(Number((user as any).rank_points ?? 0)).level);
+      const offsets: Record<string, number> = {};
+      for (const name of ["medium", "hard", "ultra", "expert"])
+        offsets[name] = Number(botControls[`${name}_rank_offset`] ?? 0);
+      offsets.normal = offsets.medium; offsets.ranked = offsets.medium;
+      let difficulty: string, aiTier: string, aiRankLevel: number;
+      if (tier === "easy") {
+        difficulty = "easy"; aiTier = "easy";
+        aiRankLevel = Math.min(MAX_LEVEL, userRankLevel + Number(botControls.easy_rank_offset ?? 0));
+      } else if (tier in offsets) {
+        difficulty = "ranked";
+        aiTier = (tier === "medium" || tier === "normal" || tier === "ranked") ? "medium" : tier;
+        aiRankLevel = Math.min(MAX_LEVEL, userRankLevel + offsets[tier]);
+      } else {
+        return json({ error: "bad_difficulty", error_he: "רמת הקושי אינה תקינה." }, 400);
+      }
       const mods = await userMods(env, Number((user as any).id));
       const id = matchId();
       const state = newState(mods, { armor: 0, hp: 0, skin: null });
-      state.ai_profile = botProfile(controls, tier);
-      state.ai_tier = tier;
+      state.ai_profile = botProfile(controls, aiTier);
+      state.ai_difficulty = difficulty;
+      state.ai_tier = aiTier;
+      state.ai_rank_level = aiRankLevel;
       // v23 item A (mirror): bot tower parity - scale the stock bot tower to
       // the tier's percentage of the player's tower max HP; mirror coating.
       const parity = (controls as any).bot_tower_parity ?? {};
       if (parity.enabled !== false) {
-        let pct = Number(parity[tier + "_pct"] ?? 1.0);
+        let pct = Number(parity[aiTier + "_pct"] ?? 1.0);
         if (!Number.isFinite(pct)) pct = 1.0;
         pct = Math.max(0.1, Math.min(2.0, pct));
         const playerMax = Number(state.tower_max_hp?.p1 ?? 432);
@@ -132,7 +149,7 @@ export default {
         method: "POST",
         body: JSON.stringify({ id, mode: "ai", status: "active", p1: (user as any).id, p2: null, p2_ai: true, state, version: 1 }),
       });
-      return json({ id, ws: `/api/matches/${id}/ws` }, 201);
+      return json({ match_id: id, status: "active" });
     }
 
     // Admin and match REST routes, then the economy/me module, then assets.

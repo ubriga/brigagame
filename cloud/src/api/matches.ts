@@ -4,7 +4,7 @@
  * owns live state; D1 holds the checkpoint + event journal.
  */
 import { currentUser } from "../auth.js";
-import { handleMatchmaking, sweepStaleMatches } from "./matchmaking.js";
+import { handleMatchmaking, sweepStaleMatches, offerToPresentPlayer, nowIso } from "./matchmaking.js";
 import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
 import { towerHp, obstacleAt } from "../game/game_logic.js";
@@ -146,6 +146,14 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
     ? { ...row, status: live.status, version: live.version, state: live.state }
     : { ...row, state: JSON.parse(row.state || "{}") };
   if (sideFor(m, uid) === null) return json({ error: "not_found" }, 404);
+
+  // app.py poll parity: a waiting match stays alive only while its owner
+  // actively polls; quick-match owners keep inviting present players.
+  if (action === "state" && m.status === "waiting") {
+    await env.DB.prepare("UPDATE matches SET updated_at = ? WHERE id = ?")
+      .bind(nowIso(), matchId).run();
+    if (m.mode === "quick") await offerToPresentPlayer(env, matchId, uid);
+  }
 
   if (action === "state" && request.method === "GET") {
     const url = new URL(request.url);

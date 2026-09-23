@@ -257,6 +257,7 @@ const App = {
           <div class="grid">
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
             <div class="ai-start">
+              <label for="ai-tier" class="sub" style="margin:0">רמת קושי מול בוט:</label>
               <select id="ai-tier" aria-label="רמת קושי">
                 <option value="easy">קל - תרגול, ללא נקודות או מטבעות</option>
                 <option value="medium">בינוני</option>
@@ -264,7 +265,7 @@ const App = {
                 <option value="ultra">אולטרה קשה</option>
                 <option value="expert">מומחה - האתגר הקשה ביותר</option>
               </select>
-              <button class="btn secondary" id="ai-btn">🤖 משחק מול בוט</button>
+              <button class="btn" id="ai-btn">🤖 התחל משחק מול בוט</button>
             </div>
             <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
             <div style="display:flex;gap:8px">
@@ -804,22 +805,27 @@ const App = {
       const { status, data } = await API.get("/api/admin/gameplay-controls");
       if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת השליטה במשחק.</p>"; return; }
       const c = data.controls;
-      const feature = (key, title, fields) => `<div class="card"><h2>${title}</h2>
+      const feature = (key, title, fields, hint) => `<div class="card"><h2>${title}</h2>
+        ${hint ? `<p class="sub">${hint}</p>` : ""}
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="${key}.enabled" ${c[key].enabled ? "checked" : ""} style="width:auto">מופעל</label>
         ${fields.map(([field, label, min, max, step]) => `<label>${label}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c[key][field]}" data-control="${key}.${field}">`).join("")}</div>`;
-      body.innerHTML = `<div class="card"><h2>קצב התקדמות XP</h2><p class="sub">ערכי ברירת המחדל החדשים מאטים את ההתקדמות בערך פי 5. שינוי חל רק על משחקים שיסתיימו מעכשיו.</p>
+      body.innerHTML = `<div class="card"><h2>קצב התקדמות XP</h2><p class="sub">ערכי ברירת המחדל החדשים מאטים את ההתקדמות בערך פי 5. שינוי חל רק על משחקים שיסתיימו מעכשיו. בונוס ניצחון = נקודות XP שמתווספות לדירוג הצבאי; XP לכל נזק = כמה XP מקבלים על כל נקודת נזק שגורמים במשחק.</p>
           <label>בונוס ניצחון מול שחקן</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.human_win}" data-control="xp.human_win">
           <label>בונוס ניצחון מול מחשב</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.bot_win}" data-control="xp.bot_win">
           <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
-        ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]])}
-        ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]])}
-        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]])}
-        ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
+        ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]], "תקציב משקל = הגודל המרבי (ב-KB) של קובץ סקין שמותר להעלות. גבוה יותר = קבצים כבדים יותר שנטענים לאט יותר.")}
+        ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]], "מחיר = עלות במטבעות. זמן = משך הבנייה בדקות. הגנה = כמה HP הציפוי סופג לפני שהמגדל נפגע. מספר שלבים = כמה רמות ציפוי אפשר לבנות ברצף (עץ ← פח ← ברזל).")}
+        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]], "קוביות נוספות = כמה קוביות אפשר להוסיף למגדל מעל הבסיס. זמן בנייה = דקות לכל קובייה (עולה עם כל קובייה). מחיר = עלות כל קובייה במטבעות. חיים = HP שכל קובייה מוסיפה למגדל.")}
+        ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]], "מהירות = קצב תנועת המכשול בזירה (גבוה = מהיר יותר). התראה = כמה שניות מוצגת אזהרה לשחקנים לפני שהמכשול זז.")}
         <div class="card bot-admin"><h2>🤖 מנוע הבוט החכם</h2><p class="sub">כל שינוי חל על משחקי בוט חדשים בלבד. משחק שכבר התחיל שומר snapshot מלא.</p>
+          <details class="sub" style="margin-bottom:8px"><summary>מה מפעיל כל מתג?</summary>
+          מנוע חכם = כיבוי/הדלקה כוללת של הבוט החכם (בכיבוי: בוט בסיסי). נשקים מיוחדים = שולט בכולם ביחד או בכל אחד בנפרד. תנועה טקטית = הבוט זז לעמדה טובה יותר. מגן תגובתי = הבוט מפעיל מגן כשהוא בסכנה. Mega טקטי = הבוט שומר Mega לרגע הנכון. הסתגלות = הבוט לומד מהפספוסים שלו בתוך המשחק. תחמושת אינסופית = הבוט לא מוגבל במלאי נשקים מיוחדים.</details>
           <div class="bot-system-toggles">
             ${[["enabled","מנוע חכם"],["special_weapons","נשקים מיוחדים"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מתביית"],["cluster_shell","פגז מצרר"],["movement","תנועה טקטית"],["reactive_shield","מגן תגובתי"],["tactical_mega","Mega טקטי"],["adaptation","הסתגלות בתוך משחק"],["infinite_ammo","תחמושת אינסופית"]].map(([k,l]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_system.${k}" ${c.bot_system[k] ? "checked" : ""} style="width:auto">${l}</label>`).join("")}
           </div></div>
         <div class="card bot-admin"><h2>🎯 כוונון לפי רמה</h2><p class="sub">דיוק, משאבים, הגנה, תנועה, זיכרון ואגרסיביות. הערכים נשמרים בשרת.</p>
+          <details class="sub" style="margin-bottom:8px"><summary>מה משמעות כל שדה?</summary>
+          סטיית זווית = כמה מעלות הבוט עלול לסטות בירי (גבוה = פחות מדויק). סטיית עוצמה = פיזור בעוצמה (גבוה = פחות עקבי). פיצוי רוח = כמה הבוט מתחשב ברוח (1 = מלא, 0 = מתעלם). זמן תגובה = השהייה בשניות לפני ירי (נמוך = מהיר יותר). תוספת דרגות = כמה דרגות מעל רמת השחקן הבוט משחק. תחמושת = כמה נשקים מיוחדים הבוט מתחיל איתם. מיומנות בחירת נשק = 1 = בחירה אופטימלית. סף HP למגן = מתחת לאחוז חיים הזה הבוט מגן על עצמו. סף נזק תגובתי = נזק שמפעיל תגובת מגן. נטייה לזוז / ל-Mega = סיכוי בתור (0-1). עומק זיכרון = כמה יריות אחורה הבוט לומד. חוזק תיקון = עוצמת התיקון אחרי פספוס. אגרסיביות = 1 = מעדיף התקפה על הגנה.</details>
           ${[["easy","קל"],["medium","בינוני"],["hard","קשה"],["ultra","אולטרה קשה"],["expert","מומחה"]].map(([t,label]) => `<div class="bot-tier-controls"><h3>${label}</h3>
             ${[["angle_noise","סטיית זווית מרבית (°)",0,45,.05],["power_spread","סטיית עוצמה",0,.5,.001],["wind_skill","פיצוי רוח",0,1,.01],["reaction","זמן תגובה",0,10,.05],["rank_offset","תוספת דרגות",0,18,1],["double_ammo","תחמושת כפולה",0,99,1],["homing_ammo","תחמושת מתבייתת",0,99,1],["cluster_ammo","תחמושת מצרר",0,99,1],["weapon_skill","מיומנות בחירת נשק",0,1,.01],["shield_hp","סף HP למגן",0,1,.01],["shield_damage","סף נזק תגובתי",0,1000,1],["move_chance","נטייה לזוז",0,1,.01],["mega_chance","נטייה ל-Mega",0,1,.01],["memory","עומק זיכרון",0,20,1],["correction","חוזק תיקון",0,1,.01],["aggression","אגרסיביות",0,1,.01]].map(([k,l,min,max,step]) => `<label>${l}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c.bot_difficulty[t+"_"+k]}" data-control="bot_difficulty.${t+"_"+k}">`).join("")}
           </div>`).join("")}</div>
