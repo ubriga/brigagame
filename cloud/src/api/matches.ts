@@ -4,6 +4,7 @@
  * owns live state; D1 holds the checkpoint + event journal.
  */
 import { currentUser } from "../auth.js";
+import { handleMatchmaking, sweepStaleMatches } from "./matchmaking.js";
 import { d1, getControls } from "../util.js";
 import { towerHp, obstacleAt } from "../game/game_logic.js";
 import { rankFor } from "../game/economy.js";
@@ -116,6 +117,10 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
 }
 
 export async function handleMatchApi(env: Env, request: Request, path: string): Promise<Response | null> {
+  // quick/friend/join/accept/decline (app.py matchmaking parity)
+  const mmRes = await handleMatchmaking(env, request, path);
+  if (mmRes) return mmRes;
+  await sweepStaleMatches(env);
   const mm = path.match(/^\/api\/matches\/([a-z0-9]+)\/(state|ready|leave|fire|move|shield)$/);
   if (!mm) return null;
   const [, matchId, action] = mm;
