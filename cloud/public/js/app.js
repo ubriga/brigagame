@@ -538,12 +538,15 @@ const App = {
       if (m.status === 200) this.setMe(m.data);
     };
     await GameView.init(view, matchId);
+    const botFb = me.status === 200 ? (me.data.bot_fallback || null) : null;
     // waiting room overlay until opponent joins
+    let waitStart = 0, fbOffered = false, fbDeclined = false;
     const waitCheck = setInterval(() => {
       if (!GameView.snap) return;
       if (GameView.snap.status === "waiting") {
         const ov = document.getElementById("game-overlay");
         if (ov && ov.classList.contains("hidden")) {
+          waitStart = Date.now();
           ov.classList.remove("hidden");
           ov.innerHTML = `<h2>⏳ מחכים ליריב...</h2>
             ${GameView.snap.code ? `<div class="code-box">${esc(GameView.snap.code)}</div>
@@ -552,6 +555,41 @@ const App = {
           document.getElementById("cancel-wait").onclick = async () => {
             await API.post(`/api/matches/${matchId}/leave`);
             location.hash = "#/lobby";
+          };
+        }
+        // Bot fallback offer: a quick match with no human found in time gets a
+        // one-tap switch to a bot game (admin-gated server-side too).
+        const isQuickWait = GameView.snap.mode === "quick" && !GameView.snap.code;
+        if (ov && isQuickWait && botFb && botFb.enabled && !fbOffered && !fbDeclined
+            && waitStart && Date.now() - waitStart >= Number(botFb.wait_seconds || 30) * 1000) {
+          fbOffered = true;
+          const box = document.createElement("div");
+          box.id = "bot-fallback-box";
+          box.innerHTML = `<p style="margin:14px 0 0">🤖 לא נמצא יריב עדיין - לשחק מיד נגד הבוט?</p>
+            <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+              <button class="btn" id="bot-fallback-yes">שחק נגד הבוט</button>
+              <button class="btn secondary" id="bot-fallback-no">להמשיך לחכות</button>
+            </div>`;
+          ov.appendChild(box);
+          document.getElementById("bot-fallback-no").onclick = () => {
+            fbDeclined = true; box.remove(); toast("ממשיכים לחפש יריב...");
+          };
+          document.getElementById("bot-fallback-yes").onclick = async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = "מתחיל...";
+            const { status, data } = await API.post("/api/matches/quick/bot-fallback", { match_id: matchId });
+            if (status === 200 && data.match_id) {
+              box.remove();
+              if (data.match_id !== matchId) {
+                clearInterval(waitCheck);
+                location.hash = "#/game/" + data.match_id;
+              }
+              // Same id = a human joined meanwhile; the live snapshot flips the
+              // overlay to the game by itself.
+            } else {
+              btn.disabled = false; btn.textContent = "שחק נגד הבוט";
+              toast((data && data.error_he) || "לא הצלחנו להתחיל משחק נגד הבוט");
+            }
           };
         }
       } else {
@@ -937,6 +975,7 @@ const App = {
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.popup_enabled" ${c.auth_flow.popup_enabled ? "checked" : ""} style="width:auto">כפתור גוגל (חלון קטן)</label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.redirect_enabled" ${c.auth_flow.redirect_enabled ? "checked" : ""} style="width:auto">כניסה עם חשבון גוגל (דף מלא)</label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.email_code_enabled" ${c.auth_flow.email_code_enabled ? "checked" : ""} style="width:auto">כניסה עם קוד למייל</label></div>
+        ${feature("bot_fallback", "🤖 הצעת מעבר למשחק נגד בוט", [["wait_seconds", "זמן המתנה לפני הצגת ההצעה (שניות)", 5, 300, 1]], "במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט (רמה בינונית, משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.")}
         ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]], "תקציב משקל = הגודל המרבי (ב-KB) של קובץ סקין שמותר להעלות. גבוה יותר = קבצים כבדים יותר שנטענים לאט יותר.")}
         ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]], "מחיר = עלות במטבעות. זמן = משך הבנייה בדקות. הגנה = כמה HP הציפוי סופג לפני שהמגדל נפגע. מספר שלבים = כמה רמות ציפוי אפשר לבנות ברצף (עץ ← פח ← ברזל).")}
         ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]], "קוביות נוספות = כמה קוביות אפשר להוסיף למגדל מעל הבסיס. זמן בנייה = דקות לכל קובייה (עולה עם כל קובייה). מחיר = עלות כל קובייה במטבעות. חיים = HP שכל קובייה מוסיפה למגדל.")}

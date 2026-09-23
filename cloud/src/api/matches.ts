@@ -207,6 +207,14 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
   }
 
   if (action === "leave" && request.method === "POST") {
+    // app.py parity: leaving a waiting room deletes it outright (the DO only
+    // hosts active matches, so a waiting match is a D1-only row).
+    if (m.status === "waiting" && Number(m.p1) === uid) {
+      await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(matchId).run();
+      await env.DB.prepare(
+        "DELETE FROM matches WHERE id = ? AND status = 'waiting' AND p2 IS NULL").bind(matchId).run();
+      return json({ ok: true });
+    }
     const out = await doFetch(env, matchId, "/leave", {
       method: "POST", body: JSON.stringify({ userId: uid }) });
     return json(out);

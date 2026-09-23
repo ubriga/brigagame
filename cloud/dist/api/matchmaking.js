@@ -5,8 +5,9 @@
  * happens only via /accept or /join. Hebrew messages match 1:1.
  */
 import { currentUser } from "../auth.js";
-import { d1, userMods } from "../util.js";
+import { d1, getControls, userMods } from "../util.js";
 import { newState } from "../game/game_logic.js";
+import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
 // config.py defaults (free tier has no task runner; API traffic carries the sweep)
@@ -145,6 +146,96 @@ async function activateMatch(env, matchId) {
     await env.DB.prepare("INSERT INTO match_events (match_id, version, type, data, created_at) VALUES (?,?,?,?,?)")
         .bind(m.id, m.version, "match_start", JSON.stringify({ type: "match_start" }), nowIso()).run();
 }
+function botProfile(controls, tier) {
+    const d = controls.bot_difficulty ?? {};
+    const p = {};
+    for (const key of Object.keys(d)) {
+        if (key.startsWith(tier + "_"))
+            p[key.slice(tier.length + 1)] = d[key];
+    }
+    return p;
+}
+/** Create an active match vs the bot for `user` (port of POST /api/matches/ai;
+ * shared by the lobby AI button and the quick-match bot fallback). */
+export async function createAiMatch(env, user, tierRaw) {
+    // app.py parity: the client sends { difficulty }; the server privately
+    // maps the tier to a bot rank at or above the player's rank.
+    const controls = await getControls(env);
+    const botControls = controls.bot_difficulty ?? {};
+    const userRankLevel = Number(rankPayload(Number(user.rank_points ?? 0)).level);
+    const offsets = {};
+    for (const name of ["medium", "hard", "ultra", "expert"])
+        offsets[name] = Number(botControls[`${name}_rank_offset`] ?? 0);
+    offsets.normal = offsets.medium;
+    offsets.ranked = offsets.medium;
+    const tier = String(tierRaw ?? "medium").toLowerCase();
+    let difficulty, aiTier, aiRankLevel;
+    if (tier === "easy") {
+        difficulty = "easy";
+        aiTier = "easy";
+        aiRankLevel = Math.min(MAX_LEVEL, userRankLevel + Number(botControls.easy_rank_offset ?? 0));
+    }
+    else if (tier in offsets) {
+        difficulty = "ranked";
+        aiTier = (tier === "medium" || tier === "normal" || tier === "ranked") ? "medium" : tier;
+        aiRankLevel = Math.min(MAX_LEVEL, userRankLevel + offsets[tier]);
+    }
+    else {
+        return { ok: false, error: "bad_difficulty", error_he: "רמת הקושי אינה תקינה.", status: 400 };
+    }
+    const mods = await userMods(env, Number(user.id));
+    const id = newMatchId();
+    const state = newState(mods, { armor: 0, hp: 0, skin: null });
+    state.ai_profile = botProfile(controls, aiTier);
+    state.ai_difficulty = difficulty;
+    state.ai_tier = aiTier;
+    state.ai_rank_level = aiRankLevel;
+    // v23 item A (mirror): bot tower parity - scale the stock bot tower to
+    // the tier's percentage of the player's tower max HP; mirror coating.
+    const parity = controls.bot_tower_parity ?? {};
+    if (parity.enabled !== false) {
+        let pct = Number(parity[aiTier + "_pct"] ?? 1.0);
+        if (!Number.isFinite(pct))
+            pct = 1.0;
+        pct = Math.max(0.1, Math.min(2.0, pct));
+        const playerMax = Number(state.tower_max_hp?.p1 ?? 432);
+        const tw = state.towers.p2;
+        const cells = [];
+        tw.forEach((row, r) => row.forEach((v, c) => {
+            if (v !== null)
+                cells.push([r, c]);
+        }));
+        if (cells.length) {
+            const per = Math.round((playerMax * pct) / cells.length * 10) / 10;
+            for (const [r, c] of cells)
+                tw[r][c] = per;
+            state.tower_max_hp.p2 = Math.round(per * cells.length * 10) / 10;
+        }
+        if (parity.match_coating !== false) {
+            const p1c = state.coatings?.p1;
+            if (p1c && Number(p1c.max_hp ?? 0) > 0) {
+                state.coatings.p2 = { material: p1c.material, hp: Number(p1c.max_hp), max_hp: Number(p1c.max_hp) };
+            }
+        }
+    }
+    state.ready = { p1: false, p2: true }; // the bot is born ready (app.py parity)
+    state.bot_controls = controls.bot_system;
+    state.bot_ammo = {
+        double_bomb: Number(state.ai_profile.double_ammo ?? 0),
+        homing_missile: Number(state.ai_profile.homing_ammo ?? 0),
+        cluster_shell: Number(state.ai_profile.cluster_ammo ?? 0),
+    };
+    const now = new Date().toISOString();
+    await env.DB.prepare("INSERT INTO matches (id, mode, status, p1, p2_ai, state, version, created_at, updated_at)"
+        + " VALUES (?, 'ai', 'active', ?, 1, ?, 1, ?, ?)")
+        .bind(id, Number(user.id), JSON.stringify(state), now, now).run();
+    const stub = env.MATCH_ROOM.get(env.MATCH_ROOM.idFromName(id));
+    await stub.fetch("https://do/init", {
+        method: "POST",
+        body: JSON.stringify({ id, mode: "ai", status: "active", p1: Number(user.id), p2: null, p2_ai: true, state, version: 1 }),
+    });
+    return { ok: true, match_id: id };
+}
 export async function handleMatchmaking(env, request, path) {
     const method = request.method;
     // POST /api/matches/quick
@@ -189,6 +280,52 @@ export async function handleMatchmaking(env, request, path) {
             .bind(mid, null, "quick", "waiting", uid, "{}", iso, iso).run();
         await offerToPresentPlayer(env, mid, uid);
         return json({ match_id: mid, status: "waiting" });
+    }
+    // POST /api/matches/quick/bot-fallback - the player waited wait_seconds in a
+    // quick match with no human opponent and chose to switch to a bot match.
+    if (path === "/api/matches/quick/bot-fallback" && method === "POST") {
+        const u = await currentUser(d1(env.DB), request);
+        if (!u)
+            return json({ error: "unauthorized" }, 401);
+        const rl = await limited(env, request, "mutation", u);
+        if (rl)
+            return rl;
+        const blocked = blockedReason(u);
+        if (blocked)
+            return json({ error: "blocked", error_he: blocked }, 403);
+        const controls = await getControls(env);
+        const fb = controls.bot_fallback ?? {};
+        if (fb.enabled !== true)
+            return json({ error: "bot_fallback_disabled", error_he: "המעבר למשחק נגד בוט כבוי כרגע." }, 403);
+        const body = await request.json().catch(() => ({}));
+        const mid = String(body.match_id ?? "");
+        const uid = Number(u.id);
+        const m = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(mid).first();
+        if (!m || m.mode !== "quick" || Number(m.p1) !== uid)
+            return json({ error: "not_found", error_he: "המשחק לא נמצא." }, 404);
+        // A human may have joined while the offer was on screen - enter that match.
+        if (m.status === "active" && m.p2 != null)
+            return json({ match_id: mid, status: "active", human: true });
+        if (m.status !== "waiting" || m.p2 != null)
+            return json({ error: "unavailable", error_he: "המשחק כבר לא מחכה ליריב." }, 409);
+        const waitSec = Math.max(5, Math.min(300, Number(fb.wait_seconds ?? 30)));
+        const waitedMs = Date.now() - new Date(String(m.created_at)).getTime();
+        if (waitedMs < waitSec * 1000)
+            return json({ error: "too_soon", error_he: "עוד מחפשים יריב - נסה שוב בעוד כמה שניות.",
+                retry_in: Math.max(1, Math.ceil((waitSec * 1000 - waitedMs) / 1000)) }, 400);
+        // Atomic abandon: a concurrent accept flips the match active first and wins.
+        const del = await env.DB.prepare("DELETE FROM matches WHERE id = ? AND status = 'waiting' AND p2 IS NULL").bind(mid).run();
+        if (Number(del.meta?.changes ?? 0) !== 1) {
+            const cur = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(mid).first();
+            if (cur && cur.status === "active" && (Number(cur.p1) === uid || Number(cur.p2) === uid))
+                return json({ match_id: mid, status: "active", human: true });
+            return json({ error: "unavailable", error_he: "המשחק כבר לא זמין." }, 409);
+        }
+        await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(mid).run();
+        const created = await createAiMatch(env, u, "medium");
+        if (!created.ok)
+            return json({ error: created.error, error_he: created.error_he }, created.status);
+        return json({ match_id: created.match_id, status: "active", fallback: true });
     }
     // POST /api/matches/friend
     if (path === "/api/matches/friend" && method === "POST") {

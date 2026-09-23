@@ -145,8 +145,10 @@ export async function handleApi(env, request, path) {
         if (!u)
             return json({ error: "unauthorized" }, 401);
         const inv = await inventoryOf(env, Number(u.id));
+        const fbCtl = (await getControls(env)).bot_fallback ?? {};
         return json({
             user: publicUser(u, env), server_version: env.SERVER_VERSION,
+            bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
             maintenance: await getMaintenance(env), inventory: inv,
             daily_available: u.last_daily !== today(),
             streak: u.streak, server_date: today(),

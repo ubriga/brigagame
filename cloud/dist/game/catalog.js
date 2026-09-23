@@ -2058,6 +2058,10 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "redirect_enabled": true,
         "email_code_enabled": true
     },
+    "bot_fallback": {
+        "enabled": true,
+        "wait_seconds": 30
+    },
     "xp": {
         "human_win": 2.0,
         "bot_win": 1.0,
