@@ -1,0 +1,31 @@
+# Brigagame 2.0 - Cloudflare port (deploy-ready; requires Orel's free Cloudflare account)
+name = "brigagame"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Static frontend (PWA) served by Workers static assets
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Durable Object: one authoritative match room per match (real WebSockets, no polling)
+[[durable_objects.bindings]]
+name = "MATCH_ROOM"
+class_name = "MatchRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["MatchRoom"]
+
+# D1: users, sessions, economy, settings, messages, audit
+[[d1_databases]]
+binding = "DB"
+database_name = "brigagame"
+database_id = "TBD-ON-ACCOUNT-CREATION"
+
+# Secrets (set via wrangler secret put, never in repo):
+#   GOOGLE_CLIENT_ID, SESSION_SIGNING_KEY
+[vars]
+SERVER_VERSION = "23"
+ADMIN_EMAIL = "ubriga@gmail.com"
+ALLOWED_ORIGINS = "https://brigagame.workers.dev"
