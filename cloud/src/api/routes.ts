@@ -11,6 +11,7 @@ import { DAILY_BASE, DAILY_STREAK_STEP, DAILY_CAP, rankFor } from "../game/econo
 import { rankPayload } from "../game/ranks.js";
 import { addCoins } from "../game/finalize.js";
 import { d1, getControls } from "../util.js";
+import { limited } from "./ratelimit.js";
 import type { Env } from "../do/MatchRoom";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -181,6 +182,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/store" && method === "GET") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_store = await limited(env, request, "store", u);
+    if (rl_store) return rl_store;
     return json({ catalog: await effectiveCatalog(env),
       inventory: await inventoryOf(env, Number(u.id)), coins: u.coins });
   }
@@ -189,6 +192,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/store/buy" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_store = await limited(env, request, "store", u);
+    if (rl_store) return rl_store;
     if (u.suspended) {
       return json({ error: "blocked", error_he: "החשבון מושהה. פנה למנהל האתר." }, 403);
     }
@@ -247,6 +252,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/store/equip" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_mutation = await limited(env, request, "mutation", u);
+    if (rl_mutation) return rl_mutation;
     const body: any = await request.json().catch(() => ({}));
     const itemId = String(body.item_id ?? "");
     const uid = Number(u.id);
@@ -278,6 +285,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/expansions/build" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_store = await limited(env, request, "store", u);
+    if (rl_store) return rl_store;
     const uid = Number(u.id);
     const payload = await expansionPayload(env, uid);
     if (!payload.enabled) return json({ error: "disabled", error_he: "ההרחבה אינה זמינה כרגע." }, 400);
@@ -319,6 +328,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/coatings/build" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_store = await limited(env, request, "store", u);
+    if (rl_store) return rl_store;
     const uid = Number(u.id);
     const payload = await coatingPayload(env, uid);
     if (!payload.enabled) return json({ error: "disabled", error_he: "הבנייה אינה זמינה כרגע." }, 400);
@@ -361,6 +372,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/daily/claim" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_mutation = await limited(env, request, "mutation", u);
+    if (rl_mutation) return rl_mutation;
     const uid = Number(u.id);
     if (u.last_daily === today()) {
       return json({ error: "already_claimed", error_he: "כבר אספת היום. חזור מחר!" }, 400);
@@ -379,6 +392,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/coupons/redeem" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_mutation = await limited(env, request, "mutation", u);
+    if (rl_mutation) return rl_mutation;
     const body: any = await request.json().catch(() => ({}));
     const code = String(body.code ?? "").trim().toUpperCase();
     if (!code) return json({ error: "missing_code" }, 400);
@@ -447,6 +462,8 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/presence/ping" && method === "POST") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_state = await limited(env, request, "state", u);
+    if (rl_state) return rl_state;
     const uid = Number(u.id);
     await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
     const now = Date.now() / 1000;

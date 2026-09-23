@@ -3,6 +3,7 @@
  * validation ranges, messages, and audit behavior.
  */
 import { currentUser } from "../auth.js";
+import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
 import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
@@ -110,6 +111,8 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (!path.startsWith("/api/admin/")) return null;
   const u = await adminUser(env, request);
   if (u instanceof Response) return u;
+  const rl = await limited(env, request, "admin", u);
+  if (rl) return rl;
   const method = request.method;
   const db = env.DB;
 
