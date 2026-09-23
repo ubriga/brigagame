@@ -47,7 +47,7 @@ async function getMaintenance(env: Env): Promise<{ on: boolean; message: string 
   } catch { return { on: false, message: "" }; }
 }
 
-type Spec = [number | null, number | null, "bool" | "int" | "float"];
+type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty"];
 
 function controlSpecs(): Record<string, Record<string, Spec>> {
   const tierSpecs = (t: string): Record<string, Spec> => ({
@@ -74,7 +74,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
       email_code_enabled: [null, null, "bool"],
     },
-    bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"] },
+    bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
+      difficulty: [null, null, "difficulty"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
     premium_skins: { enabled: [null, null, "bool"], asset_budget_kb: [10, 500, "int"] },
     coatings: {
@@ -267,6 +268,9 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
           let value = incoming[key];
           if (kind === "bool") {
             if (typeof value !== "boolean") throw new Error("bad");
+          } else if (kind === "difficulty") {
+            value = String(value);
+            if (!["easy", "medium", "hard", "ultra", "expert"].includes(value)) throw new Error("bad");
           } else {
             value = kind === "int" ? Math.trunc(Number(value)) : Number(value);
             if (!Number.isFinite(value) || (lo != null && value < lo) || (hi != null && value > hi)) {

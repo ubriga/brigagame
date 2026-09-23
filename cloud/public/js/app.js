@@ -975,7 +975,10 @@ const App = {
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.popup_enabled" ${c.auth_flow.popup_enabled ? "checked" : ""} style="width:auto">כפתור גוגל (חלון קטן)</label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.redirect_enabled" ${c.auth_flow.redirect_enabled ? "checked" : ""} style="width:auto">כניסה עם חשבון גוגל (דף מלא)</label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.email_code_enabled" ${c.auth_flow.email_code_enabled ? "checked" : ""} style="width:auto">כניסה עם קוד למייל</label></div>
-        ${feature("bot_fallback", "🤖 הצעת מעבר למשחק נגד בוט", [["wait_seconds", "זמן המתנה לפני הצגת ההצעה (שניות)", 5, 300, 1]], "במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט (רמה בינונית, משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.")}
+        <div class="card"><h2>🤖 הצעת מעבר למשחק נגד בוט</h2><p class="sub">במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט. רמת הבוט = עוצמת הבוט במשחק הגיבוי (קל = משחק אימון בלי נקודות דירוג; בינוני ומעלה = משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.</p>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_fallback.enabled" ${c.bot_fallback.enabled ? "checked" : ""} style="width:auto">מופעל</label>
+          <label>זמן המתנה לפני הצגת ההצעה (שניות)</label><input type="number" min="5" max="300" step="1" value="${c.bot_fallback.wait_seconds}" data-control="bot_fallback.wait_seconds">
+          <label>רמת הבוט בגיבוי</label><select data-control="bot_fallback.difficulty">${[["easy", "קל (אימון)"], ["medium", "בינוני"], ["hard", "קשה"], ["ultra", "אולטרה קשה"], ["expert", "מומחה"]].map(([v, l]) => `<option value="${v}" ${c.bot_fallback.difficulty === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
         ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]], "תקציב משקל = הגודל המרבי (ב-KB) של קובץ סקין שמותר להעלות. גבוה יותר = קבצים כבדים יותר שנטענים לאט יותר.")}
         ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]], "מחיר = עלות במטבעות. זמן = משך הבנייה בדקות. הגנה = כמה HP הציפוי סופג לפני שהמגדל נפגע. מספר שלבים = כמה רמות ציפוי אפשר לבנות ברצף (עץ ← פח ← ברזל).")}
         ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]], "קוביות נוספות = כמה קוביות אפשר להוסיף למגדל מעל הבסיס. זמן בנייה = דקות לכל קובייה (עולה עם כל קובייה). מחיר = עלות כל קובייה במטבעות. חיים = HP שכל קובייה מוסיפה למגדל.")}
@@ -1004,7 +1007,8 @@ const App = {
         const updated = JSON.parse(JSON.stringify(c));
         body.querySelectorAll("[data-control]").forEach(input => {
           const [section, key] = input.dataset.control.split(".");
-          updated[section][key] = input.type === "checkbox" ? input.checked : Number(input.value);
+          updated[section][key] = input.type === "checkbox" ? input.checked
+            : (input.tagName === "SELECT" ? input.value : Number(input.value));
         });
         const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated }, { timeoutMs: 30000 });
         toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");

@@ -339,7 +339,9 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
       return json({ error: "unavailable", error_he: "המשחק כבר לא זמין." }, 409);
     }
     await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(mid).run();
-    const created = await createAiMatch(env, u, "medium");
+    const tier = ["easy", "medium", "hard", "ultra", "expert"].includes(String(fb.difficulty))
+      ? String(fb.difficulty) : "medium";
+    const created = await createAiMatch(env, u, tier);
     if (!created.ok)
       return json({ error: created.error, error_he: created.error_he }, created.status);
     return json({ match_id: created.match_id, status: "active", fallback: true });

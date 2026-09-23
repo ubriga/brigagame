@@ -2066,7 +2066,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
   },
   "bot_fallback": {
     "enabled": true,
-    "wait_seconds": 30
+    "wait_seconds": 30,
+    "difficulty": "medium"
   },
   "xp": {
     "human_win": 2.0,
