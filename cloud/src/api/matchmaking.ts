@@ -8,6 +8,7 @@ import { currentUser } from "../auth.js";
 import { d1, userMods } from "../util.js";
 import { newState } from "../game/game_logic.js";
 import { json } from "./routes.js";
+import { limited } from "./ratelimit.js";
 import type { Env } from "../do/MatchRoom";
 
 // config.py defaults (free tier has no task runner; API traffic carries the sweep)
@@ -169,6 +170,8 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
   if (path === "/api/matches/quick" && method === "POST") {
     const u = await currentUser(d1(env.DB), request);
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
     const blocked = blockedReason(u);
     if (blocked) return json({ error: "blocked", error_he: blocked }, 403);
     const uid = Number(u.id);
@@ -211,6 +214,8 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
   if (path === "/api/matches/friend" && method === "POST") {
     const u = await currentUser(d1(env.DB), request);
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
     const blocked = blockedReason(u);
     if (blocked) return json({ error: "blocked", error_he: blocked }, 403);
     const mid = newMatchId();
@@ -227,6 +232,8 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
   if (path === "/api/matches/join" && method === "POST") {
     const u = await currentUser(d1(env.DB), request);
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
     const blocked = blockedReason(u);
     if (blocked) return json({ error: "blocked", error_he: blocked }, 403);
     const body: any = await request.json().catch(() => ({}));
@@ -254,6 +261,8 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     const [, mid, action] = offerAction;
     const u = await currentUser(d1(env.DB), request);
     if (!u) return json({ error: "unauthorized" }, 401);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
     const uid = Number(u.id);
     const now = Date.now() / 1000;
 

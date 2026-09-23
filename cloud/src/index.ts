@@ -8,6 +8,7 @@ import { MatchRoom, type Env } from "./do/MatchRoom";
 import { newState } from "./game/game_logic.js";
 import { verifyGoogleCredential, getOrCreateUser, createSession, destroySession, currentUser, sha256Hex } from "./auth.js";
 import { handleApi } from "./api/routes.js";
+import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { handleAdminApi } from "./api/admin.js";
 import { d1, getControls, userMods } from "./util.js";
@@ -45,6 +46,8 @@ export default {
     const path = url.pathname;
 
     if (path === "/api/auth/google" && request.method === "POST") {
+      const rlAuth = await limited(env, request, "auth", null);
+      if (rlAuth) return rlAuth;
       const body: any = await request.json().catch(() => ({}));
       const credential = String(body.credential ?? "");
       try {
@@ -76,6 +79,8 @@ export default {
     if (path === "/api/matches/ai" && request.method === "POST") {
       const user = await currentUser(d1(env.DB), request);
       if (!user) return json({ error: "auth_required" }, 401);
+      const rlAi = await limited(env, request, "mutation", user);
+      if (rlAi) return rlAi;
       const body: any = await request.json().catch(() => ({}));
       const tier = String(body.tier ?? "medium");
       if (!(tier in BOT_PROFILE_KEYS)) return json({ error: "bad_tier" }, 400);

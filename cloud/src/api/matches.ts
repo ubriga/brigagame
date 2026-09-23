@@ -5,6 +5,7 @@
  */
 import { currentUser } from "../auth.js";
 import { handleMatchmaking, sweepStaleMatches } from "./matchmaking.js";
+import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
 import { towerHp, obstacleAt } from "../game/game_logic.js";
 import { rankFor } from "../game/economy.js";
@@ -127,6 +128,13 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
   const user = await currentUser(d1(env.DB), request);
   if (!user) return json({ error: "unauthorized" }, 401);
   const uid = Number(user.id);
+  // app.py limiter parity: state->state, fire->fire, ready/leave->mutation (move/shield unlimited there)
+  const rlBucket = action === "state" ? "state" : action === "fire" ? "fire"
+    : (action === "ready" || action === "leave") ? "mutation" : null;
+  if (rlBucket) {
+    const rl = await limited(env, request, rlBucket, user);
+    if (rl) return rl;
+  }
 
   // Authoritative live state comes from the DO; fall back to the D1
   // checkpoint when the DO has no in-memory copy (e.g. after eviction
