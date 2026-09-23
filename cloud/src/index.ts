@@ -48,14 +48,22 @@ export default {
         if (rlAuth) return rlAuth;
         const body: any = await request.json().catch(() => ({}));
         const credential = String(body.credential ?? "");
+        const audit = (result: string) => env.DB.prepare(
+          "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+          + " VALUES (NULL, 'google_auth_attempt', 'auth', '', ?, ?)")
+          .bind(JSON.stringify({ result }), new Date().toISOString()).run()
+          .catch(() => {});
         try {
           const id = await verifyGoogleCredential(credential, (env as any).GOOGLE_CLIENT_ID ?? "");
           const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
           const token = await createSession(d1(env.DB), Number(user.id));
+          await audit("ok");
           return json({ token, user });
         } catch (e) {
           // Diagnosable in Workers logs; response stays PA-shaped on purpose.
-          console.warn("google_auth_verify_fail", String((e as any)?.message ?? e));
+          const reason = String((e as any)?.message ?? e);
+          console.warn("google_auth_verify_fail", reason);
+          await audit("verify_fail:" + reason.slice(0, 80));
           return json({ error: "invalid_google_credential" }, 401);
         }
       } catch (e) {
