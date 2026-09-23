@@ -211,6 +211,8 @@ const App = {
       google.accounts.id.initialize({
         client_id: CONFIG.GOOGLE_CLIENT_ID,
         callback: async (resp) => {
+          try { navigator.sendBeacon(CONFIG.API_BASE + "/api/diag/gsi-callback",
+            JSON.stringify({ has_credential: !!resp.credential })); } catch (_) {}
           const { status, data } = await API.post("/api/auth/google",
             { credential: resp.credential });
           if (status === 200) {
