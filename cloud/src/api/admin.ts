@@ -74,6 +74,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
       email_code_enabled: [null, null, "bool"],
     },
+    bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
     premium_skins: { enabled: [null, null, "bool"], asset_budget_kb: [10, 500, "int"] },
     coatings: {
