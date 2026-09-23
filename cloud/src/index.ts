@@ -55,6 +55,145 @@ export default {
       return new Response(null, { status: 204 });
     }
 
+    // ---- Sign-in method toggles (public; admin-controlled) ----
+    if (path === "/api/auth/options" && request.method === "GET") {
+      const controls = await getControls(env);
+      const af = (controls as any).auth_flow ?? {};
+      return json({
+        popup: af.popup_enabled !== false,
+        redirect: af.redirect_enabled === true,
+        email_code: af.email_code_enabled === true,
+      });
+    }
+
+    // ---- Server-side OAuth redirect flow (no popup; works in webviews) ----
+    if (path === "/api/auth/google/start" && request.method === "GET") {
+      const controls = await getControls(env);
+      if ((controls as any).auth_flow?.redirect_enabled !== true)
+        return json({ error: "redirect_disabled", error_he: "דרך ההתחברות הזו כבויה כרגע." }, 403);
+      const state = crypto.randomUUID();
+      await env.DB.prepare("INSERT INTO oauth_states (state, created_at, expires_at) VALUES (?,?,?)")
+        .bind(state, new Date().toISOString(), Date.now() / 1000 + 600).run();
+      const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
+      const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+      auth.searchParams.set("client_id", (env as any).GOOGLE_CLIENT_ID ?? "");
+      auth.searchParams.set("redirect_uri", redirectUri);
+      auth.searchParams.set("response_type", "code");
+      auth.searchParams.set("scope", "openid email profile");
+      auth.searchParams.set("state", state);
+      auth.searchParams.set("prompt", "select_account");
+      return Response.redirect(auth.toString(), 302);
+    }
+
+    if (path === "/api/auth/google/callback" && request.method === "GET") {
+      const fail = (msg: string) =>
+        Response.redirect(url.origin + "/#/login?auth_error=" + encodeURIComponent(msg), 302);
+      try {
+        const controls = await getControls(env);
+        if ((controls as any).auth_flow?.redirect_enabled !== true)
+          return fail("דרך ההתחברות הזו כבויה כרגע.");
+        const state = String(url.searchParams.get("state") ?? "");
+        const code = String(url.searchParams.get("code") ?? "");
+        if (!state || !code) return fail("ההתחברות בוטלה או נכשלה. נסה שוב.");
+        const stRow: any = await env.DB.prepare(
+          "SELECT state FROM oauth_states WHERE state = ?").bind(state).first();
+        await env.DB.prepare("DELETE FROM oauth_states WHERE state = ? OR expires_at < ?")
+          .bind(state, Date.now() / 1000).run();
+        if (!stRow) return fail("פג תוקף ההתחברות. נסה שוב.");
+        const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
+        const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: (env as any).GOOGLE_CLIENT_ID ?? "",
+            client_secret: (env as any).GOOGLE_CLIENT_SECRET ?? "",
+            code, grant_type: "authorization_code", redirect_uri: redirectUri,
+          }).toString(),
+        });
+        const tokenData: any = await tokenRes.json().catch(() => ({}));
+        const idToken = String(tokenData.id_token ?? "");
+        if (!idToken) {
+          console.warn("oauth_exchange_fail", tokenRes.status, JSON.stringify(tokenData).slice(0, 200));
+          return fail("ההתחברות לגוגל נכשלה. נסה שוב.");
+        }
+        const id = await verifyGoogleCredential(idToken, (env as any).GOOGLE_CLIENT_ID ?? "");
+        const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
+        const token = await createSession(d1(env.DB), Number(user.id));
+        await env.DB.prepare(
+          "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+          + " VALUES (?, 'google_auth_attempt', 'auth', '', ?, ?)")
+          .bind(Number(user.id), JSON.stringify({ result: "ok", via: "redirect" }), new Date().toISOString()).run()
+          .catch(() => {});
+        return Response.redirect(url.origin + "/#/auth?token=" + encodeURIComponent(token), 302);
+      } catch (e) {
+        console.error("oauth_callback_fail", String((e as any)?.message ?? e));
+        return fail("שירות ההתחברות לא זמין כרגע. נסה שוב בעוד רגע.");
+      }
+    }
+
+    // ---- Email-code fallback sign-in ----
+    if (path === "/api/auth/email/start" && request.method === "POST") {
+      const controls = await getControls(env);
+      if ((controls as any).auth_flow?.email_code_enabled !== true)
+        return json({ error: "email_code_disabled", error_he: "כניסה עם קוד למייל כבויה כרגע." }, 403);
+      const rlE = await limited(env, request, "auth", null);
+      if (rlE) return rlE;
+      const body: any = await request.json().catch(() => ({}));
+      const email = String(body.email ?? "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        return json({ error: "bad_email", error_he: "כתובת המייל לא תקינה." }, 400);
+      const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+      const codeHash = await sha256Hex(code + ":" + email);
+      await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
+      await env.DB.prepare(
+        "INSERT INTO auth_codes (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,0,?)")
+        .bind(email, codeHash, Date.now() / 1000 + 600, new Date().toISOString()).run();
+      const resendKey = (env as any).RESEND_API_KEY ?? "";
+      if (!resendKey) {
+        console.warn("email_code_no_provider");
+        return json({ error: "email_unavailable",
+          error_he: "שליחת המייל לא מוגדרת עדיין. נסה דרך התחברות אחרת." }, 503);
+      }
+      const send = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + resendKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "Brigagame 2.0 <onboarding@resend.dev>",
+          to: [email],
+          subject: "קוד הכניסה שלך ל-Brigagame",
+          text: "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.",
+        }),
+      });
+      if (!send.ok) {
+        console.error("email_send_fail", send.status, (await send.text()).slice(0, 200));
+        return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
+      }
+      return json({ ok: true });
+    }
+
+    if (path === "/api/auth/email/verify" && request.method === "POST") {
+      const controls = await getControls(env);
+      if ((controls as any).auth_flow?.email_code_enabled !== true)
+        return json({ error: "email_code_disabled", error_he: "כניסה עם קוד למייל כבויה כרגע." }, 403);
+      const rlV = await limited(env, request, "auth", null);
+      if (rlV) return rlV;
+      const body: any = await request.json().catch(() => ({}));
+      const email = String(body.email ?? "").trim().toLowerCase();
+      const code = String(body.code ?? "").trim();
+      const row: any = await env.DB.prepare("SELECT * FROM auth_codes WHERE email = ?").bind(email).first();
+      if (!row || Number(row.expires_at) < Date.now() / 1000)
+        return json({ error: "code_expired", error_he: "הקוד פג תוקף. שלח קוד חדש." }, 401);
+      if (Number(row.attempts) >= 5)
+        return json({ error: "too_many_attempts", error_he: "יותר מדי ניסיונות. שלח קוד חדש." }, 429);
+      const ok = (await sha256Hex(code + ":" + email)) === String(row.code_hash);
+      await env.DB.prepare("UPDATE auth_codes SET attempts = attempts + 1 WHERE email = ?").bind(email).run();
+      if (!ok) return json({ error: "bad_code", error_he: "הקוד שגוי. נסה שוב." }, 401);
+      await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
+      const user = await getOrCreateUser(d1(env.DB), email, email.split("@")[0], "");
+      const token = await createSession(d1(env.DB), Number(user.id));
+      return json({ token, user });
+    }
+
     if (path === "/api/auth/google" && request.method === "POST") {
       try {
         const rlAuth = await limited(env, request, "auth", null);

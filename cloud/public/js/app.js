@@ -161,6 +161,19 @@ const App = {
     view.innerHTML = `<div class="route-loading" role="status">${Lang.current === "en" ? "Loading…" : "טוען…"}</div>`;
     document.querySelectorAll("#topbar nav a").forEach(a =>
       a.classList.toggle("active", hash.startsWith("#/" + a.dataset.nav)));
+    if (hash.startsWith("#/auth")) {
+      const t = new URLSearchParams((hash.split("?")[1] || "")).get("token");
+      if (t) {
+        API.setToken(t, localStorage.getItem("bg_remember") !== "0");
+        (async () => {
+          const me = await API.get("/api/me");
+          if (me.status === 200) App.setMe(me.data);
+          App.startPulse(); Sfx.ensure(); Sfx.startMusic();
+          location.hash = "#/lobby";
+        })();
+      } else location.hash = "#/login";
+      return;
+    }
     if (!API.token && !hash.startsWith("#/login")) { location.hash = "#/login"; return; }
     if (hash.startsWith("#/game/")) this.vGame(view, hash.split("/")[2], seq);
     else if (hash.startsWith("#/store")) this.vStore(view, seq);
@@ -175,19 +188,45 @@ const App = {
   // ---------------- login ----------------
   vLogin(view) {
     document.getElementById("topbar").classList.add("hidden");
+    const incomingError = new URLSearchParams((location.hash.split("?")[1] || "")).get("auth_error") || "";
     view.innerHTML = `
       <div id="login-wrap">
         <div class="logo">🎯</div>
         <h1>Brigagame <span style="color:var(--accent)">2.0</span></h1>
         <p class="sub">by OrelAI · משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!</p>
         <div class="card">
-          <div class="gsi-wrap"><div id="gsi-btn"></div></div>
+          <div id="login-error" class="hidden" style="background:rgba(255,80,80,.12);border:1px solid rgba(255,80,80,.45);border-radius:10px;padding:10px;margin-bottom:12px;text-align:center">
+            <div id="login-error-text" style="font-size:14px"></div>
+            <button class="btn" id="login-retry" style="margin-top:8px;padding:12px 22px;font-size:16px">🔄 נסה שוב</button>
+            <div id="login-report" class="hidden" style="margin-top:8px;font-size:13px">
+              עדיין לא עובד? <a href="mailto:ubriga@gmail.com?subject=בעיית%20התחברות%20Brigagame">דווח לנו</a>
+            </div>
+          </div>
+          <div id="login-spin" class="hidden" style="text-align:center;padding:6px">
+            <div class="spinner"></div><div class="sub" style="margin-top:6px">מתחבר…</div>
+          </div>
+          <div id="login-methods">
+            <div class="gsi-wrap" id="gsi-wrap"><div id="gsi-btn"></div></div>
+            <button class="btn hidden" id="redirect-btn" style="width:100%;margin-top:8px">🟢 כניסה עם חשבון גוגל</button>
+            <div id="email-block" class="hidden" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.12);padding-top:12px">
+              <div class="sub" style="font-size:13px;margin-bottom:6px">או כניסה עם קוד למייל:</div>
+              <div id="email-step1">
+                <input id="email-input" type="email" placeholder="המייל שלך" dir="ltr" style="text-align:left">
+                <button class="btn secondary" id="email-send" style="width:100%;margin-top:6px">שלח לי קוד כניסה</button>
+              </div>
+              <div id="email-step2" class="hidden">
+                <input id="code-input" inputmode="numeric" maxlength="6" placeholder="קוד בן 6 ספרות" dir="ltr" style="text-align:center;letter-spacing:6px">
+                <button class="btn" id="email-verify" style="width:100%;margin-top:6px">כניסה</button>
+                <button class="btn secondary" id="email-back" style="width:100%;margin-top:6px;font-size:13px;padding:8px">חזרה</button>
+              </div>
+            </div>
+          </div>
           <label style="display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 4px;font-size:14px;cursor:pointer">
             <input type="checkbox" id="remember-me" checked
               style="width:auto;padding:0;margin:0;accent-color:var(--accent)">
             <span>זכור אותי</span>
           </label>
-          <p class="sub" style="font-size:13px">התחברות עם חשבון גוגל בלבד.
+          <p class="sub" style="font-size:13px">
             בהתחברות אתה מאשר את <a href="terms.html">תנאי השימוש</a>
             ו<a href="privacy.html">מדיניות הפרטיות</a>.</p>
         </div>
@@ -197,12 +236,85 @@ const App = {
           <button class="btn secondary" style="margin-top:8px" id="dev-btn">כניסה</button>
         </div>
       </div>`;
+    const rememberEl = document.getElementById("remember-me");
+    rememberEl.checked = localStorage.getItem("bg_remember") !== "0";
+    rememberEl.onchange = () => localStorage.setItem("bg_remember", rememberEl.checked ? "1" : "0");
+    let failCount = Number(sessionStorage.getItem("bg_login_fails") || 0);
+    let lastMethod = "";
+    const errBox = document.getElementById("login-error");
+    const setSpin = (on) => {
+      document.getElementById("login-spin").classList.toggle("hidden", !on);
+      const m = document.getElementById("login-methods");
+      m.style.opacity = on ? "0.35" : "1";
+      m.style.pointerEvents = on ? "none" : "auto";
+    };
+    const showError = (msg) => {
+      failCount += 1; sessionStorage.setItem("bg_login_fails", String(failCount));
+      document.getElementById("login-error-text").textContent = msg;
+      errBox.classList.remove("hidden");
+      document.getElementById("login-report").classList.toggle("hidden", failCount < 2);
+      setSpin(false);
+    };
+    const clearError = () => errBox.classList.add("hidden");
+    const finishLogin = async (data) => {
+      API.setToken(data.token, rememberEl.checked);
+      sessionStorage.setItem("bg_login_fails", "0");
+      const me = await API.get("/api/me");
+      if (me.status === 200) App.setMe(me.data);
+      App.startPulse();
+      Sfx.ensure(); Sfx.startMusic();
+      location.hash = "#/lobby";
+    };
+    const redirectStart = () => {
+      clearError(); lastMethod = "redirect";
+      location.href = CONFIG.API_BASE + "/api/auth/google/start";
+    };
+    document.getElementById("login-retry").onclick = () => {
+      if (lastMethod === "redirect") return redirectStart();
+      if (lastMethod === "email") return document.getElementById("email-send").click();
+      clearError();
+    };
+    if (incomingError) showError(incomingError);
+    API.get("/api/auth/options").then(({ status, data }) => {
+      if (status !== 200 || !data) return;
+      if (!data.popup) document.getElementById("gsi-wrap").classList.add("hidden");
+      if (data.redirect) {
+        const b = document.getElementById("redirect-btn");
+        b.classList.remove("hidden"); b.onclick = redirectStart;
+      }
+      if (data.email_code) document.getElementById("email-block").classList.remove("hidden");
+    });
+    document.getElementById("email-send").onclick = async () => {
+      const email = document.getElementById("email-input").value.trim();
+      if (!email) return;
+      lastMethod = "email"; clearError(); setSpin(true);
+      const { status, data } = await API.post("/api/auth/email/start", { email });
+      if (status === 200) {
+        setSpin(false);
+        document.getElementById("email-step1").classList.add("hidden");
+        document.getElementById("email-step2").classList.remove("hidden");
+        toast("נשלח קוד למייל - בדוק גם בספאם");
+      } else showError((data && data.error_he) || "שליחת הקוד נכשלה. נסה שוב.");
+    };
+    document.getElementById("email-verify").onclick = async () => {
+      const code = document.getElementById("code-input").value.trim();
+      if (code.length !== 6) return;
+      lastMethod = "email"; clearError(); setSpin(true);
+      const { status, data } = await API.post("/api/auth/email/verify",
+        { email: document.getElementById("email-input").value.trim(), code });
+      if (status === 200) finishLogin(data);
+      else showError((data && data.error_he) || "הקוד שגוי. נסה שוב.");
+    };
+    document.getElementById("email-back").onclick = () => {
+      document.getElementById("email-step2").classList.add("hidden");
+      document.getElementById("email-step1").classList.remove("hidden");
+    };
     if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       document.getElementById("dev-login").classList.remove("hidden");
       document.getElementById("dev-btn").onclick = async () => {
         const email = document.getElementById("dev-email").value.trim();
         const { status, data } = await API.post("/api/auth/dev", { email });
-        if (status === 200) { API.setToken(data.token, document.getElementById("remember-me").checked); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
+        if (status === 200) { API.setToken(data.token, rememberEl.checked); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
         else toast(data.error_he || "כניסת פיתוח כבויה");
       };
     }
@@ -213,16 +325,22 @@ const App = {
         callback: async (resp) => {
           try { navigator.sendBeacon(CONFIG.API_BASE + "/api/diag/gsi-callback",
             JSON.stringify({ has_credential: !!resp.credential })); } catch (_) {}
-          const { status, data } = await API.post("/api/auth/google",
+          lastMethod = "popup"; clearError(); setSpin(true);
+          let { status, data } = await API.post("/api/auth/google",
             { credential: resp.credential });
-          if (status === 200) {
-            API.setToken(data.token, document.getElementById("remember-me").checked);
-            const me = await API.get("/api/me");
-            if (me.status === 200) App.setMe(me.data);
-            App.startPulse();
-            Sfx.ensure(); Sfx.startMusic();
-            location.hash = "#/lobby";
-          } else toast(data.error_he || data.detail || "ההתחברות נכשלה");
+          if (status === 0 || status === 503) {
+            await new Promise((r) => setTimeout(r, 3000));
+            ({ status, data } = await API.post("/api/auth/google",
+              { credential: resp.credential }));
+          }
+          if (status === 200) finishLogin(data);
+          else {
+            const msg = status === 401 ? "ההתחברות לגוגל נכשלה. נסה שוב."
+              : status === 429 ? ((data && data.error_he) || "יותר מדי בקשות. נסה שוב בעוד דקה.")
+              : (status === 0 || status === 503) ? "אין חיבור לשרת כרגע. נסה שוב בעוד רגע."
+              : ((data && (data.error_he || data.detail)) || "ההתחברות נכשלה. נסה שוב.");
+            showError(msg);
+          }
         },
       });
       google.accounts.id.renderButton(document.getElementById("gsi-btn"),
@@ -815,6 +933,10 @@ const App = {
           <label>בונוס ניצחון מול שחקן</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.human_win}" data-control="xp.human_win">
           <label>בונוס ניצחון מול מחשב</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.bot_win}" data-control="xp.bot_win">
           <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
+        <div class="card"><h2>🔐 דרכי התחברות</h2><p class="sub">שליטה בדרכי ההתחברות שמוצגות בשער הכניסה. כפתור גוגל = החלון הקטן של גוגל. כניסה עם חשבון גוגל = כניסה דרך דף גוגל הרגיל (עובדת גם בדפדפנים שחוסמים חלונות). קוד למייל = כניסה בלי גוגל בכלל, עם קוד שנשלח למייל (דורש חיבור שירות מייל בשרת).</p>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.popup_enabled" ${c.auth_flow.popup_enabled ? "checked" : ""} style="width:auto">כפתור גוגל (חלון קטן)</label>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.redirect_enabled" ${c.auth_flow.redirect_enabled ? "checked" : ""} style="width:auto">כניסה עם חשבון גוגל (דף מלא)</label>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.email_code_enabled" ${c.auth_flow.email_code_enabled ? "checked" : ""} style="width:auto">כניסה עם קוד למייל</label></div>
         ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]], "תקציב משקל = הגודל המרבי (ב-KB) של קובץ סקין שמותר להעלות. גבוה יותר = קבצים כבדים יותר שנטענים לאט יותר.")}
         ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]], "מחיר = עלות במטבעות. זמן = משך הבנייה בדקות. הגנה = כמה HP הציפוי סופג לפני שהמגדל נפגע. מספר שלבים = כמה רמות ציפוי אפשר לבנות ברצף (עץ ← פח ← ברזל).")}
         ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]], "קוביות נוספות = כמה קוביות אפשר להוסיף למגדל מעל הבסיס. זמן בנייה = דקות לכל קובייה (עולה עם כל קובייה). מחיר = עלות כל קובייה במטבעות. חיים = HP שכל קובייה מוסיפה למגדל.")}

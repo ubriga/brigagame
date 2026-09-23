@@ -2059,6 +2059,11 @@ export const COATING_NAMES: Record<string, string> = {
 };
 
 export const DEFAULT_GAMEPLAY_CONTROLS = {
+  "auth_flow": {
+    "popup_enabled": true,
+    "redirect_enabled": true,
+    "email_code_enabled": true
+  },
   "xp": {
     "human_win": 2.0,
     "bot_win": 1.0,
