@@ -42,6 +42,19 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Diagnostic: the frontend beacons here the moment the Google callback
+    // fires, so a broken popup return-leg is distinguishable from a failed POST.
+    if (path === "/api/diag/gsi-callback" && request.method === "POST") {
+      try {
+        const body = await request.text().catch(() => "");
+        await env.DB.prepare(
+          "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+          + " VALUES (NULL, 'gsi_callback_seen', 'auth', '', ?, ?)")
+          .bind(JSON.stringify({ body: body.slice(0, 120) }), new Date().toISOString()).run();
+      } catch (_) {}
+      return new Response(null, { status: 204 });
+    }
+
     if (path === "/api/auth/google" && request.method === "POST") {
       try {
         const rlAuth = await limited(env, request, "auth", null);
