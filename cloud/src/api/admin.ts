@@ -47,7 +47,7 @@ async function getMaintenance(env: Env): Promise<{ on: boolean; message: string 
   } catch { return { on: false, message: "" }; }
 }
 
-type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "email_provider"];
+type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "email_provider" | "secret_str"];
 
 function controlSpecs(): Record<string, Record<string, Spec>> {
   const tierSpecs = (t: string): Record<string, Spec> => ({
@@ -73,6 +73,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     auth_flow: {
       popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
       email_code_enabled: [null, null, "bool"], email_provider: [null, null, "email_provider"],
+      inboxlv_pass: [null, null, "secret_str"],
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
       difficulty: [null, null, "difficulty"] },
@@ -238,7 +239,11 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
 
   // GET|POST /api/admin/gameplay-controls
   if (path === "/api/admin/gameplay-controls" && method === "GET") {
-    return json({ controls: await getControls(env) });
+    const controls: any = await getControls(env);
+    const af = controls.auth_flow ?? {};
+    af.inboxlv_pass_set = Boolean(String(af.inboxlv_pass ?? ""));
+    af.inboxlv_pass = "";
+    return json({ controls });
   }
   if (path === "/api/admin/gameplay-controls" && method === "POST") {
     const body: any = await request.json().catch(() => ({}));
@@ -274,6 +279,9 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
           } else if (kind === "email_provider") {
             value = String(value);
             if (!["resend", "inboxlv"].includes(value)) throw new Error("bad");
+          } else if (kind === "secret_str") {
+            value = String(value ?? "").trim();
+            if (!value) continue; // never overwrite a stored secret with empty
           } else {
             value = kind === "int" ? Math.trunc(Number(value)) : Number(value);
             if (!Number.isFinite(value) || (lo != null && value < lo) || (hi != null && value > hi)) {

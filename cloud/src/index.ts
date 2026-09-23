@@ -46,10 +46,12 @@ export default {
     if (path === "/api/auth/options" && request.method === "GET") {
       const controls = await getControls(env);
       const af = (controls as any).auth_flow ?? {};
+      const provider = String(af.email_provider ?? "resend");
       return json({
         popup: af.popup_enabled !== false,
         redirect: af.redirect_enabled === true,
         email_code: af.email_code_enabled === true,
+        email_from: provider === "inboxlv" ? "brigagame.game@inbox.lv" : "onboarding@resend.dev",
       });
     }
 
@@ -137,8 +139,9 @@ export default {
         .bind(email, codeHash, Date.now() / 1000 + 600, new Date().toISOString()).run();
       const provider = String((controls as any).auth_flow?.email_provider ?? "resend");
       if (provider === "inboxlv") {
-        const smtpUser = String((env as any).INBOXLV_USER ?? "");
-        const smtpPass = String((env as any).INBOXLV_PASS ?? "");
+        const smtpUser = String((env as any).INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
+        const smtpPass = String((env as any).INBOXLV_PASS ?? "")
+          || String((controls as any).auth_flow?.inboxlv_pass ?? "");
         if (!smtpUser || !smtpPass) {
           console.warn("email_code_no_inboxlv_secret");
           return json({ error: "email_unavailable",
@@ -151,6 +154,9 @@ export default {
         });
         if (!sent.ok) {
           console.error("smtp_send_fail", sent.error);
+          if (/limit|too many|quota|exceed|rate/i.test(String(sent.error ?? "")))
+            return json({ error: "email_limit",
+              error_he: "הגענו זמנית למגבלת השליחה של שירות המייל. נסו שוב בעוד כשעה, או התחברו עם גוגל." }, 429);
           return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
         }
         return json({ ok: true });

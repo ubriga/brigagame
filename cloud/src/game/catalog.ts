@@ -2063,7 +2063,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "popup_enabled": true,
     "redirect_enabled": true,
     "email_code_enabled": true,
-    "email_provider": "resend"
+    "email_provider": "resend",
+    "inboxlv_pass": ""
   },
   "bot_fallback": {
     "enabled": true,
