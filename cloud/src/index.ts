@@ -5,12 +5,12 @@
  * backend; the PythonAnywhere game stays untouched until cutover.
  */
 import { MatchRoom, type Env } from "./do/MatchRoom";
-import { newState, type PlayerMods } from "./game/game_logic.js";
+import { newState } from "./game/game_logic.js";
 import { verifyGoogleCredential, getOrCreateUser, createSession, destroySession, currentUser, sha256Hex } from "./auth.js";
 import { handleApi } from "./api/routes.js";
 import { handleMatchApi } from "./api/matches.js";
 import { handleAdminApi } from "./api/admin.js";
-import { d1, getControls } from "./util.js";
+import { d1, getControls, userMods } from "./util.js";
 
 export { MatchRoom };
 
@@ -25,26 +25,6 @@ function matchId(): string {
 }
 
 
-
-async function playerMods(env: Env, userId: number): Promise<PlayerMods> {
-  const items = await env.DB.prepare(
-    "SELECT item_id, level, equipped FROM user_items WHERE user_id = ?").bind(userId).all();
-  const armor = items.results.find((r: any) => r.item_id === "armor")?.level ?? 0;
-  const hp = items.results.find((r: any) => r.item_id === "reinforced_hp")?.level ?? 0;
-  const skin = items.results.find((r: any) => String(r.item_id).startsWith("skin_") && r.equipped)?.item_id ?? null;
-  const coating = await env.DB.prepare(
-    "SELECT material, hp FROM user_coatings WHERE user_id = ?").bind(userId).first();
-  const expansion = await env.DB.prepare(
-    "SELECT extra_cubes FROM user_expansions WHERE user_id = ?").bind(userId).first();
-  const controls = await getControls(env);
-  return {
-    armor: Number(armor), hp: Number(hp), skin: skin as string | null,
-    coating: coating ? { material: coating.material, hp: Number(coating.hp), max_hp: Number(coating.hp) } : null,
-    extra_cubes: Number((expansion as any)?.extra_cubes ?? 0),
-    expansion_cube_hp: Number((controls as any).tower_expansion.cube_hp),
-    dynamic_obstacle: (controls as any).dynamic_obstacle,
-  } as PlayerMods;
-}
 
 const BOT_PROFILE_KEYS: Record<string, string> = {
   easy: "easy", medium: "medium", hard: "hard", ultra: "ultra", expert: "expert",
@@ -100,7 +80,7 @@ export default {
       const tier = String(body.tier ?? "medium");
       if (!(tier in BOT_PROFILE_KEYS)) return json({ error: "bad_tier" }, 400);
       const controls = await getControls(env);
-      const mods = await playerMods(env, Number((user as any).id));
+      const mods = await userMods(env, Number((user as any).id));
       const id = matchId();
       const state = newState(mods, { armor: 0, hp: 0, skin: null });
       state.ai_profile = botProfile(controls, tier);
