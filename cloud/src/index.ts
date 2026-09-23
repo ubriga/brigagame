@@ -10,6 +10,7 @@ import { handleApi } from "./api/routes.js";
 import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
+import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
 import { d1, getControls } from "./util.js";
 
@@ -134,6 +135,26 @@ export default {
       await env.DB.prepare(
         "INSERT INTO auth_codes (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,0,?)")
         .bind(email, codeHash, Date.now() / 1000 + 600, new Date().toISOString()).run();
+      const provider = String((controls as any).auth_flow?.email_provider ?? "resend");
+      if (provider === "inboxlv") {
+        const smtpUser = String((env as any).INBOXLV_USER ?? "");
+        const smtpPass = String((env as any).INBOXLV_PASS ?? "");
+        if (!smtpUser || !smtpPass) {
+          console.warn("email_code_no_inboxlv_secret");
+          return json({ error: "email_unavailable",
+            error_he: "שליחת המייל לא מוגדרת עדיין. נסה דרך התחברות אחרת." }, 503);
+        }
+        const sent = await sendSmtpMail({
+          host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
+          from: smtpUser, to: email, subject: "קוד הכניסה שלך ל-Brigagame",
+          text: "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.",
+        });
+        if (!sent.ok) {
+          console.error("smtp_send_fail", sent.error);
+          return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
+        }
+        return json({ ok: true });
+      }
       const resendKey = (env as any).RESEND_API_KEY ?? "";
       if (!resendKey) {
         console.warn("email_code_no_provider");
