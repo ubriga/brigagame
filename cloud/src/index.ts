@@ -43,17 +43,27 @@ export default {
     const path = url.pathname;
 
     if (path === "/api/auth/google" && request.method === "POST") {
-      const rlAuth = await limited(env, request, "auth", null);
-      if (rlAuth) return rlAuth;
-      const body: any = await request.json().catch(() => ({}));
-      const credential = String(body.credential ?? "");
       try {
-        const id = await verifyGoogleCredential(credential, (env as any).GOOGLE_CLIENT_ID ?? "");
-        const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
-        const token = await createSession(d1(env.DB), Number(user.id));
-        return json({ token, user });
+        const rlAuth = await limited(env, request, "auth", null);
+        if (rlAuth) return rlAuth;
+        const body: any = await request.json().catch(() => ({}));
+        const credential = String(body.credential ?? "");
+        try {
+          const id = await verifyGoogleCredential(credential, (env as any).GOOGLE_CLIENT_ID ?? "");
+          const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
+          const token = await createSession(d1(env.DB), Number(user.id));
+          return json({ token, user });
+        } catch (e) {
+          // Diagnosable in Workers logs; response stays PA-shaped on purpose.
+          console.warn("google_auth_verify_fail", String((e as any)?.message ?? e));
+          return json({ error: "invalid_google_credential" }, 401);
+        }
       } catch (e) {
-        return json({ error: "invalid_google_credential" }, 401);
+        // Infra failure (D1 down, limiter throw): honest 503 instead of an
+        // opaque 1101, so the client can tell "try again" from "bad login".
+        console.error("google_auth_infra_fail", String((e as any)?.message ?? e));
+        return json({ error: "auth_unavailable",
+          error_he: "שירות ההתחברות לא זמין כרגע. נסה שוב בעוד רגע." }, 503);
       }
     }
     if (path === "/api/auth/logout" && request.method === "POST") {
