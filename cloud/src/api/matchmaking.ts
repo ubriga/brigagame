@@ -19,7 +19,7 @@ const ACTIVE_MATCH_STALE_SECONDS = 5 * 60;
 const WAITING_MATCH_STALE_SECONDS = 5 * 60;
 const STALE_SWEEP_INTERVAL_SECONDS = 60;
 
-const nowIso = () => new Date().toISOString();
+export const nowIso = () => new Date().toISOString();
 const newMatchId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 12);
 const FRIEND_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -109,7 +109,7 @@ export async function sweepStaleMatches(env: Env): Promise<void> {
 }
 
 /** Offer a waiting quick match to a random present player (app.py parity). */
-async function offerToPresentPlayer(env: Env, matchId: string, ownerId: number): Promise<boolean> {
+export async function offerToPresentPlayer(env: Env, matchId: string, ownerId: number): Promise<boolean> {
   const now = Date.now() / 1000;
   await sweepExpiredOffers(env);
   const live = await env.DB.prepare(
