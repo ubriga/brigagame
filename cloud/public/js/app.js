@@ -219,6 +219,8 @@ const App = {
                 <button class="btn" id="email-verify" style="width:100%;margin-top:6px">כניסה</button>
                 <button class="btn secondary" id="email-back" style="width:100%;margin-top:6px;font-size:13px;padding:8px">חזרה</button>
               </div>
+              <div class="sub" id="email-from-note" style="font-size:12px;margin-top:8px;line-height:1.5"></div>
+              </div>
             </div>
           </div>
           <label style="display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 4px;font-size:14px;cursor:pointer">
@@ -283,6 +285,9 @@ const App = {
         b.classList.remove("hidden"); b.onclick = redirectStart;
       }
       if (data.email_code) document.getElementById("email-block").classList.remove("hidden");
+      if (data.email_code && data.email_from)
+        document.getElementById("email-from-note").innerHTML =
+          'הקוד יגיע מ-<b dir="ltr">' + data.email_from + '</b><br>לא מוצאים? בדקו גם בתיקיית הספאם.';
     });
     document.getElementById("email-send").onclick = async () => {
       const email = document.getElementById("email-input").value.trim();
@@ -975,7 +980,9 @@ const App = {
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.popup_enabled" ${c.auth_flow.popup_enabled ? "checked" : ""} style="width:auto">כפתור גוגל (חלון קטן)</label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.redirect_enabled" ${c.auth_flow.redirect_enabled ? "checked" : ""} style="width:auto">כניסה עם חשבון גוגל (דף מלא)</label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.email_code_enabled" ${c.auth_flow.email_code_enabled ? "checked" : ""} style="width:auto">כניסה עם קוד למייל</label>
-          <label>שירות המייל לשליחת קודים</label><select data-control="auth_flow.email_provider">${[["inboxlv", "inbox.lv (חינם, עד כ-15 מיילים לשעה)"], ["resend", "Resend (דורש דומיין משלנו - כרגע לא פעיל)"]].map(([v, l]) => `<option value="${v}" ${c.auth_flow.email_provider === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+          <label>שירות המייל לשליחת קודים</label><select data-control="auth_flow.email_provider">${[["inboxlv", "inbox.lv (חינם, עד כ-15 מיילים לשעה)"], ["resend", "Resend (דורש דומיין משלנו - כרגע לא פעיל)"]].map(([v, l]) => `<option value="${v}" ${c.auth_flow.email_provider === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+          <label>סיסמת תוכנת דואר של inbox.lv</label><input type="password" data-control="auth_flow.inboxlv_pass" value="" placeholder="${c.auth_flow.inboxlv_pass_set ? "שמורה - הזן חדשה רק להחלפה" : "לא הוגדרה"}" autocomplete="off">
+          <div class="sub" style="font-size:12px">נמצאת בתיבת inbox.lv: הגדרות ← POP3/IMAP ← הפעלת גישה ← סיסמת תוכנת דואר. ריק = משאיר את הקיימת.</div></div>
         <div class="card"><h2>🤖 הצעת מעבר למשחק נגד בוט</h2><p class="sub">במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט. רמת הבוט = עוצמת הבוט במשחק הגיבוי (קל = משחק אימון בלי נקודות דירוג; בינוני ומעלה = משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.</p>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_fallback.enabled" ${c.bot_fallback.enabled ? "checked" : ""} style="width:auto">מופעל</label>
           <label>זמן המתנה לפני הצגת ההצעה (שניות)</label><input type="number" min="5" max="300" step="1" value="${c.bot_fallback.wait_seconds}" data-control="bot_fallback.wait_seconds">
@@ -1009,7 +1016,8 @@ const App = {
         body.querySelectorAll("[data-control]").forEach(input => {
           const [section, key] = input.dataset.control.split(".");
           updated[section][key] = input.type === "checkbox" ? input.checked
-            : (input.tagName === "SELECT" ? input.value : Number(input.value));
+            : (input.tagName === "SELECT" ? input.value
+            : (input.type === "password" ? input.value : Number(input.value)));
         });
         const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated }, { timeoutMs: 30000 });
         toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");
