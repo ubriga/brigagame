@@ -371,3 +371,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .bot-tier-controls { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: rgba(255,255,255,.025); }
 .bot-tier-controls h3 { margin-top: 0; }
 .bot-tier-controls label { display: block; margin-top: 8px; }
+
+.spinner{width:26px;height:26px;border:3px solid rgba(255,255,255,.25);border-top-color:var(--accent);border-radius:50%;margin:0 auto;animation:bg-spin .8s linear infinite}
+@keyframes bg-spin{to{transform:rotate(360deg)}}

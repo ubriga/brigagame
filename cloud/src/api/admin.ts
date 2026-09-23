@@ -70,6 +70,10 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     [`${t}_aggression`]: [0, 1, "float"],
   });
   return {
+    auth_flow: {
+      popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
+      email_code_enabled: [null, null, "bool"],
+    },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
     premium_skins: { enabled: [null, null, "bool"], asset_budget_kb: [10, 500, "int"] },
     coatings: {
