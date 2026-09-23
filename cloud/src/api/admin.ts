@@ -47,7 +47,7 @@ async function getMaintenance(env: Env): Promise<{ on: boolean; message: string 
   } catch { return { on: false, message: "" }; }
 }
 
-type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty"];
+type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "email_provider"];
 
 function controlSpecs(): Record<string, Record<string, Spec>> {
   const tierSpecs = (t: string): Record<string, Spec> => ({
@@ -72,7 +72,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
   return {
     auth_flow: {
       popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
-      email_code_enabled: [null, null, "bool"],
+      email_code_enabled: [null, null, "bool"], email_provider: [null, null, "email_provider"],
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
       difficulty: [null, null, "difficulty"] },
@@ -271,6 +271,9 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
           } else if (kind === "difficulty") {
             value = String(value);
             if (!["easy", "medium", "hard", "ultra", "expert"].includes(value)) throw new Error("bad");
+          } else if (kind === "email_provider") {
+            value = String(value);
+            if (!["resend", "inboxlv"].includes(value)) throw new Error("bad");
           } else {
             value = kind === "int" ? Math.trunc(Number(value)) : Number(value);
             if (!Number.isFinite(value) || (lo != null && value < lo) || (hi != null && value > hi)) {
