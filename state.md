@@ -107,3 +107,7 @@ User cancelled everything at 20:14. Stopped mid-א1-build.
 - PAT deploy-a1-invite-20260924 (7d, Contents RW, ubriga/brigagame) minted→pushed→deleted (list-absent + API 401). Sudo OTP via Gmail (same code user relayed via parent).
 - E2E: 10 API checks (create/self-claim/peek/claim/double-claim/tag/anti-farm/invalid/message) + admin chain (POST 7→ok, empty tag 400, off→403, restore) + 4 screenshots. QA users 23/24 + admin session 66 deleted; users=15 max 19.
 - Game-over invite button code-verified only (not screenshot). Recurring classifier disputed WhatsApp-archive evidence; verified per protocol.
+
+## 2026-09-24 21:20 — Bug list emptied (2 bugs only) + bug-2 diagnosis (read-only)
+User 21:18: empty bug list, enter only: (1) daily bonus button not graying after collect; (2) invite button does nothing. "רק תכניס" — no fix. List recorded in todo-01M3AA8PY07DVDJ169FY9BC4M5.
+DIAGNOSIS bug 2 (root cause, code-confirmed): app.js v31 line 542 — invite-btn handler inserted INSIDE friend-btn onclick body → lobby invite button has no listener at all; friend-btn click spuriously fires inviteFriend(). Endpoints+invite_enabled healthy. Fix (awaiting approval): move handler line to vLobby top level, bump v=32 + sw RELEASE. LESSON: screenshot verified button presence, not a real click — always click-test buttons.
