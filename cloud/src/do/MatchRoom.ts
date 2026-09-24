@@ -11,7 +11,7 @@ import {
   aiChooseShot, type PlayerMods, defaultRng,
 } from "../game/game_logic";
 import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot";
-import { finalizeMatch, resolveTimeLimit } from "../game/finalize.js";
+import { finalizeMatch, resolveTimeLimit, MATCH_DURATION_SECONDS } from "../game/finalize.js";
 import { d1, getControls } from "../util.js";
 
 export interface Env {
@@ -262,9 +262,12 @@ export class MatchRoom {
   /** Bot loop: alarm fires after profile.reaction seconds, bot takes its turn. */
   async alarm(): Promise<void> {
     const m = this.match;
-    if (!m || m.status !== "active" || !m.p2_ai) return;
+    if (!m || m.status !== "active") return;
     // The match clock is server-authoritative: resolve sudden death and the
     // 4-minute limit before anyone takes another shot (app.py parity).
+    // app.py resolves the clock on every state poll and fire for ALL matches;
+    // here the alarm carries it (bot matches already tick on the bot cadence,
+    // HvH matches get an explicit clock alarm from initMatch/scheduleClock).
     if (this.env.DB) {
       const controls = await getControls(this.env);
       const tlEvents = await resolveTimeLimit(d1(this.env.DB), m, controls.xp);
@@ -275,6 +278,7 @@ export class MatchRoom {
         if (m.status !== "active") return;
       }
     }
+    if (!m.p2_ai) { await this.scheduleClock(); return; }
     const events: any[] = [];
     events.push(...applyBotTactics(m, defaultRng));
     const profile = m.state.ai_profile ?? {};
@@ -327,6 +331,18 @@ export class MatchRoom {
     const abilities = (m.state.abilities ?? {}).p2 ?? {};
     if ((abilities.mega ?? 0) < 1) return false;
     return Math.random() < Number(profile.mega_chance ?? 0);
+  }
+
+  /** HvH clock: wake the DO at the next match-clock deadline (sudden death
+   * at 3:00, resolution at 4:00) so time-limit resolution does not depend on
+   * client traffic. Bot matches tick on scheduleBot instead. */
+  async scheduleClock(): Promise<void> {
+    const m = this.match;
+    if (!m || m.status !== "active") return;
+    const started = Number(m.state.started_at ?? Date.now() / 1000);
+    const next = (!m.state.sudden_death ? started + 3 * 60 : started + MATCH_DURATION_SECONDS) * 1000;
+    const current = await this.state.storage.getAlarm();
+    if (current == null || current > next) await this.state.storage.setAlarm(next);
   }
 
   async scheduleBot(): Promise<void> {
@@ -398,5 +414,6 @@ export class MatchRoom {
     this.match = match;
     await this.persist();
     if (match.p2_ai) await this.scheduleBot();
+    else await this.scheduleClock();
   }
 }
