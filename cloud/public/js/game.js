@@ -416,11 +416,17 @@ const GameView = {
       this.showAbort();
       return;
     }
-    if (events.some(e => e.type === "shot" && e.side === s.you))
-      this.dropOptimistic();  // authoritative arc for my shot has arrived
+    // Reconcile my just-fired shot: the optimistic arc that left the barrel
+    // at release keeps flying; the authoritative arc is NOT replayed. A
+    // replay restarted the shell a network round trip after release and read
+    // as a delayed second shot ("the tower fired by itself"). Impact and
+    // damage events still apply, timed to the optimistic arc's remaining
+    // flight inside enqueue().
+    const skipMyArc = (events.some(e => e.type === "shot" && e.side === s.you)
+                       && this.anims.some(a => a.optimistic)) ? 1 : 0;
     const hasFx = s.version > prevV && events.length > 0;
     if (hasFx) {
-      const impactIn = this.enqueue(events);  // seconds until the last impact
+      const impactIn = this.enqueue(events, skipMyArc);  // seconds until the last impact
       // towers crumble on screen exactly when the shell lands, not before
       this.pendingTowers = { towers: s.towers, hp: s.tower_hp,
                              at: performance.now() / 1000 + impactIn };
@@ -617,11 +623,19 @@ const GameView = {
   // Events arrive as one batch per version bump. We play them in order:
   // each shell flies its full arc first, then its explosion, damage number,
   // debris and screen shake land together at impact.
-  enqueue(events) {
+  enqueue(events, skipMyArc = 0) {
     let delay = 0, lastImpact = 0;
     for (const ev of events) {
       if (ev.type === "shot" && ev.points && ev.points.length > 1) {
         const dur = Math.max(0.6, Math.min(2.2, ev.points.length * 0.09));
+        if (skipMyArc > 0 && ev.side === this.mySide()) {
+          skipMyArc -= 1;
+          // The optimistic arc covers this shell's flight. Reserve only its
+          // remaining time so the explosion lands when the shell does.
+          const elapsed = (Date.now() / 1000 + this.serverOffset) - (this.localLastShot || 0);
+          delay += Math.max(0, dur - elapsed);
+          continue;
+        }
         this.anims.push({ kind: "shot", points: ev.points, t: -delay, dur,
                           weapon: ev.weapon, side: ev.side });
         // Remote shots recoil when their sequenced shell leaves the barrel.

@@ -79,7 +79,7 @@ export class MatchRoom {
       const { events, err } = await this.execAction(
         { userId, side }, { type: actionMatch[1], ...body });
       if (err) return Response.json({ ...err.body, status: err.status });
-      return Response.json({ ok: true, version: m.version, prevVersion, events });
+      return Response.json({ ok: true, version: m.version, prevVersion, events, state: m.state, status: m.status });
     }
     if (url.pathname.endsWith("/ready") && request.method === "POST") {
       const { userId } = await request.json() as any;
@@ -196,8 +196,10 @@ export class MatchRoom {
         m.state.finish_reason = "tower_destroyed";
         result!.events.push({ type: "match_end", winner_side: sess.side, reason: "tower_destroyed" });
       }
-      await this.persist();
-      await this.recordEvents(result!.events);
+      // persist (matches) and journaling (match_events) touch different
+      // tables - run them concurrently to cut a D1 round trip off the fire
+      // hot path.
+      await Promise.all([this.persist(), this.recordEvents(result!.events)]);
       this.broadcast({ type: "events", version: m.version, events: result!.events });
       if (m.p2_ai && m.status === "active") await this.scheduleBot();
       return { events: result!.events, err: null };
