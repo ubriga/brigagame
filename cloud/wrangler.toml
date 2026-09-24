@@ -27,6 +27,6 @@ database_id = "531332d3-b09f-4429-9a3a-09791139b782"
 #   GOOGLE_CLIENT_ID, SESSION_SIGNING_KEY
 [vars]
 FRONTEND_ORIGIN = "https://ubriga.github.io/brigagame"
-SERVER_VERSION = "23"
+SERVER_VERSION = "24"
 ADMIN_EMAIL = "ubriga@gmail.com"
 ALLOWED_ORIGINS = "https://brigagame.ubriga.workers.dev"

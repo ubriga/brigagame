@@ -1326,6 +1326,7 @@ const GameView = {
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         <button class="btn" id="again-btn">עוד משחק</button>
         <button class="btn secondary" id="lobby-btn">חזרה ללובי</button>
+        ${window.App && App.me && App.me.invite_enabled ? `<button class="btn secondary" id="invite-btn">📨 הזמן חבר</button>` : ""}
       </div>`;
     document.getElementById("again-btn").onclick = () => {
       Sfx.play("click");
@@ -1333,6 +1334,8 @@ const GameView = {
       else location.hash = "#/lobby";
     };
     document.getElementById("lobby-btn").onclick = () => { Sfx.play("click"); location.hash = "#/lobby"; };
+    const invBtn = document.getElementById("invite-btn");
+    if (invBtn) invBtn.onclick = () => { Sfx.play("click"); App.inviteFriend(); };
     if (window.refreshMe) window.refreshMe();
   },
 
