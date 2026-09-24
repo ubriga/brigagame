@@ -2066,6 +2066,12 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "email_provider": "resend",
     "inboxlv_pass": ""
   },
+  "invite_system": {
+    "enabled": true,
+    "max_per_day": 5,
+    "tag_name": "מגייס",
+    "invite_text": "חברך {name} קורא לך לקרב ב-Brigagame 2.0! 🎯"
+  },
   "bot_fallback": {
     "enabled": true,
     "wait_seconds": 30,

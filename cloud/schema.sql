@@ -171,3 +171,19 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    inviter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    claimed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    claimed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_invites_inviter ON invites(inviter_id, created_at);
+CREATE TABLE IF NOT EXISTS user_tags (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    granted_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, tag)
+);
