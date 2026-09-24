@@ -141,13 +141,6 @@ th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid #3341554
 th { color: var(--muted); font-weight: 600; }
 tr:hover td { background: #ffffff08; }
 
-/* admin */
-.tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
-.tabs button { background: var(--panel2); color: var(--muted); border: none; padding: 8px 14px; border-radius: 10px; cursor: pointer; }
-.tabs button.active { background: var(--accent); color: #0b1120; font-weight: 700; }
-.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-.stat-cards .card { text-align: center; padding: 12px; }
-.stat-cards b { font-size: 22px; display: block; color: var(--accent); }
 
 #toast {
   position: fixed; bottom: 22px; right: 50%; transform: translateX(50%);
@@ -348,7 +341,7 @@ html[dir="ltr"] body{text-align:left}html[dir="ltr"] .coming-ribbon{right:auto;l
 
 /* v17 audit: predictable navigation, tap targets and wide-data containment. */
 .route-loading{min-height:38vh;display:grid;place-items:center;color:var(--muted);font-weight:750}
-.card:has(> table),#admin-body .card{max-width:100%;overflow-x:auto}
+.card:has(> table){max-width:100%;overflow-x:auto}
 table{min-width:max-content}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f4c95d;outline-offset:2px}
 @media(max-width:640px){
@@ -366,8 +359,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   #maintenance-banner.maintenance-collapsed{inset-inline-end:8px;top:112px}
   body{overflow-x:hidden}
 }
-.bot-admin { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: 14px; }
-.bot-admin > h2, .bot-admin > p { grid-column: 1 / -1; }
 .bot-tier-controls { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: rgba(255,255,255,.025); }
 .bot-tier-controls h3 { margin-top: 0; }
 .bot-tier-controls label { display: block; margin-top: 8px; }
+
+.spinner{width:26px;height:26px;border:3px solid rgba(255,255,255,.25);border-top-color:var(--accent);border-radius:50%;margin:0 auto;animation:bg-spin .8s linear infinite}
+@keyframes bg-spin{to{transform:rotate(360deg)}}

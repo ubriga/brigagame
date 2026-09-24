@@ -1,12 +1,12 @@
 // Lightweight, persistent whole-app language layer. It also translates DOM
-// added later by game/store/admin views, so one user choice covers every route.
+// added later by game/store views, so one user choice covers every route.
 const Lang = {
   current: localStorage.getItem("brigagame_lang") === "en" ? "en" : "he",
   exact: new Map(Object.entries({
-    "לובי":"Lobby","חנות":"Shop","ההתאמה שלי":"My collection","דירוג":"Leaderboard","הודעות":"Messages","ניהול":"Admin",
+    "לובי":"Lobby","חנות":"Shop","ההתאמה שלי":"My collection","דירוג":"Leaderboard","הודעות":"Messages",
     "התקנה":"Install","התנתקות":"Sign out","השתקה":"Mute","מתחבר מחדש...":"Reconnecting...","בקרוב":"Coming soon",
-    "משחקים":"Matches","משתמשים":"Users","שליטת משחק":"Game controls","קוסמטיקה":"Cosmetics","קופונים":"Coupons","תחזוקה":"Maintenance",
-    "סטטיסטיקות":"Statistics","יומן פעילות":"Activity log","שידור הודעה":"Broadcast","רגיל":"Common","נדיר":"Rare","אפי":"Epic","אגדי":"Legendary",
+    "משחקים":"Matches","קוסמטיקה":"Cosmetics","קופונים":"Coupons","תחזוקה":"Maintenance",
+    "רגיל":"Common","נדיר":"Rare","אפי":"Epic","אגדי":"Legendary",
     "קנה":"Buy","קנה והחל":"Buy & equip","החל מראה":"Equip","לא זמין":"Unavailable","מקסימום":"Maximum","✓ במשחק":"✓ Equipped",
     "יציאה מהמשחק":"Exit match","לצאת מהמשחק?":"Exit the match?","ביטול":"Cancel","זווית":"Angle","עוצמה":"Power","הזזה":"Move","מגן":"Shield","מגה":"Mega",
     "ללא רוח":"No wind","החטאה!":"Miss!","ניצחת!":"You won!","הפסדת":"You lost","תיקו":"Draw","עוד משחק":"Play again","חזרה ללובי":"Back to lobby",
@@ -17,8 +17,8 @@ const Lang = {
     "ברירת מחדל":"Default","המגדל הכחול הקלאסי":"Classic blue tower","משחק חדש - בחר רמת קושי בלבד":"New game - choose difficulty",
     "מגדל היריב הושמד!":"Enemy tower destroyed!","המגדל שלך הושמד.":"Your tower was destroyed.","המשחק בוטל":"Match cancelled",
     "הפעולה אינה זמינה":"Action unavailable","הקנייה נכשלה":"Purchase failed","נקנה בהצלחה!":"Purchased!","שגיאה בטעינת החנות":"Could not load shop",
-    "שליטת קטלוג קוסמטי":"Cosmetic catalog controls","מחיר וזמינות נשמרים בשרת.":"Price and availability are saved on the server.",
-    "קצב התקדמות XP":"XP progression rate","בונוס ניצחון מול שחקן":"Player win bonus","בונוס ניצחון מול מחשב":"Bot win bonus","XP לכל נקודת נזק":"XP per damage point","סקינים מושקעים":"Premium skins","תקציב משקל לסקין (KB)":"Asset budget per skin (KB)","ציפויי מגדל":"Tower coatings","מספר שלבים מרבי":"Maximum levels","זמן בנייה בסיסי (דקות)":"Base build time (minutes)","הרחבת מגדל":"Tower expansion","מספר קוביות נוספות מרבי":"Maximum extra cubes","מכשול דינמי":"Dynamic obstacle","מהירות":"Speed","התראה לפני תנועה (שניות)":"Warning before movement (seconds)","מופעל":"Enabled","שליטה מלאה ברמות הבוט":"Full bot difficulty control","פחות סטייה, יותר פיצוי רוח וזמן תגובה קצר יותר מחזקים את הבוט. הערכים נשמרים בשרת וחלים על משחקי בוט חדשים.":"Lower deviation, stronger wind compensation, and faster reactions make the bot stronger. Values are saved on the server and apply to new bot matches.","ערכי ברירת המחדל החדשים מאטים את ההתקדמות בערך פי 5. שינוי חל רק על משחקים שיסתיימו מעכשיו.":"The current defaults slow progression by about 5x. Changes apply only to matches completed from now on.","קל":"Easy","סטיית זווית מרבית (°)":"Maximum angle deviation (°)","סטיית עוצמה (0-0.5)":"Power spread (0-0.5)","פיצוי רוח (0-1)":"Wind compensation (0-1)","זמן תגובה (שניות)":"Reaction time (seconds)","תוספת דרגות מעל השחקן":"Rank levels above player","סיכוי להשתמש במגן (0-1)":"Shield chance (0-1)","סיכוי להשתמש במגה (0-1)":"Mega chance (0-1)","שמור את כל ההגדרות":"Save all settings","הגדרות המשחק נשמרו":"Game settings saved","ערך לא תקין - לא נשמר":"Invalid value - not saved",
+    
+    
     "שלום,":"Hello,","הפל את מגדל היריב לפני שהוא מפיל את שלך.":"Destroy the enemy tower before it destroys yours.","🎮 משחק":"🎮 Play",
     "⚡ משחק מהיר":"⚡ Quick match","🤖 משחק מול בוט":"🤖 Play vs bot","🔗 משחק חברים (צור קוד)":"🔗 Friend match (create code)","הצטרף":"Join",
     "רמת קושי":"Difficulty","קוד משחק":"Match code","📊 הסטטיסטיקה שלך":"📊 Your statistics","דרגה נוכחית:":"Current rank:","הבאה:":"Next:",
@@ -28,8 +28,8 @@ const Lang = {
     "🛒 חנות":"🛒 Shop","יתרה:":"Balance:","🎟️ מימוש קופון":"🎟️ Redeem coupon","קוד קופון":"Coupon code","ממש":"Redeem",
     "⚔️ נשקים מיוחדים":"⚔️ Special weapons","🛡️ שדרוגי מגדל":"🛡️ Tower upgrades","🎨 מראה":"🎨 Cosmetics","בתיק:":"Inventory:","שימושים":"uses",
     "בבעלותך - לחץ להחיל":"Owned - click to equip","✓ המראה הפעיל שלך":"✓ Your active cosmetic","נקנה והוחל! יופיע במשחק הבא":"Purchased and equipped! It will appear next match",
-    "המראה הוחל - יופיע במשחק הבא":"Cosmetic equipped - it will appear next match","🛠️ ניהול":"🛠️ Admin","פעילים היום":"Active today",
-    "משחקים פעילים":"Active matches","מטבעות הונפקו":"Coins issued","מטבעות הוצאו":"Coins spent","רכישות":"Purchases","חסומים":"Blocked",
+    "המראה הוחל - יופיע במשחק הבא":"Cosmetic equipped - it will appear next match",
+    
     "🎯 משחק תרגול - לא נספר לדרגה":"🎯 Practice match - does not affect rank","גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.":"Drag from your tower to aim and release to fire. Wind moves the shell and changes after every shot; tower positions vary each match.",
     "⌨️ מקלדת:":"⌨️ Keyboard:","ירייה":"fire","בחירת נשק":"choose weapon","יוצא...":"Exiting...","יציאה ממשחק פעיל תיספר כהפסד בדירוג":"Leaving an active match counts as a ranked loss","יציאה ממשחק תרגול לא תשפיע על הדירוג":"Leaving a practice match does not affect rank",
     "פגיעה קריטית בקנה התותח!":"Critical cannon hit!","משב רוח קיצוני":"Extreme wind gust","מטאור פגע בזירה":"A meteor hit the arena","מטען מגה נוסף":"Extra mega charge",
