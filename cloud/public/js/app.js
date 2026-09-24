@@ -133,6 +133,7 @@ const App = {
 
   setMe(data) {
     this.me = data.user; this.inventory = data.inventory || {};
+    if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
     this._daily = data.daily_available; this._streak = data.streak;
     document.getElementById("topbar").classList.remove("hidden");
@@ -142,7 +143,7 @@ const App = {
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=2").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=3").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -172,17 +173,20 @@ const App = {
           const me = await API.get("/api/me");
           if (me.status === 200) App.setMe(me.data);
           App.startPulse(); Sfx.ensure(); Sfx.startMusic();
+          await App.claimPendingInvite();
           location.hash = "#/lobby";
         })();
       } else location.hash = "#/login";
       return;
     }
-    if (!API.token && !hash.startsWith("#/login")) { location.hash = "#/login"; return; }
+    if (!API.token && !hash.startsWith("#/login") && !hash.startsWith("#/invite/")) { location.hash = "#/login"; return; }
     if (hash.startsWith("#/game/")) this.vGame(view, hash.split("/")[2], seq);
     else if (hash.startsWith("#/store")) this.vStore(view, seq);
     else if (hash.startsWith("#/custom")) this.vCustom(view, seq);
     else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view, seq);
     else if (hash.startsWith("#/messages")) this.vMessages(view, seq);
+    else if (hash.startsWith("#/tags")) this.vTags(view, seq);
+    else if (hash.startsWith("#/invite/")) { this.vInvite(view, hash.split("/")[2] || ""); view.removeAttribute("aria-busy"); }
     else if (this._routeHook && this._routeHook(hash, view, seq)) { /* extension route */ }
     else if (hash.startsWith("#/login")) { this.vLogin(view); view.removeAttribute("aria-busy"); }
     else this.vLobby(view, seq);
@@ -271,6 +275,7 @@ const App = {
       if (me.status === 200) App.setMe(me.data);
       App.startPulse();
       Sfx.ensure(); Sfx.startMusic();
+      await App.claimPendingInvite();
       location.hash = "#/lobby";
     };
     const renderGsi = () => {
@@ -367,6 +372,90 @@ const App = {
   },
 
   // ---------------- lobby ----------------
+  // Claim a stored invite code right after login/registration (א1).
+  async claimPendingInvite() {
+    const code = sessionStorage.getItem("bg_pending_invite");
+    if (!code || !API.token) return;
+    sessionStorage.removeItem("bg_pending_invite");
+    const { status, data } = await API.post("/api/invites/claim", { code });
+    if (status === 200) toast(`🎉 הצטרפת דרך ההזמנה של ${data.inviter_name || "חבר"}!`);
+    else if (data && data.error_he) toast(data.error_he, 4500);
+  },
+
+  // Create an invite link and share/copy it (lobby + game-over buttons).
+  async inviteFriend() {
+    if (!this.me) { location.hash = "#/login"; return; }
+    const { status, data } = await API.post("/api/invites", {});
+    if (status !== 200) { toast((data && data.error_he) || "יצירת ההזמנה נכשלה", 4500); return; }
+    const url = location.origin + location.pathname + "#/invite/" + data.code;
+    const text = (data.invite_text || "חברך {name} קורא לך לקרב ב-Brigagame 2.0! 🎯")
+      .replace("{name}", data.inviter_name || "שלך");
+    try {
+      if (navigator.share) { await navigator.share({ title: "Brigagame 2.0", text, url }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    try {
+      await navigator.clipboard.writeText(text + "\n" + url);
+      toast("קישור ההזמנה הועתק - שלח אותו לחבר 📨");
+    } catch (e) { prompt("העתק את קישור ההזמנה:", url); }
+  },
+
+  // Public invite landing page: "חברך X קורא לך לקרב" (א1).
+  async vInvite(view, code) {
+    code = String(code || "").toUpperCase();
+    document.getElementById("topbar").classList.add("hidden");
+    const back = API.token ? "#/lobby" : "#/login";
+    const fail = (msg) => {
+      view.innerHTML = `<div id="login-wrap"><div class="logo">🎯</div>
+        <div class="card" style="text-align:center"><h2>${esc(msg)}</h2>
+        <p class="sub">קישור ההזמנה לא תקף, פג תוקפו או שכבר נוצל.</p>
+        <button class="btn" onclick="location.hash='${back}'">${API.token ? "חזרה ללובי" : "לכניסה למשחק"}</button></div></div>`;
+    };
+    const { status, data } = await API.get("/api/invite/" + encodeURIComponent(code));
+    if (status !== 200 || !data || !data.valid) return fail("ההזמנה לא נמצאה 😕");
+    const name = esc(data.inviter_name || "חבר");
+    view.innerHTML = `<div id="login-wrap"><div class="logo">🎯</div>
+      <h1 style="font-size:26px">חברך <span style="color:var(--accent)">${name}</span> קורא לך לקרב!</h1>
+      <p class="sub">Brigagame 2.0 - משחק ארטילריה מולטיפלייר. הפל את מגדל היריב!</p>
+      <div class="card" style="text-align:center">
+        <button class="btn" id="invite-join">${API.token ? "⚔️ נכנסים לקרב" : "🚀 הצטרפה למשחק"}</button>
+      </div></div>`;
+    document.getElementById("invite-join").onclick = async () => {
+      Sfx.play("click");
+      if (!API.token) {
+        sessionStorage.setItem("bg_pending_invite", code);
+        location.hash = "#/login";
+        return;
+      }
+      const r = await API.post("/api/invites/claim", { code });
+      if (r.status === 200) { toast(`🎉 הצטרפת דרך ההזמנה של ${name}!`); location.hash = "#/lobby"; }
+      else if (r.data && r.data.error_he) toast(r.data.error_he, 4500);
+      else location.hash = "#/lobby";
+    };
+  },
+
+  // Dedicated tags page (א1): shows the user's earned tags.
+  async vTags(view, seq = this._routeSeq) {
+    if (!this.routeCurrent(seq)) return;
+    if (!this.me) { location.hash = "#/login"; return; }
+    const { status, data } = await API.get("/api/tags");
+    if (!this.routeCurrent(seq)) return;
+    view.removeAttribute("aria-busy");
+    const tags = (status === 200 && data && data.tags) || [];
+    const when = (iso) => { try { return new Date(iso).toLocaleDateString("he-IL"); } catch (e) { return ""; } };
+    view.innerHTML = `<h1>🎖️ התגים שלי</h1>
+      <p class="sub">תגים מיוחדים שצברת במשחק.</p>
+      <div class="card">
+        ${tags.length ? tags.map(t => `<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+          <span style="font-size:18px;font-weight:700">🎖️ ${esc(t.tag)}</span>
+          <span class="sub" style="margin:0">${when(t.granted_at)}</span></div>`).join("")
+        : `<p style="text-align:center">עדיין אין לך תגים.</p>
+           <p class="sub" style="text-align:center">הזמן חבר למשחק - כשהוא נכנס דרך הקישור שלך, תזכה בתג 'מגייס'!</p>`}
+        ${this.me.invite_enabled ? `<button class="btn" id="tags-invite-btn" style="margin-top:8px">📨 הזמן חבר</button>` : ""}
+      </div>`;
+    const btn = document.getElementById("tags-invite-btn");
+    if (btn) btn.onclick = () => { Sfx.play("click"); this.inviteFriend(); };
+  },
+
   async vLobby(view, seq = this._routeSeq) {
     if (!this.routeCurrent(seq)) return;
     if (!this.me) { location.hash = "#/login"; return; }
@@ -397,6 +486,7 @@ const App = {
               <button class="btn secondary" id="join-btn">הצטרף</button>
             </div>
             <div id="friend-code" class="hidden" style="margin-top:8px"></div>
+            <button class="btn secondary" id="invite-btn" ${u.invite_enabled ? "" : 'style="display:none"'}>📨 הזמן חבר</button>
           </div>
         </div>
         <div class="card">
@@ -449,6 +539,7 @@ const App = {
       Sfx.play("click");
       const result = await API.post("/api/matches/friend");
       const data = result.data || {};
+    document.getElementById("invite-btn").onclick = () => { Sfx.play("click"); this.inviteFriend(); };
       if (data.code) {
         const box = document.getElementById("friend-code");
         box.classList.remove("hidden");
