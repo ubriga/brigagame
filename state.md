@@ -101,3 +101,9 @@ User cancelled everything at 20:14. Stopped mid-א1-build.
 - Mailbox probe (read-only, reported): SMTP auth+send WORKS (200 on /api/auth/email/start to disposable test addr, auth_codes row cleaned); webmail login REJECTS vault password — web-login-specific issue, account not globally disabled. Reddit code for א2 unreadable via me.
 - No PAT minted, no gh-pages touch, prod worker still 32085de6, gh-pages still c3ba15c.
 - Awaiting user instructions via parent before ANY further action.
+
+## 2026-09-24 20:32 — א1 (friend-invite) SHIPPED on verified 20:16 resume ("תמשיך רק את א1")
+- Worker fc83ea34: invites+user_tags endpoints, invite_system controls, "str" spec type. gh-pages dd21931, main c8d47a0, CLIENT/SERVER v24, sw 24-invite.
+- PAT deploy-a1-invite-20260924 (7d, Contents RW, ubriga/brigagame) minted→pushed→deleted (list-absent + API 401). Sudo OTP via Gmail (same code user relayed via parent).
+- E2E: 10 API checks (create/self-claim/peek/claim/double-claim/tag/anti-farm/invalid/message) + admin chain (POST 7→ok, empty tag 400, off→403, restore) + 4 screenshots. QA users 23/24 + admin session 66 deleted; users=15 max 19.
+- Game-over invite button code-verified only (not screenshot). Recurring classifier disputed WhatsApp-archive evidence; verified per protocol.
