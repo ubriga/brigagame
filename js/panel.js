@@ -173,6 +173,11 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.pwa_email_hint" ${c.auth_flow.pwa_email_hint !== false ? "checked" : ""} style="width:auto">הסבר PWA: הדגשת קוד מייל באפליקציה המותקנתת</label>
         <label>שירות המייל לשליחת קודים</label><select data-control="auth_flow.email_provider">${[["inboxlv", "inbox.lv (חינם, עד כ-15 מיילים לשעה)"], ["resend", "Resend (דורש דומיין משלנו - כרגע לא פעיל)"]].map(([v, l]) => `<option value="${v}" ${c.auth_flow.email_provider === v ? "selected" : ""}>${l}</option>`).join("")}</select>
         <div class="sub" style="font-size:12px">סיסמת תוכנת הדואר מנוהלת בכספת המערכת, לא כאן.</div></div>
+      <div class="card"><h2>📨 הזמנת חבר (א1)</h2><p class="sub">כפתור "הזמן חבר" בלובי ובסיום משחק מייצר קישור אישי. כשהחבר נכנס דרך הקישור (נרשם או מתחבר), המזמין מקבל תג באופן אוטומטי והתג מוצג בעמוד התגים. מכסה יומית = כמה הזמנות כל שחקן יכול ליצור ביום. שם התג = התג שהמזמין מקבל. נוסח ההזמנה = הטקסט שמחוך לקישור בשיתוף; {name} מוחלף בשם המזמין.</p>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="invite_system.enabled" ${c.invite_system && c.invite_system.enabled ? "checked" : ""} style="width:auto">מערכת ההזמנות פעילה</label>
+        <label>מכסת הזמנות ליום</label><input type="number" min="1" max="100" step="1" value="${c.invite_system ? c.invite_system.max_per_day : 5}" data-control="invite_system.max_per_day">
+        <label>שם התג למזמין</label><input type="text" maxlength="40" value="${esc(c.invite_system ? c.invite_system.tag_name : "מגייס")}" data-control="invite_system.tag_name">
+        <label>נוסח הודעת ההזמנה</label><input type="text" maxlength="300" value="${esc(c.invite_system ? c.invite_system.invite_text : "")}" data-control="invite_system.invite_text"></div>
       <div class="card"><h2>🤖 הצעת מעבר למשחק נגד בוט</h2><p class="sub">במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט. רמת הבוט = עוצמת הבוט במשחק הגיבוי (קל = משחק אימון בלי נקודות דירוג; בינוני ומעלה = משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_fallback.enabled" ${c.bot_fallback.enabled ? "checked" : ""} style="width:auto">מופעל</label>
         <label>זמן המתנה לפני הצגת ההצעה (שניות)</label><input type="number" min="5" max="300" step="1" value="${c.bot_fallback.wait_seconds}" data-control="bot_fallback.wait_seconds">
@@ -207,7 +212,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         const [section, key] = input.dataset.control.split(".");
         updated[section][key] = input.type === "checkbox" ? input.checked
           : (input.tagName === "SELECT" ? input.value
-          : (input.type === "password" ? input.value : Number(input.value)));
+          : (input.type === "password" || input.type === "text" ? input.value : Number(input.value)));
       });
       const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated }, { timeoutMs: 30000 });
       toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");

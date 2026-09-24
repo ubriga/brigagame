@@ -3,7 +3,7 @@
 const Lang = {
   current: localStorage.getItem("brigagame_lang") === "en" ? "en" : "he",
   exact: new Map(Object.entries({
-    "לובי":"Lobby","חנות":"Shop","ההתאמה שלי":"My collection","דירוג":"Leaderboard","הודעות":"Messages",
+    "לובי":"Lobby","תגים":"Tags","📨 הזמן חבר":"📨 Invite a friend","🎖️ התגים שלי":"🎖️ My tags","תגים מיוחדים שצברת במשחק.":"Special tags you earned in the game.","עדיין אין לך תגים.":"No tags yet.","⚔️ נכנסים לקרב":"⚔️ To battle","🚀 הצטרפה למשחק":"🚀 Join the game","חזרה ללובי":"Back to lobby","לכניסה למשחק":"To sign in","חנות":"Shop","ההתאמה שלי":"My collection","דירוג":"Leaderboard","הודעות":"Messages",
     "התקנה":"Install","התנתקות":"Sign out","השתקה":"Mute","מתחבר מחדש...":"Reconnecting...","בקרוב":"Coming soon",
     "משחקים":"Matches","קוסמטיקה":"Cosmetics","קופונים":"Coupons","תחזוקה":"Maintenance",
     "רגיל":"Common","נדיר":"Rare","אפי":"Epic","אגדי":"Legendary",
