@@ -24,8 +24,48 @@ function json(body: unknown, status = 200): Response {
 
 
 
+// Cross-origin access: the public frontend lives on GitHub Pages
+// (ubriga.github.io) while the API lives on the Worker. Bearer-token auth, no
+// cookies - echo only the known frontend origins.
+const CORS_ORIGINS = new Set([
+  "https://ubriga.github.io",
+  "https://brigagame.ubriga.workers.dev",
+]);
+
+function withCors(request: Request, res: Response): Response {
+  const origin = request.headers.get("Origin") ?? "";
+  if (!CORS_ORIGINS.has(origin)) return res;
+  const h = new Headers(res.headers);
+  h.set("Access-Control-Allow-Origin", origin);
+  h.set("Vary", "Origin");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
+// Where the Google callback sends the browser after sign-in. Defaults to the
+// Worker's own origin (test env); set FRONTEND_ORIGIN to the public site.
+function frontendBase(env: Env, url: URL): string {
+  return String((env as any).FRONTEND_ORIGIN ?? "").replace(/\/+$/, "") || url.origin;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const corsUrl = new URL(request.url);
+    if (request.method === "OPTIONS" && corsUrl.pathname.startsWith("/api/")) {
+      const origin = request.headers.get("Origin") ?? "";
+      if (!CORS_ORIGINS.has(origin)) return new Response(null, { status: 403 });
+      return new Response(null, { status: 204, headers: {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "7200",
+        "Vary": "Origin",
+      }});
+    }
+    return withCors(request, await handleRequest(request, env, ctx));
+  },
+};
+
+async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -76,7 +116,7 @@ export default {
 
     if (path === "/api/auth/google/callback" && request.method === "GET") {
       const fail = (msg: string) =>
-        Response.redirect(url.origin + "/#/login?auth_error=" + encodeURIComponent(msg), 302);
+        Response.redirect(frontendBase(env, url) + "/#/login?auth_error=" + encodeURIComponent(msg), 302);
       try {
         const controls = await getControls(env);
         if ((controls as any).auth_flow?.redirect_enabled !== true)
@@ -113,7 +153,7 @@ export default {
           + " VALUES (?, 'google_auth_attempt', 'auth', '', ?, ?)")
           .bind(Number(user.id), JSON.stringify({ result: "ok", via: "redirect" }), new Date().toISOString()).run()
           .catch(() => {});
-        return Response.redirect(url.origin + "/#/auth?token=" + encodeURIComponent(token), 302);
+        return Response.redirect(frontendBase(env, url) + "/#/auth?token=" + encodeURIComponent(token), 302);
       } catch (e) {
         console.error("oauth_callback_fail", String((e as any)?.message ?? e));
         return fail("שירות ההתחברות לא זמין כרגע. נסה שוב בעוד רגע.");
@@ -280,5 +320,5 @@ export default {
 
     // Everything else: static assets (PWA).
     return env.ASSETS.fetch(request);
-  },
-} satisfies ExportedHandler<Env>;
+}
+handleRequest satisfies (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
