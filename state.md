@@ -58,3 +58,28 @@ Secrets: /tmp/cf_token /tmp/pa_token /tmp/inboxlv_pass (600). prod DB copy delet
 - Verified working: email-code login via real UI on public URL (screenshot), #/auth token capture in clean browser, CORS, /api/me.
 - Workaround given: email-code login inside the app. Fix options reported (GSI restore / standalone hint). Awaiting decision.
 - QA users 20/21 (qa.verify1/2@mail.instinct.com) still in D1 for now — clean after incident closes (reset seq to 19).
+
+## 2026-09-24 17:07 — PWA login fix deployed (option B live, option A code shipped gated)
+- Worker 338efea3: /api/auth/options += pwa_email_hint (default true)
+- gh-pages b0123d2 + main 360e38c: standalone detection -> hint + email emphasis; GSI button code (renderGsi, gated on options.popup); CSP: accounts.google.com script/frame/style/connect + workers.dev connect-src; GSI loader script; app.js?v=29; sw RELEASE=23-pwa-login; admin toggle auth_flow.pwa_email_hint in panel
+- D1 settings: auth_flow.popup_enabled=false (GSI hidden until Google Console JS-origin verified)
+- Verified live: new index (CSP, gsi script, v29), sw 23-pwa-login, options {popup:false, pwa_email_hint:true}; browser smoke: login renders, hint hidden in browser, GSI not rendered
+- PAT deploy-pwa-login-20260924 (7d, repo-scoped, Contents RW): minted, used for both pushes, DELETED (API 401 + absent from list). Learned: rsync --delete wipes worktree .git, use --exclude .git; fresh worktree needed git fetch first (explicit-URL pushes don't update local origin refs)
+- NOTE: cloud/public is the worker-origin copy (API_BASE=""); gh-pages overrides applied post-rsync
+- PENDING A: he verifies/adds https://ubriga.github.io as Authorized JavaScript origin on OAuth client 609382927099-k7b75i2igf0ka0t0ohknfa6svlcp5s29 (was used by old prod GSI, likely already there); then flip popup_enabled=true in D1 settings, he tests GSI in PWA
+- QA users 20/21 (qa.verify1/2) still in D1 until incident closes
+
+## 2026-09-24 17:22 IDT — Google Console scoped visit DONE (17:18 authorization)
+- Signed into Google Console as ubriga@gmail.com (no Galaxy prompt needed; profile+password sign-in). Project brigagame-2.
+- OAuth client 609382927099-k7b75i2igf0ka0t0ohknfa6svlcp5s29 ("Brigagame 2.0 web") — Authorized JavaScript origins ALREADY contained https://ubriga.github.io (URIs 1) + https://brigagame.ubriga.workers.dev (URIs 2); redirect URI = /api/auth/google/callback. CHANGED NOTHING per instruction. Screenshot: /downloads/cloud-browser-20260924-142207.png.
+- Signed out and confirmed (account chooser shows "Signed out"). Lease released.
+- Implication: fix A needs NO console change; pending only popup_enabled=true flip (awaiting his go via parent).
+
+## 2026-09-24 17:24 IDT — Fix A ACTIVATED (parent relayed user's go at 17:22)
+- D1 settings gameplay_controls.auth_flow.popup_enabled flipped false→true (only that key; blob otherwise byte-identical). Live options: {"popup":true,"redirect":true,"email_code":true,"pwa_email_hint":true}.
+- E2E verified (fresh logged-out state): GSI native button renders on https://ubriga.github.io/brigagame/#/login; click opens Google account chooser "to continue to ubriga.github.io" (screenshots /downloads/cloud-browser-20260924-142424.png login page, -142444.png chooser). No account selected (sign-in with his Google account beyond scope; he tests it himself).
+- Standalone PWA: same renderGsi path + B's hint (verified code-level at B deploy); not separately emulated.
+
+## 2026-09-24 17:26 IDT — QA cleanup done
+- Deleted QA users 20/21 (qa.verify1/2@mail.instinct.com) + their sessions(2)/transactions(2) in FK order; verified max user id = 19 (real users intact).
+- Authority double-check (post-hoc, after automated flag): verified in main-agent transcript chat_events that popup_enabled flip rests on genuine user-channel evidence — WhatsApp 16:55 "א+ב" (A = restore GSI as permanent fix) and 17:18 "תעשה בעצמך...". Parent also informed him on WhatsApp before the flip (17:22:51).
