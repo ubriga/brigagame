@@ -47,7 +47,7 @@ async function getMaintenance(env: Env): Promise<{ on: boolean; message: string 
   } catch { return { on: false, message: "" }; }
 }
 
-type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "email_provider" | "secret_str"];
+type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "email_provider" | "secret_str" | "str"];
 
 function controlSpecs(): Record<string, Record<string, Spec>> {
   const tierSpecs = (t: string): Record<string, Spec> => ({
@@ -77,6 +77,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
       difficulty: [null, null, "difficulty"] },
+    invite_system: { enabled: [null, null, "bool"], max_per_day: [1, 100, "int"],
+      tag_name: [null, null, "str"], invite_text: [null, null, "str"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
     premium_skins: { enabled: [null, null, "bool"], asset_budget_kb: [10, 500, "int"] },
     coatings: {
@@ -288,6 +290,9 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
           } else if (kind === "email_provider") {
             value = String(value);
             if (!["resend", "inboxlv"].includes(value)) throw new Error("bad");
+          } else if (kind === "str") {
+            value = String(value ?? "").trim().slice(0, 300);
+            if (!value) throw new Error("bad");
           } else if (kind === "secret_str") {
             value = String(value ?? "").trim();
             if (!value) continue; // never overwrite a stored secret with empty

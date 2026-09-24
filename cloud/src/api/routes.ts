@@ -21,6 +21,7 @@ export function json(body: unknown, status = 200): Response {
 
 const nowIso = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
+const FRIEND_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 async function audit(env: Env, request: Request, actorId: number | null,
                      action: string, targetType = "", targetId: string | number = "",
@@ -173,11 +174,110 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
       user: publicUser(u, env), server_version: env.SERVER_VERSION,
       bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
       maintenance: await getMaintenance(env), inventory: inv,
+      invite_enabled: (await getControls(env) as any).invite_system?.enabled === true,
       daily_available: u.last_daily !== today(),
       streak: u.streak, server_date: today(),
       coating: await coatingPayload(env, Number(u.id)),
       expansion: await expansionPayload(env, Number(u.id)),
     });
+  }
+
+  // GET /api/invite/<code> - public landing peek (no auth)
+  const invitePeek = path.match(/^\/api\/invite\/([A-Z2-9]{4,12})$/);
+  if (invitePeek && method === "GET") {
+    const rl_inv = await limited(env, request, "auth", null);
+    if (rl_inv) return rl_inv;
+    const ctl = (await getControls(env) as any).invite_system ?? {};
+    if (ctl.enabled !== true) return json({ error: "invite_disabled", valid: false }, 403);
+    const row: any = await env.DB.prepare(
+      "SELECT i.id, i.claimed_by, u.name AS inviter_name FROM invites i"
+      + " JOIN users u ON u.id = i.inviter_id WHERE i.code = ?")
+      .bind(invitePeek[1]).first();
+    if (!row || row.claimed_by) return json({ valid: false });
+    return json({ valid: true, inviter_name: String(row.inviter_name ?? ""),
+      tag_name: String(ctl.tag_name ?? "מגייס") });
+  }
+
+  // POST /api/invites - create an invite (auth, daily cap)
+  if (path === "/api/invites" && method === "POST") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_mutation = await limited(env, request, "mutation", u);
+    if (rl_mutation) return rl_mutation;
+    const ctl = (await getControls(env) as any).invite_system ?? {};
+    if (ctl.enabled !== true)
+      return json({ error: "invite_disabled", error_he: "מערכת ההזמנות כבויה כרגע." }, 403);
+    const maxPerDay = Math.max(1, Number(ctl.max_per_day ?? 5));
+    const cnt: any = await env.DB.prepare(
+      "SELECT COUNT(*) AS c FROM invites WHERE inviter_id = ?"
+      + " AND created_at > datetime('now', '-1 day')").bind(Number(u.id)).first();
+    if (Number(cnt?.c ?? 0) >= maxPerDay)
+      return json({ error: "invite_limit",
+        error_he: "הגעת למכסת ההזמנות היומית. נסה שוב מחר." }, 429);
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    const code = Array.from(bytes, (b) => FRIEND_CODE_ALPHABET[b % FRIEND_CODE_ALPHABET.length]).join("");
+    await env.DB.prepare(
+      "INSERT INTO invites (code, inviter_id, created_at) VALUES (?,?,?)")
+      .bind(code, Number(u.id), nowIso()).run();
+    await audit(env, request, Number(u.id), "invite.create", "invite", code);
+    return json({ ok: true, code,
+      inviter_name: String(u.name ?? ""),
+      invite_text: String(ctl.invite_text ?? "") });
+  }
+
+  // POST /api/invites/claim - claim an invite after login (auth)
+  if (path === "/api/invites/claim" && method === "POST") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    const rl_mutation = await limited(env, request, "mutation", u);
+    if (rl_mutation) return rl_mutation;
+    const ctl = (await getControls(env) as any).invite_system ?? {};
+    if (ctl.enabled !== true)
+      return json({ error: "invite_disabled", error_he: "מערכת ההזמנות כבויה כרגע." }, 403);
+    const body: any = await request.json().catch(() => ({}));
+    const code = String(body.code ?? "").trim().toUpperCase();
+    if (!code) return json({ error: "bad_code" }, 400);
+    const inv: any = await env.DB.prepare(
+      "SELECT i.*, u.name AS inviter_name FROM invites i"
+      + " JOIN users u ON u.id = i.inviter_id WHERE i.code = ?").bind(code).first();
+    if (!inv) return json({ error: "invite_invalid", error_he: "קישור ההזמנה לא תקף." }, 404);
+    if (Number(inv.inviter_id) === Number(u.id))
+      return json({ error: "invite_self", error_he: "לא ניתן להשתמש בהזמנה של עצמך." }, 400);
+    if (inv.claimed_by)
+      return json({ error: "invite_claimed", error_he: "ההזמנה הזו כבר נוצלה." }, 409);
+    const used: any = await env.DB.prepare(
+      "SELECT COUNT(*) AS c FROM invites WHERE claimed_by = ?").bind(Number(u.id)).first();
+    if (Number(used?.c ?? 0) > 0)
+      return json({ error: "invite_already_used",
+        error_he: "כבר נכנסת בעבר דרך הזמנת חבר." }, 409);
+    const upd = await env.DB.prepare(
+      "UPDATE invites SET claimed_by = ?, claimed_at = ? WHERE code = ? AND claimed_by IS NULL")
+      .bind(Number(u.id), nowIso(), code).run();
+    if (Number((upd as any).meta?.changes ?? 0) !== 1)
+      return json({ error: "invite_claimed", error_he: "ההזמנה הזו כבר נוצלה." }, 409);
+    const tagName = String(ctl.tag_name ?? "מגייס").slice(0, 40);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO user_tags (user_id, tag, granted_at, source) VALUES (?,?,?,?)")
+      .bind(Number(inv.inviter_id), tagName, nowIso(), "invite").run();
+    await env.DB.prepare(
+      "INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
+      .bind(Number(inv.inviter_id),
+        `תג חדש: ${tagName}! 🎖️`,
+        `${String(u.name ?? "שחקן")} נכנס דרך ההזמנה שלך - קיבלת את התג '${tagName}'. אפשר לראות אותו בעמוד התגים.`,
+        nowIso()).run();
+    await audit(env, request, Number(u.id), "invite.claim", "invite", code,
+      { inviter_id: Number(inv.inviter_id), tag: tagName });
+    return json({ ok: true, inviter_name: String(inv.inviter_name ?? "") });
+  }
+
+  // GET /api/tags - current user's tags (auth)
+  if (path === "/api/tags" && method === "GET") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    const rows = await env.DB.prepare(
+      "SELECT tag, granted_at, source FROM user_tags WHERE user_id = ? ORDER BY granted_at DESC")
+      .bind(Number(u.id)).all();
+    return json({ tags: rows.results });
   }
 
   // GET /api/store
