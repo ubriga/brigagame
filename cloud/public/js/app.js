@@ -209,8 +209,7 @@ const App = {
             <div class="spinner"></div><div class="sub" style="margin-top:6px">מתחבר…</div>
           </div>
           <div id="login-methods">
-            <div class="gsi-wrap" id="gsi-wrap"><div id="gsi-btn"></div></div>
-            <button class="btn hidden" id="redirect-btn" style="width:100%;margin-top:8px">🟢 כניסה עם חשבון גוגל</button>
+            <button class="btn" id="redirect-btn" style="width:100%;margin-top:8px">🟢 כניסה עם חשבון גוגל</button>
             <div id="email-block" class="hidden" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.12);padding-top:12px">
               <div class="sub" style="font-size:13px;margin-bottom:6px">או כניסה עם קוד למייל:</div>
               <div id="email-step1">
@@ -280,13 +279,12 @@ const App = {
       clearError();
     };
     if (incomingError) showError(incomingError);
+    // Google sign-in is always the plain redirect flow: the account chooser
+    // lives at Google, after a click. No Google script runs on this page, so
+    // no personalized prompt or button can appear before that click.
+    document.getElementById("redirect-btn").onclick = redirectStart;
     API.get("/api/auth/options").then(({ status, data }) => {
       if (status !== 200 || !data) return;
-      if (!data.popup) document.getElementById("gsi-wrap").classList.add("hidden");
-      if (data.redirect) {
-        const b = document.getElementById("redirect-btn");
-        b.classList.remove("hidden"); b.onclick = redirectStart;
-      }
       if (data.email_code) document.getElementById("email-block").classList.remove("hidden");
       if (data.email_code && data.email_from)
         document.getElementById("email-from-note").innerHTML =
@@ -326,36 +324,6 @@ const App = {
         else toast(data.error_he || "כניסת פיתוח כבויה");
       };
     }
-    const renderGsi = () => {
-      if (!window.google || !google.accounts || !CONFIG.GOOGLE_CLIENT_ID) return;
-      google.accounts.id.initialize({
-        client_id: CONFIG.GOOGLE_CLIENT_ID,
-        callback: async (resp) => {
-          try { navigator.sendBeacon(CONFIG.API_BASE + "/api/diag/gsi-callback",
-            JSON.stringify({ has_credential: !!resp.credential })); } catch (_) {}
-          lastMethod = "popup"; clearError(); setSpin(true);
-          let { status, data } = await API.post("/api/auth/google",
-            { credential: resp.credential });
-          if (status === 0 || status === 503) {
-            await new Promise((r) => setTimeout(r, 3000));
-            ({ status, data } = await API.post("/api/auth/google",
-              { credential: resp.credential }));
-          }
-          if (status === 200) finishLogin(data);
-          else {
-            const msg = status === 401 ? "ההתחברות לגוגל נכשלה. נסה שוב."
-              : status === 429 ? ((data && data.error_he) || "יותר מדי בקשות. נסה שוב בעוד דקה.")
-              : (status === 0 || status === 503) ? "אין חיבור לשרת כרגע. נסה שוב בעוד רגע."
-              : ((data && (data.error_he || data.detail)) || "ההתחברות נכשלה. נסה שוב.");
-            showError(msg);
-          }
-        },
-      });
-      google.accounts.id.renderButton(document.getElementById("gsi-btn"),
-        { theme: "filled_black", size: "large", text: "signin_with", locale: "iw" });
-    };
-    if (window.google) renderGsi();
-    else window.addEventListener("load", renderGsi);
   },
 
   botRankOptions(minLevel = 1, selectedLevel = null) {
