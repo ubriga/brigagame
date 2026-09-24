@@ -209,6 +209,10 @@ const App = {
             <div class="spinner"></div><div class="sub" style="margin-top:6px">מתחבר…</div>
           </div>
           <div id="login-methods">
+            <div id="pwa-login-hint" class="hidden" style="background:rgba(255,200,60,.10);border:1px solid rgba(255,200,60,.4);border-radius:10px;padding:10px;margin-bottom:10px;font-size:13px;line-height:1.5;text-align:center">
+              📲 באפליקציה המותקנתת, כניסה עם גוגל נפתחת בדפדפן חיצוני ולא מחברת את האפליקציה.<br><b>מומלץ: כניסה עם קוד למייל</b>, נשאר בתוך האפליקציה.
+            </div>
+            <div id="gsi-btn" style="display:flex;justify-content:center;margin-top:8px"></div>
             <button class="btn" id="redirect-btn" style="width:100%;margin-top:8px">🟢 כניסה עם חשבון גוגל</button>
             <div id="email-block" class="hidden" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.12);padding-top:12px">
               <div class="sub" style="font-size:13px;margin-bottom:6px">או כניסה עם קוד למייל:</div>
@@ -269,6 +273,23 @@ const App = {
       Sfx.ensure(); Sfx.startMusic();
       location.hash = "#/lobby";
     };
+    const renderGsi = () => {
+      if (!window.google || !google.accounts || !CONFIG.GOOGLE_CLIENT_ID) return;
+      if (document.getElementById("gsi-btn").dataset.rendered) return;
+      document.getElementById("gsi-btn").dataset.rendered = "1";
+      google.accounts.id.initialize({
+        client_id: CONFIG.GOOGLE_CLIENT_ID,
+        callback: async (resp) => {
+          lastMethod = "redirect"; clearError(); setSpin(true);
+          const { status, data } = await API.post("/api/auth/google",
+            { credential: resp.credential });
+          if (status === 200) finishLogin(data);
+          else { setSpin(false); showError((data && data.error_he) || "ההתחברות נכשלה"); }
+        },
+      });
+      google.accounts.id.renderButton(document.getElementById("gsi-btn"),
+        { theme: "filled_black", size: "large", text: "signin_with", locale: "iw" });
+    };
     const redirectStart = () => {
       clearError(); lastMethod = "redirect";
       location.href = CONFIG.API_BASE + "/api/auth/google/start";
@@ -283,9 +304,16 @@ const App = {
     // lives at Google, after a click. No Google script runs on this page, so
     // no personalized prompt or button can appear before that click.
     document.getElementById("redirect-btn").onclick = redirectStart;
+    const isPwa = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+      || window.navigator.standalone === true;
     API.get("/api/auth/options").then(({ status, data }) => {
       if (status !== 200 || !data) return;
       if (data.email_code) document.getElementById("email-block").classList.remove("hidden");
+      if (isPwa && data.pwa_email_hint !== false) {
+        document.getElementById("pwa-login-hint").classList.remove("hidden");
+        document.getElementById("redirect-btn").classList.add("secondary");
+      }
+      if (data.popup) renderGsi();
       if (data.email_code && data.email_from)
         document.getElementById("email-from-note").innerHTML =
           'הקוד יגיע מ-<b dir="ltr">' + data.email_from + '</b><br>לא מוצאים? בדקו גם בתיקיית הספאם.';
