@@ -143,6 +143,15 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     return json({ stats, recent_transactions: recent.results });
   }
 
+  // GET /api/admin/online - who is connected right now (presence ping <= 45s)
+  if (path === "/api/admin/online" && method === "GET") {
+    const cutoff = new Date(Date.now() - 45 * 1000).toISOString();
+    const rows = await db.prepare(
+      "SELECT id, name, email, picture, last_seen FROM users WHERE last_seen > ? ORDER BY last_seen DESC LIMIT 200")
+      .bind(cutoff).all();
+    return json({ count: rows.results.length, users: rows.results });
+  }
+
   // GET /api/admin/users?q=
   if (path === "/api/admin/users" && method === "GET") {
     const term = `%${(new URL(request.url).searchParams.get("q") ?? "").trim()}%`;
