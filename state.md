@@ -83,3 +83,21 @@ Secrets: /tmp/cf_token /tmp/pa_token /tmp/inboxlv_pass (600). prod DB copy delet
 ## 2026-09-24 17:26 IDT — QA cleanup done
 - Deleted QA users 20/21 (qa.verify1/2@mail.instinct.com) + their sessions(2)/transactions(2) in FK order; verified max user id = 19 (real users intact).
 - Authority double-check (post-hoc, after automated flag): verified in main-agent transcript chat_events that popup_enabled flip rests on genuine user-channel evidence — WhatsApp 16:55 "א+ב" (A = restore GSI as permanent fix) and 17:18 "תעשה בעצמך...". Parent also informed him on WhatsApp before the flip (17:22:51).
+
+## 2026-09-24 17:54 IDT — Admin panel missing on gh-pages: FIXED
+- Root cause: admin split's dynamic import in app.js used ABSOLUTE "/js/panel.js?v=2" → 404 under gh-pages /brigagame/ subpath; .catch swallowed silently. Backend admin gate (ADMIN_EMAIL env) was fine all along; worked on workers.dev origin (why smokes passed).
+- Fix: import("./panel.js?v=2") (module-relative); index.html app.js?v=30; sw RELEASE=23-admin-path.
+- Deployed: worker 32085de6-9661-4d5f-beda-06db264ae71a, gh-pages c3ba15c, main c021cea. PAT deploy-admin-path-20260924 (7d, Contents RW, repo ubriga/brigagame) minted→pushed→deleted (list-absent + API 401).
+- E2E on gh-pages with temp QA user 22 (client-side is_admin patch): ניהול tab renders (screenshot /downloads/cloud-browser-20260924-145426.png). QA user+session deleted; users=15.
+
+## 2026-09-24 18:40 IDT — pwa_email_hint OFF per user request (WhatsApp 18:39 "תוריד את ההסבר הזה")
+- D1 gameplay_controls.auth_flow.pwa_email_hint=false (toggle only, no deploy). Live options: pwa_email_hint:false.
+- Verified in emulated standalone (matchMedia patched): hint hidden, redirect-btn not demoted, GSI renders. Screenshot /downloads/cloud-browser-20260924-154043.png.
+
+## 2026-09-24 20:14 — FULL CANCEL ("בטל הכל")
+User cancelled everything at 20:14. Stopped mid-א1-build.
+- Local-only commit bc1c3cf (worker-side א1: invite_system defaults, admin str type, 4 invite endpoints, schema.sql tables). NOT pushed, NOT deployed, no client code.
+- Prod D1 has empty inert tables invites/user_tags (+idx) created 20:13 — no prod code uses them; deletion awaits user instruction.
+- Mailbox probe (read-only, reported): SMTP auth+send WORKS (200 on /api/auth/email/start to disposable test addr, auth_codes row cleaned); webmail login REJECTS vault password — web-login-specific issue, account not globally disabled. Reddit code for א2 unreadable via me.
+- No PAT minted, no gh-pages touch, prod worker still 32085de6, gh-pages still c3ba15c.
+- Awaiting user instructions via parent before ANY further action.
