@@ -41,7 +41,9 @@ const Sfx = {
     if (ctx.state === "suspended") {
       try { await ctx.resume(); } catch (_) { return false; }
     }
-    if (!this.muted) this.startMusic();
+    // Music resumes on unlock only for signed-in sessions (saved-session
+    // launches). The login screen itself must stay silent.
+    if (!this.muted && typeof API !== "undefined" && API.token) this.startMusic();
     return ctx.state === "running";
   },
 

@@ -117,6 +117,7 @@ const GameView = {
     document.getElementById("mega-btn").onclick = () => { this.useMega = !this.useMega; document.getElementById("mega-btn").classList.toggle("active", this.useMega); };
     await this.refresh(0);
     this._destroyed = false;
+    this.openSocket();
     this.pollDelay = CONFIG.POLL_MIN_MS || 900;
     this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     const loop = () => { this.draw(); this.raf = requestAnimationFrame(loop); };
@@ -125,10 +126,44 @@ const GameView = {
 
   destroy() {
     this.stopPoll();
+    this.closeSocket();
     cancelAnimationFrame(this.raf);
     if (this._onKey) window.removeEventListener("keydown", this._onKey);
     this._onKey = null;
     this.canvas = null;
+  },
+
+  // WebSocket acceleration (Cloudflare port): the server pushes every match
+  // event batch the moment it happens; each push triggers the same snapshot
+  // fetch the poll loop uses, so all state processing stays in one path.
+  // When the socket is down the adaptive poll cadence below is unchanged.
+  openSocket() {
+    if (!CONFIG.WS_ENABLED || this.ws || !this.snap) return;
+    const me = this.snap.players && this.snap.players[this.snap.you];
+    if (!me || me.id == null) return;  // spectators/bots get polling only
+    const base = (CONFIG.API_BASE || location.origin).replace(/^http/, "ws");
+    let ws;
+    try {
+      ws = new WebSocket(`${base}/api/matches/${this.matchId}/ws?uid=${me.id}&side=${this.snap.you}`);
+    } catch (e) { return; }
+    this.ws = ws;
+    ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch (err) { return; }
+      if (msg.type === "events" && !this._destroyed) {
+        // Something changed server-side: pull the authoritative snapshot now.
+        clearTimeout(this.pollTimer);
+        this.pollLoop();
+      } else if (msg.type === "error" && msg.error_he) {
+        toast(msg.error_he);
+      }
+    };
+    ws.onclose = () => { if (this.ws === ws) this.ws = null; };
+    ws.onerror = () => { try { ws.close(); } catch (err) { /* ignore */ } };
+  },
+
+  closeSocket() {
+    if (this.ws) { try { this.ws.close(); } catch (e) { /* ignore */ } this.ws = null; }
   },
 
   stopPoll() {
@@ -164,7 +199,10 @@ const GameView = {
       return;
     }
     const changed = !!(this.snap && this.snap.version > prevV);
-    if (document.hidden) {
+    if (this.ws && this.ws.readyState === 1) {
+      // Socket is the wake-up channel; polling is only a safety net now.
+      this.pollDelay = CONFIG.WS_SAFETY_POLL_MS || 15000;
+    } else if (document.hidden) {
       this.pollDelay = CONFIG.POLL_HIDDEN_MS || 5000;
     } else if (changed) {
       this.pollDelay = CONFIG.POLL_MIN_MS || 800;
@@ -378,11 +416,17 @@ const GameView = {
       this.showAbort();
       return;
     }
-    if (events.some(e => e.type === "shot" && e.side === s.you))
-      this.dropOptimistic();  // authoritative arc for my shot has arrived
+    // Reconcile my just-fired shot: the optimistic arc that left the barrel
+    // at release keeps flying; the authoritative arc is NOT replayed. A
+    // replay restarted the shell a network round trip after release and read
+    // as a delayed second shot ("the tower fired by itself"). Impact and
+    // damage events still apply, timed to the optimistic arc's remaining
+    // flight inside enqueue().
+    const skipMyArc = (events.some(e => e.type === "shot" && e.side === s.you)
+                       && this.anims.some(a => a.optimistic)) ? 1 : 0;
     const hasFx = s.version > prevV && events.length > 0;
     if (hasFx) {
-      const impactIn = this.enqueue(events);  // seconds until the last impact
+      const impactIn = this.enqueue(events, skipMyArc);  // seconds until the last impact
       // towers crumble on screen exactly when the shell lands, not before
       this.pendingTowers = { towers: s.towers, hp: s.tower_hp,
                              at: performance.now() / 1000 + impactIn };
@@ -579,11 +623,19 @@ const GameView = {
   // Events arrive as one batch per version bump. We play them in order:
   // each shell flies its full arc first, then its explosion, damage number,
   // debris and screen shake land together at impact.
-  enqueue(events) {
+  enqueue(events, skipMyArc = 0) {
     let delay = 0, lastImpact = 0;
     for (const ev of events) {
       if (ev.type === "shot" && ev.points && ev.points.length > 1) {
         const dur = Math.max(0.6, Math.min(2.2, ev.points.length * 0.09));
+        if (skipMyArc > 0 && ev.side === this.mySide()) {
+          skipMyArc -= 1;
+          // The optimistic arc covers this shell's flight. Reserve only its
+          // remaining time so the explosion lands when the shell does.
+          const elapsed = (Date.now() / 1000 + this.serverOffset) - (this.localLastShot || 0);
+          delay += Math.max(0, dur - elapsed);
+          continue;
+        }
         this.anims.push({ kind: "shot", points: ev.points, t: -delay, dur,
                           weapon: ev.weapon, side: ev.side });
         // Remote shots recoil when their sequenced shell leaves the barrel.

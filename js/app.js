@@ -7,7 +7,7 @@ function apiError(result, fallback = "שגיאה") {
   return fallback;
 }
 
-// Router + views (login, lobby, store, leaderboard, messages, admin).
+// Router + views (login, lobby, store, leaderboard, messages).
 const App = {
   me: null, inventory: {}, _routeSeq: 0,
 
@@ -140,7 +140,10 @@ const App = {
     document.getElementById("rank-chip").textContent = this.me.rank + " · " + this.me.rating;
     const pic = document.getElementById("user-pic");
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
-    document.getElementById("nav-admin").classList.toggle("hidden", !this.me.is_admin);
+    if (this.me.is_admin && !this._panelLoading) {
+      this._panelLoading = true;
+      import("/js/panel.js?v=2").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+    }
     GameView.setInventory(this.inventory);
   },
 
@@ -161,13 +164,26 @@ const App = {
     view.innerHTML = `<div class="route-loading" role="status">${Lang.current === "en" ? "Loading…" : "טוען…"}</div>`;
     document.querySelectorAll("#topbar nav a").forEach(a =>
       a.classList.toggle("active", hash.startsWith("#/" + a.dataset.nav)));
+    if (hash.startsWith("#/auth")) {
+      const t = new URLSearchParams((hash.split("?")[1] || "")).get("token");
+      if (t) {
+        API.setToken(t, localStorage.getItem("bg_remember") !== "0");
+        (async () => {
+          const me = await API.get("/api/me");
+          if (me.status === 200) App.setMe(me.data);
+          App.startPulse(); Sfx.ensure(); Sfx.startMusic();
+          location.hash = "#/lobby";
+        })();
+      } else location.hash = "#/login";
+      return;
+    }
     if (!API.token && !hash.startsWith("#/login")) { location.hash = "#/login"; return; }
     if (hash.startsWith("#/game/")) this.vGame(view, hash.split("/")[2], seq);
     else if (hash.startsWith("#/store")) this.vStore(view, seq);
     else if (hash.startsWith("#/custom")) this.vCustom(view, seq);
     else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view, seq);
     else if (hash.startsWith("#/messages")) this.vMessages(view, seq);
-    else if (hash.startsWith("#/admin")) this.vAdmin(view, hash.split("/")[2] || "stats", seq);
+    else if (this._routeHook && this._routeHook(hash, view, seq)) { /* extension route */ }
     else if (hash.startsWith("#/login")) { this.vLogin(view); view.removeAttribute("aria-busy"); }
     else this.vLobby(view, seq);
   },
@@ -175,19 +191,46 @@ const App = {
   // ---------------- login ----------------
   vLogin(view) {
     document.getElementById("topbar").classList.add("hidden");
+    const incomingError = new URLSearchParams((location.hash.split("?")[1] || "")).get("auth_error") || "";
     view.innerHTML = `
       <div id="login-wrap">
         <div class="logo">🎯</div>
         <h1>Brigagame <span style="color:var(--accent)">2.0</span></h1>
         <p class="sub">by OrelAI · משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!</p>
         <div class="card">
-          <div class="gsi-wrap"><div id="gsi-btn"></div></div>
+          <div id="login-error" class="hidden" style="background:rgba(255,80,80,.12);border:1px solid rgba(255,80,80,.45);border-radius:10px;padding:10px;margin-bottom:12px;text-align:center">
+            <div id="login-error-text" style="font-size:14px"></div>
+            <button class="btn" id="login-retry" style="margin-top:8px;padding:12px 22px;font-size:16px">🔄 נסה שוב</button>
+            <div id="login-report" class="hidden" style="margin-top:8px;font-size:13px">
+              עדיין לא עובד? <a href="mailto:ubriga@gmail.com?subject=בעיית%20התחברות%20Brigagame">דווח לנו</a>
+            </div>
+          </div>
+          <div id="login-spin" class="hidden" style="text-align:center;padding:6px">
+            <div class="spinner"></div><div class="sub" style="margin-top:6px">מתחבר…</div>
+          </div>
+          <div id="login-methods">
+            <button class="btn" id="redirect-btn" style="width:100%;margin-top:8px">🟢 כניסה עם חשבון גוגל</button>
+            <div id="email-block" class="hidden" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.12);padding-top:12px">
+              <div class="sub" style="font-size:13px;margin-bottom:6px">או כניסה עם קוד למייל:</div>
+              <div id="email-step1">
+                <input id="email-input" type="email" placeholder="המייל שלך" dir="ltr" style="text-align:left">
+                <button class="btn secondary" id="email-send" style="width:100%;margin-top:6px">שלח לי קוד כניסה</button>
+              </div>
+              <div id="email-step2" class="hidden">
+                <input id="code-input" inputmode="numeric" maxlength="6" placeholder="קוד בן 6 ספרות" dir="ltr" style="text-align:center;letter-spacing:6px">
+                <button class="btn" id="email-verify" style="width:100%;margin-top:6px">כניסה</button>
+                <button class="btn secondary" id="email-back" style="width:100%;margin-top:6px;font-size:13px;padding:8px">חזרה</button>
+              </div>
+              <div class="sub" id="email-from-note" style="font-size:12px;margin-top:8px;line-height:1.5"></div>
+              </div>
+            </div>
+          </div>
           <label style="display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 4px;font-size:14px;cursor:pointer">
             <input type="checkbox" id="remember-me" checked
               style="width:auto;padding:0;margin:0;accent-color:var(--accent)">
             <span>זכור אותי</span>
           </label>
-          <p class="sub" style="font-size:13px">התחברות עם חשבון גוגל בלבד.
+          <p class="sub" style="font-size:13px">
             בהתחברות אתה מאשר את <a href="terms.html">תנאי השימוש</a>
             ו<a href="privacy.html">מדיניות הפרטיות</a>.</p>
         </div>
@@ -197,37 +240,90 @@ const App = {
           <button class="btn secondary" style="margin-top:8px" id="dev-btn">כניסה</button>
         </div>
       </div>`;
+    const rememberEl = document.getElementById("remember-me");
+    rememberEl.checked = localStorage.getItem("bg_remember") !== "0";
+    rememberEl.onchange = () => localStorage.setItem("bg_remember", rememberEl.checked ? "1" : "0");
+    let failCount = Number(sessionStorage.getItem("bg_login_fails") || 0);
+    let lastMethod = "";
+    const errBox = document.getElementById("login-error");
+    const setSpin = (on) => {
+      document.getElementById("login-spin").classList.toggle("hidden", !on);
+      const m = document.getElementById("login-methods");
+      m.style.opacity = on ? "0.35" : "1";
+      m.style.pointerEvents = on ? "none" : "auto";
+    };
+    const showError = (msg) => {
+      failCount += 1; sessionStorage.setItem("bg_login_fails", String(failCount));
+      document.getElementById("login-error-text").textContent = msg;
+      errBox.classList.remove("hidden");
+      document.getElementById("login-report").classList.toggle("hidden", failCount < 2);
+      setSpin(false);
+    };
+    const clearError = () => errBox.classList.add("hidden");
+    const finishLogin = async (data) => {
+      API.setToken(data.token, rememberEl.checked);
+      sessionStorage.setItem("bg_login_fails", "0");
+      const me = await API.get("/api/me");
+      if (me.status === 200) App.setMe(me.data);
+      App.startPulse();
+      Sfx.ensure(); Sfx.startMusic();
+      location.hash = "#/lobby";
+    };
+    const redirectStart = () => {
+      clearError(); lastMethod = "redirect";
+      location.href = CONFIG.API_BASE + "/api/auth/google/start";
+    };
+    document.getElementById("login-retry").onclick = () => {
+      if (lastMethod === "redirect") return redirectStart();
+      if (lastMethod === "email") return document.getElementById("email-send").click();
+      clearError();
+    };
+    if (incomingError) showError(incomingError);
+    // Google sign-in is always the plain redirect flow: the account chooser
+    // lives at Google, after a click. No Google script runs on this page, so
+    // no personalized prompt or button can appear before that click.
+    document.getElementById("redirect-btn").onclick = redirectStart;
+    API.get("/api/auth/options").then(({ status, data }) => {
+      if (status !== 200 || !data) return;
+      if (data.email_code) document.getElementById("email-block").classList.remove("hidden");
+      if (data.email_code && data.email_from)
+        document.getElementById("email-from-note").innerHTML =
+          'הקוד יגיע מ-<b dir="ltr">' + data.email_from + '</b><br>לא מוצאים? בדקו גם בתיקיית הספאם.';
+    });
+    document.getElementById("email-send").onclick = async () => {
+      const email = document.getElementById("email-input").value.trim();
+      if (!email) return;
+      lastMethod = "email"; clearError(); setSpin(true);
+      const { status, data } = await API.post("/api/auth/email/start", { email });
+      if (status === 200) {
+        setSpin(false);
+        document.getElementById("email-step1").classList.add("hidden");
+        document.getElementById("email-step2").classList.remove("hidden");
+        toast("נשלח קוד למייל - בדוק גם בספאם");
+      } else showError((data && data.error_he) || "שליחת הקוד נכשלה. נסה שוב.");
+    };
+    document.getElementById("email-verify").onclick = async () => {
+      const code = document.getElementById("code-input").value.trim();
+      if (code.length !== 6) return;
+      lastMethod = "email"; clearError(); setSpin(true);
+      const { status, data } = await API.post("/api/auth/email/verify",
+        { email: document.getElementById("email-input").value.trim(), code });
+      if (status === 200) finishLogin(data);
+      else showError((data && data.error_he) || "הקוד שגוי. נסה שוב.");
+    };
+    document.getElementById("email-back").onclick = () => {
+      document.getElementById("email-step2").classList.add("hidden");
+      document.getElementById("email-step1").classList.remove("hidden");
+    };
     if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       document.getElementById("dev-login").classList.remove("hidden");
       document.getElementById("dev-btn").onclick = async () => {
         const email = document.getElementById("dev-email").value.trim();
         const { status, data } = await API.post("/api/auth/dev", { email });
-        if (status === 200) { API.setToken(data.token, document.getElementById("remember-me").checked); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
+        if (status === 200) { API.setToken(data.token, rememberEl.checked); App.setMe(await (await fetch(CONFIG.API_BASE + "/api/me", { headers: { Authorization: "Bearer " + data.token } })).json()); App.startPulse(); location.hash = "#/lobby"; }
         else toast(data.error_he || "כניסת פיתוח כבויה");
       };
     }
-    const renderGsi = () => {
-      if (!window.google || !google.accounts || !CONFIG.GOOGLE_CLIENT_ID) return;
-      google.accounts.id.initialize({
-        client_id: CONFIG.GOOGLE_CLIENT_ID,
-        callback: async (resp) => {
-          const { status, data } = await API.post("/api/auth/google",
-            { credential: resp.credential });
-          if (status === 200) {
-            API.setToken(data.token, document.getElementById("remember-me").checked);
-            const me = await API.get("/api/me");
-            if (me.status === 200) App.setMe(me.data);
-            App.startPulse();
-            Sfx.ensure(); Sfx.startMusic();
-            location.hash = "#/lobby";
-          } else toast(data.error_he || data.detail || "ההתחברות נכשלה");
-        },
-      });
-      google.accounts.id.renderButton(document.getElementById("gsi-btn"),
-        { theme: "filled_black", size: "large", text: "signin_with", locale: "iw" });
-    };
-    if (window.google) renderGsi();
-    else window.addEventListener("load", renderGsi);
   },
 
   botRankOptions(minLevel = 1, selectedLevel = null) {
@@ -257,6 +353,7 @@ const App = {
           <div class="grid">
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
             <div class="ai-start">
+              <label for="ai-tier" class="sub" style="margin:0">רמת קושי מול בוט:</label>
               <select id="ai-tier" aria-label="רמת קושי">
                 <option value="easy">קל - תרגול, ללא נקודות או מטבעות</option>
                 <option value="medium">בינוני</option>
@@ -264,7 +361,7 @@ const App = {
                 <option value="ultra">אולטרה קשה</option>
                 <option value="expert">מומחה - האתגר הקשה ביותר</option>
               </select>
-              <button class="btn secondary" id="ai-btn">🤖 משחק מול בוט</button>
+              <button class="btn" id="ai-btn">🤖 התחל משחק מול בוט</button>
             </div>
             <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
             <div style="display:flex;gap:8px">
@@ -417,12 +514,15 @@ const App = {
       if (m.status === 200) this.setMe(m.data);
     };
     await GameView.init(view, matchId);
+    const botFb = me.status === 200 ? (me.data.bot_fallback || null) : null;
     // waiting room overlay until opponent joins
+    let waitStart = 0, fbOffered = false, fbDeclined = false;
     const waitCheck = setInterval(() => {
       if (!GameView.snap) return;
       if (GameView.snap.status === "waiting") {
         const ov = document.getElementById("game-overlay");
         if (ov && ov.classList.contains("hidden")) {
+          waitStart = Date.now();
           ov.classList.remove("hidden");
           ov.innerHTML = `<h2>⏳ מחכים ליריב...</h2>
             ${GameView.snap.code ? `<div class="code-box">${esc(GameView.snap.code)}</div>
@@ -431,6 +531,41 @@ const App = {
           document.getElementById("cancel-wait").onclick = async () => {
             await API.post(`/api/matches/${matchId}/leave`);
             location.hash = "#/lobby";
+          };
+        }
+        // Bot fallback offer: a quick match with no human found in time gets a
+        // one-tap switch to a bot game (also gated server-side).
+        const isQuickWait = GameView.snap.mode === "quick" && !GameView.snap.code;
+        if (ov && isQuickWait && botFb && botFb.enabled && !fbOffered && !fbDeclined
+            && waitStart && Date.now() - waitStart >= Number(botFb.wait_seconds || 30) * 1000) {
+          fbOffered = true;
+          const box = document.createElement("div");
+          box.id = "bot-fallback-box";
+          box.innerHTML = `<p style="margin:14px 0 0">🤖 לא נמצא יריב עדיין - לשחק מיד נגד הבוט?</p>
+            <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+              <button class="btn" id="bot-fallback-yes">שחק נגד הבוט</button>
+              <button class="btn secondary" id="bot-fallback-no">להמשיך לחכות</button>
+            </div>`;
+          ov.appendChild(box);
+          document.getElementById("bot-fallback-no").onclick = () => {
+            fbDeclined = true; box.remove(); toast("ממשיכים לחפש יריב...");
+          };
+          document.getElementById("bot-fallback-yes").onclick = async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = "מתחיל...";
+            const { status, data } = await API.post("/api/matches/quick/bot-fallback", { match_id: matchId });
+            if (status === 200 && data.match_id) {
+              box.remove();
+              if (data.match_id !== matchId) {
+                clearInterval(waitCheck);
+                location.hash = "#/game/" + data.match_id;
+              }
+              // Same id = a human joined meanwhile; the live snapshot flips the
+              // overlay to the game by itself.
+            } else {
+              btn.disabled = false; btn.textContent = "שחק נגד הבוט";
+              toast((data && data.error_he) || "לא הצלחנו להתחיל משחק נגד הבוט");
+            }
           };
         }
       } else {
@@ -720,257 +855,6 @@ const App = {
     this.setUnread(0);
   },
 
-  // ---------------- admin ----------------
-  async vAdmin(view, tab, seq = this._routeSeq) {
-    if (!this.routeCurrent(seq)) return;
-    if (!this.me?.is_admin) { view.innerHTML = "<p>אין הרשאה.</p>"; return; }
-    tab = tab || "stats";
-    view.removeAttribute("aria-busy");
-    view.innerHTML = `
-      <h1>🛠️ ניהול</h1>
-      <div class="tabs">
-        ${["stats", "users", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
-          `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-            stats: "סטטיסטיקות", users: "משתמשים", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
-            coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה" }[t]}</button>`).join("")}
-      </div>
-      <div id="admin-body"></div>`;
-    view.querySelectorAll(".tabs button").forEach(b =>
-      b.onclick = () => this.vAdmin(view, b.dataset.tab));
-    const body = document.getElementById("admin-body");
-
-    if (tab === "stats") {
-      const { status: overviewStatus, data } = await API.get("/api/admin/overview");
-      if (overviewStatus !== 200 || !data || !data.stats) {
-        body.innerHTML = `<div class="card"><h2>לא ניתן לטעון סטטיסטיקות</h2><p class="sub">${esc(data?.error_he || "בדוק את החיבור ונסה שוב.")}</p><button class="btn small" id="stats-retry">נסה שוב</button></div>`;
-        document.getElementById("stats-retry").onclick = () => this.vAdmin(view, "stats");
-        return;
-      }
-      const s = data.stats;
-      body.innerHTML = `<div class="stat-cards">
-        ${[["משתמשים", s.users_total], ["פעילים היום", s.users_today],
-           ["משחקים", s.matches_total], ["משחקים פעילים", s.matches_active],
-           ["מטבעות הונפקו", s.coins_issued], ["מטבעות הוצאו", s.coins_spent],
-           ["רכישות", s.purchases], ["חסומים", s.banned]]
-          .map(([k, v]) => `<div class="card"><b>${v ?? 0}</b>${k}</div>`).join("")}
-        </div><h2>תנועות אחרונות</h2><div class="card"><table>
-        <tr><th>זמן</th><th>משתמש</th><th>סכום</th><th>סיבה</th></tr>
-        ${(data.recent_transactions || []).map(t =>
-          `<tr><td>${esc(t.created_at.slice(5, 16).replace("T", " "))}</td>
-           <td>${esc(t.email)}</td><td>${t.delta}</td><td>${esc(t.reason)}</td></tr>`).join("")}
-        </table></div>`;
-    } else if (tab === "users") {
-      body.innerHTML = `<input id="uq" placeholder="חיפוש לפי שם או אימייל">
-        <div id="ulist" style="margin-top:10px"></div>`;
-      const load = async () => {
-        const { data } = await API.get("/api/admin/users?q=" + encodeURIComponent(document.getElementById("uq").value));
-        document.getElementById("ulist").innerHTML = `<div class="card"><table>
-          <tr><th>משתמש</th><th>מטבעות</th><th>דירוג</th><th>נ/ה</th><th>סטטוס</th><th>פעולות</th></tr>
-          ${(data.users || []).map(u => `<tr>
-            <td>${esc(u.name)}<br><span class="sub" style="margin:0">${esc(u.email)}</span></td>
-            <td>${u.coins}</td><td>${u.rating}</td><td>${u.wins}/${u.losses}</td>
-            <td>${u.suspended ? "🚫 מושהה" : u.banned_until ? "⏸️ חסום" : "✓"}</td>
-            <td style="white-space:nowrap">
-              <button class="btn small secondary" data-coins="${u.id}">🪙±</button>
-              <button class="btn small secondary" data-ban="${u.id}">חסום 24ש׳</button>
-              <button class="btn small secondary" data-susp="${u.id}">השהה</button>
-              <button class="btn small secondary" data-lift="${u.id}">שחרר</button>
-            </td></tr>`).join("")}</table></div>`;
-        body.querySelectorAll("[data-ban]").forEach(b => b.onclick = async () => {
-          await API.post(`/api/admin/users/${b.dataset.ban}/moderate`, { action: "ban", hours: 24 });
-          toast("נחסם ל-24 שעות"); load();
-        });
-        body.querySelectorAll("[data-susp]").forEach(b => b.onclick = async () => {
-          await API.post(`/api/admin/users/${b.dataset.susp}/moderate`, { action: "suspend" });
-          toast("הושהה"); load();
-        });
-        body.querySelectorAll("[data-lift]").forEach(b => b.onclick = async () => {
-          await API.post(`/api/admin/users/${b.dataset.lift}/moderate`, { action: "lift" });
-          toast("שוחרר"); load();
-        });
-        body.querySelectorAll("[data-coins]").forEach(b => b.onclick = async () => {
-          const v = prompt("כמה מטבעות להוסיף/להוריד? (למשל 500 או -200)");
-          if (v === null) return;
-          const reason = prompt("סיבה (תוצג ביומן):", "admin_adjustment") || "admin_adjustment";
-          const { data: d } = await API.post(`/api/admin/users/${b.dataset.coins}/coins`,
-            { delta: parseInt(v, 10) || 0, reason });
-          if (d.ok) { toast("עודכן. יתרה: " + d.coins); load(); }
-          else toast("שגיאה");
-        });
-      };
-      document.getElementById("uq").oninput = () => load();
-      load();
-    } else if (tab === "gameplay") {
-      const { status, data } = await API.get("/api/admin/gameplay-controls");
-      if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת השליטה במשחק.</p>"; return; }
-      const c = data.controls;
-      const feature = (key, title, fields) => `<div class="card"><h2>${title}</h2>
-        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="${key}.enabled" ${c[key].enabled ? "checked" : ""} style="width:auto">מופעל</label>
-        ${fields.map(([field, label, min, max, step]) => `<label>${label}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c[key][field]}" data-control="${key}.${field}">`).join("")}</div>`;
-      body.innerHTML = `<div class="card"><h2>קצב התקדמות XP</h2><p class="sub">ערכי ברירת המחדל החדשים מאטים את ההתקדמות בערך פי 5. שינוי חל רק על משחקים שיסתיימו מעכשיו.</p>
-          <label>בונוס ניצחון מול שחקן</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.human_win}" data-control="xp.human_win">
-          <label>בונוס ניצחון מול מחשב</label><input type="number" min="0" max="100" step="0.1" value="${c.xp.bot_win}" data-control="xp.bot_win">
-          <label>XP לכל נקודת נזק</label><input type="number" min="0" max="1" step="0.001" value="${c.xp.per_damage}" data-control="xp.per_damage"></div>
-        ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]])}
-        ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]])}
-        ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]])}
-        ${feature("dynamic_obstacle", "מכשול דינמי", [["speed", "מהירות", 1, 200, 1], ["warning_seconds", "התראה לפני תנועה (שניות)", 0, 10, 0.1]])}
-        <div class="card bot-admin"><h2>🤖 מנוע הבוט החכם</h2><p class="sub">כל שינוי חל על משחקי בוט חדשים בלבד. משחק שכבר התחיל שומר snapshot מלא.</p>
-          <div class="bot-system-toggles">
-            ${[["enabled","מנוע חכם"],["special_weapons","נשקים מיוחדים"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מתביית"],["cluster_shell","פגז מצרר"],["movement","תנועה טקטית"],["reactive_shield","מגן תגובתי"],["tactical_mega","Mega טקטי"],["adaptation","הסתגלות בתוך משחק"],["infinite_ammo","תחמושת אינסופית"]].map(([k,l]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_system.${k}" ${c.bot_system[k] ? "checked" : ""} style="width:auto">${l}</label>`).join("")}
-          </div></div>
-        <div class="card bot-admin"><h2>🎯 כוונון לפי רמה</h2><p class="sub">דיוק, משאבים, הגנה, תנועה, זיכרון ואגרסיביות. הערכים נשמרים בשרת.</p>
-          ${[["easy","קל"],["medium","בינוני"],["hard","קשה"],["ultra","אולטרה קשה"],["expert","מומחה"]].map(([t,label]) => `<div class="bot-tier-controls"><h3>${label}</h3>
-            ${[["angle_noise","סטיית זווית מרבית (°)",0,45,.05],["power_spread","סטיית עוצמה",0,.5,.001],["wind_skill","פיצוי רוח",0,1,.01],["reaction","זמן תגובה",0,10,.05],["rank_offset","תוספת דרגות",0,18,1],["double_ammo","תחמושת כפולה",0,99,1],["homing_ammo","תחמושת מתבייתת",0,99,1],["cluster_ammo","תחמושת מצרר",0,99,1],["weapon_skill","מיומנות בחירת נשק",0,1,.01],["shield_hp","סף HP למגן",0,1,.01],["shield_damage","סף נזק תגובתי",0,1000,1],["move_chance","נטייה לזוז",0,1,.01],["mega_chance","נטייה ל-Mega",0,1,.01],["memory","עומק זיכרון",0,20,1],["correction","חוזק תיקון",0,1,.01],["aggression","אגרסיביות",0,1,.01]].map(([k,l,min,max,step]) => `<label>${l}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c.bot_difficulty[t+"_"+k]}" data-control="bot_difficulty.${t+"_"+k}">`).join("")}
-          </div>`).join("")}</div>
-        <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>
-        <button class="btn secondary" id="gameplay-reset">איפוס לברירות מחדל</button>`;
-      document.getElementById("gameplay-reset").onclick = async () => {
-        if (!confirm("לאפס את כל הגדרות המשחק לברירות המחדל? השינוי יחול על משחקי בוט חדשים.")) return;
-        const { status: reset } = await API.post("/api/admin/gameplay-controls", { reset: true });
-        if (reset === 200) { toast("ההגדרות אופסו"); this.vAdmin(view, "gameplay"); }
-        else toast("האיפוס נכשל");
-      };
-      document.getElementById("gameplay-save").onclick = async () => {
-        const updated = JSON.parse(JSON.stringify(c));
-        body.querySelectorAll("[data-control]").forEach(input => {
-          const [section, key] = input.dataset.control.split(".");
-          updated[section][key] = input.type === "checkbox" ? input.checked : Number(input.value);
-        });
-        const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated }, { timeoutMs: 30000 });
-        toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");
-      };
-    } else if (tab === "coatings") {
-      const { status, data } = await API.get("/api/coatings");
-      if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הציפויים.</p>"; return; }
-      const active = data.current;
-      const order = ["wood", "tin", "iron"];
-      const queued = new Set((data.jobs || []).map(j => j.material));
-      const activeLevel = active ? order.indexOf(active.material) + 1 : 0;
-      const next = order[activeLevel];
-      body.innerHTML = `<div class="card"><h2>🏗️ ציפויים בבנייה</h2>
-        <p>${active ? `ציפוי פעיל: <b>${esc(data.catalog[active.material].name_he)}</b> (${Math.round(active.hp)}/${Math.round(active.max_hp)} הגנה)` : "אין ציפוי פעיל"}</p>
-        ${(data.jobs || []).map(j => `<div class="build-job" data-completes="${j.completes_at}" data-server="${data.server_time}"><b>${esc(data.catalog[j.material].name_he)}</b> - ${j.status === "building" ? "בבנייה" : "בתור"}<span class="build-countdown"></span><div class="worker-scene"><span>👷</span><span>🔨</span><span>👷</span></div></div>`).join("") || '<p class="sub">אין בנייה פעילה.</p>'}
-        <div class="coating-grid">${order.map((m, i) => { const x=data.catalog[m]; const locked=i>activeLevel || queued.has(m); return `<div class="card coating-${m}"><h3>${esc(x.name_he)}</h3><p>${Math.round(x.hp)} הגנה · ${x.minutes} דקות</p><p class="price">🪙 ${x.price}</p><button class="btn small" data-build-coating="${m}" ${!data.enabled || locked || i<activeLevel ? "disabled" : ""}>${i<activeLevel ? "הושלם" : queued.has(m) ? "בתור" : i===activeLevel ? "התחל בנייה" : "נעול"}</button></div>`; }).join("")}</div></div>`;
-      const tick = () => body.querySelectorAll(".build-job").forEach(job => {
-        const left = Math.max(0, Number(job.dataset.completes) - Number(job.dataset.server) - (Date.now() - this._coatingClockStart) / 1000);
-        const min = Math.floor(left / 60), sec = Math.floor(left % 60);
-        job.querySelector(".build-countdown").textContent = ` · ${min}:${String(sec).padStart(2,"0")}`;
-      });
-      this._coatingClockStart = Date.now(); tick(); clearInterval(this._coatingTimer); this._coatingTimer = setInterval(tick, 1000);
-      body.querySelectorAll("[data-build-coating]").forEach(btn => btn.onclick = async () => {
-        const { status: built, data: result } = await API.post("/api/coatings/build", { material: btn.dataset.buildCoating });
-        if (built === 200) { toast("הבנייה התחילה"); this.vAdmin(view, "coatings"); window.refreshMe?.(); }
-        else toast(result.error_he || "הבנייה נכשלה");
-      });
-    } else if (tab === "cosmetics") {
-      const loadCosmetics = async () => {
-        const { status, data } = await API.get("/api/admin/cosmetics");
-        if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הקטלוג.</p>"; return; }
-        body.innerHTML = `<div class="card"><h2>שליטת קטלוג קוסמטי</h2><p class="sub">מחיר וזמינות נשמרים בשרת.</p><table>
-          <tr><th>פריט</th><th>דרגה</th><th>מחיר</th><th>זמין</th><th></th></tr>
-          ${(data.cosmetics || []).map(c => `<tr><td>${esc(c.name_he || c.name)}<br><small>${esc(c.item_id)}</small></td>
-            <td>${esc(c.tier || "common")}</td><td><input type="number" min="0" max="100000" value="${c.price}" data-price="${esc(c.item_id)}" style="width:100px"></td>
-            <td><input type="checkbox" data-available="${esc(c.item_id)}" ${c.available === false ? "" : "checked"} style="width:auto"></td>
-            <td><button class="btn small" data-savecos="${esc(c.item_id)}">שמור</button></td></tr>`).join("")}</table></div>`;
-        body.querySelectorAll("[data-savecos]").forEach(btn => btn.onclick = async () => {
-          const id = btn.dataset.savecos;
-          const price = parseInt(body.querySelector(`[data-price="${id}"]`).value, 10);
-          const available = body.querySelector(`[data-available="${id}"]`).checked;
-          const { status: st } = await API.post("/api/admin/cosmetics/" + encodeURIComponent(id), { price, available });
-          toast(st === 200 ? "נשמר" : "שגיאה");
-        });
-      };
-      loadCosmetics();
-    } else if (tab === "audit") {
-      const { status, data } = await API.get("/api/admin/audit");
-      if (status !== 200) { body.innerHTML = `<p>שגיאה בטעינת היומן.</p>`; return; }
-      body.innerHTML = `<div class="card"><p class="sub">${esc(data.notice || "")}</p><table>
-        <tr><th>זמן</th><th>מנהל/משתמש</th><th>פעולה</th><th>יעד</th><th>פרטים</th></tr>
-        ${(data.audit || []).map(a => `<tr><td>${esc(a.created_at.slice(0, 16).replace("T", " "))}</td>
-          <td>${esc(a.actor_email || "מערכת")}</td><td>${esc(a.action)}</td>
-          <td>${esc((a.target_type || "") + (a.target_id ? ":" + a.target_id : ""))}</td>
-          <td class="audit-details">${esc(a.details || "")}</td></tr>`).join("")}
-        </table></div>`;
-    } else if (tab === "maintenance") {
-      const { data: mt } = await API.get("/api/admin/maintenance");
-      body.innerHTML = `<div class="card">
-        <h2>🚧 מצב תחזוקה</h2>
-        <label style="display:flex;gap:8px;align-items:center">
-          <input type="checkbox" id="mt-on" ${mt && mt.on ? "checked" : ""} style="width:auto">
-          הצג באנר תחזוקה לכל השחקנים (בכל המסכים, כולל במשחק)</label>
-        <label>נוסח ההודעה</label>
-        <input id="mt-msg" value="${esc((mt && mt.message) || "")}" placeholder="למשל: תחזוקה מתוכננת הלילה ב-23:00">
-        <button class="btn" id="mt-save" style="margin-top:12px">שמור</button></div>`;
-      document.getElementById("mt-save").onclick = async () => {
-        const { status: s, data: d } = await API.post("/api/admin/maintenance", {
-          on: document.getElementById("mt-on").checked,
-          message: document.getElementById("mt-msg").value });
-        if (s === 200) { this.setMaintenance(d.maintenance); toast("נשמר"); }
-        else toast("שגיאה");
-      };
-    } else if (tab === "broadcast") {
-      body.innerHTML = `<div class="card">
-        <label>כותרת</label><input id="bc-title">
-        <label>תוכן ההודעה (תישלח לכל המשתמשים)</label>
-        <input id="bc-body" style="height:80px">
-        <button class="btn" id="bc-send" style="margin-top:12px">📢 שלח לכולם</button></div>`;
-      document.getElementById("bc-send").onclick = async () => {
-        const title = document.getElementById("bc-title").value;
-        const b = document.getElementById("bc-body").value;
-        const { status: s } = await API.post("/api/admin/broadcast", { title, body: b });
-        toast(s === 200 ? "ההודעה שודרה לכל המשתמשים" : "שגיאה");
-      };
-    } else if (tab === "coupons") {
-      body.innerHTML = `<div class="card">
-        <h2>יצירת קופון</h2>
-        <label>סוג</label>
-        <select id="cp-kind"><option value="coins">מטבעות</option><option value="item">פריט</option></select>
-        <label>סכום (אם מטבעות)</label><input id="cp-amount" type="number" value="100">
-        <label>פריט (אם פריט)</label>
-        <select id="cp-item"><option>טוען קטלוג...</option></select>
-        <label>מספר מימושים</label><input id="cp-uses" type="number" value="1">
-        <label>קוד (ריק = אקראי)</label><input id="cp-code">
-        <button class="btn" id="cp-create" style="margin-top:12px">צור קופון</button></div>
-        <div id="cp-list"></div>`;
-      const catalogResult = await API.get("/api/store");
-      document.getElementById("cp-item").innerHTML = Object.entries(catalogResult.data.catalog || {})
-        .map(([id, item]) => `<option value="${esc(id)}">${esc(item.name_he || item.name || id)} (${esc(id)})</option>`).join("");
-      const loadC = async () => {
-        const { data } = await API.get("/api/admin/coupons");
-        document.getElementById("cp-list").innerHTML = `<div class="card"><table>
-          <tr><th>קוד</th><th>סוג</th><th>ערך</th><th>מימושים</th><th></th></tr>
-          ${(data.coupons || []).map(c => `<tr><td><b>${esc(c.code)}</b></td>
-            <td>${c.kind}</td><td>${c.kind === "coins" ? c.amount : c.item_id}</td>
-            <td>${c.uses}/${c.max_uses}</td>
-            <td><button class="btn small danger" data-delc="${esc(c.code)}">מחק</button></td></tr>`).join("")}
-          </table></div>`;
-        body.querySelectorAll("[data-delc]").forEach(b => b.onclick = async () => {
-          await API.del("/api/admin/coupons/" + b.dataset.delc); loadC();
-        });
-      };
-      document.getElementById("cp-create").onclick = async () => {
-        const payload = {
-          kind: document.getElementById("cp-kind").value,
-          amount: parseInt(document.getElementById("cp-amount").value, 10) || 100,
-          item_id: document.getElementById("cp-item").value,
-          max_uses: parseInt(document.getElementById("cp-uses").value, 10) || 1,
-          code: document.getElementById("cp-code").value,
-        };
-        const { status: s, data: d } = await API.post("/api/admin/coupons", payload);
-        toast(s === 200 ? "נוצר קופון: " + d.code : (d.error || "שגיאה"));
-        loadC();
-      };
-      loadC();
-    } else if (tab === "matches") {
-      const { data } = await API.get("/api/admin/matches");
-      body.innerHTML = `<div class="card"><table>
-        <tr><th>מזהה</th><th>סוג</th><th>סטטוס</th><th>עודכן</th></tr>
-        ${(data.matches || []).map(m => `<tr><td>${esc(m.id)}</td><td>${m.mode}</td>
-          <td>${m.status}</td><td>${esc(m.updated_at.slice(5, 16).replace("T", " "))}</td></tr>`).join("")}
-        </table></div>`;
-    }
-  },
 };
 
 App.boot();
