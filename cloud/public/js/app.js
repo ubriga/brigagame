@@ -539,7 +539,6 @@ const App = {
       Sfx.play("click");
       const result = await API.post("/api/matches/friend");
       const data = result.data || {};
-    document.getElementById("invite-btn").onclick = () => { Sfx.play("click"); this.inviteFriend(); };
       if (data.code) {
         const box = document.getElementById("friend-code");
         box.classList.remove("hidden");
@@ -553,6 +552,7 @@ const App = {
         go(data.match_id);
       } else toast(apiError(result, "שגיאה ביצירת משחק חברים"));
     };
+    document.getElementById("invite-btn").onclick = () => { Sfx.play("click"); this.inviteFriend(); };
     document.getElementById("join-btn").onclick = async () => {
       const code = document.getElementById("join-code").value.trim();
       if (!code) return;
@@ -569,8 +569,9 @@ const App = {
       if (status === 200) {
         Sfx.play("coin");
         toast(`🎁 קיבלת ${data.amount} מטבעות! רצף: ${data.streak} ימים`);
-        window.refreshMe();
+        this._daily = false;
         e.target.disabled = true; e.target.textContent = "🎁 בונוס יומי (נאסף)";
+        window.refreshMe?.();
       } else toast(apiError(result, "שגיאה באיסוף הבונוס היומי"));
     };
   },
