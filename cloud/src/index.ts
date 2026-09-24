@@ -92,6 +92,9 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         redirect: af.redirect_enabled === true,
         email_code: af.email_code_enabled === true,
         email_from: provider === "inboxlv" ? "brigagame.game@inbox.lv" : "onboarding@resend.dev",
+        // Installed-PWA logins: the Google redirect leaves the app storage, so
+        // the client emphasizes the email-code path unless the admin disables it.
+        pwa_email_hint: af.pwa_email_hint !== false,
       });
     }
 
