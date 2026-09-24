@@ -63,6 +63,7 @@ const PANEL_STRINGS = {
 async function vAdmin(App, view, tab, seq = App._routeSeq) {
   if (!App.routeCurrent(seq)) return;
   if (!App.me?.is_admin) { view.innerHTML = "<p>אין הרשאה.</p>"; return; }
+  clearInterval(App._onlineTimer); App._onlineTimer = null;
   tab = tab || "stats";
   view.removeAttribute("aria-busy");
   view.innerHTML = `
@@ -99,8 +100,22 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
          <td>${esc(t.email)}</td><td>${t.delta}</td><td>${esc(t.reason)}</td></tr>`).join("")}
       </table></div>`;
   } else if (tab === "users") {
-    body.innerHTML = `<input id="uq" placeholder="חיפוש לפי שם או אימייל">
+    body.innerHTML = `<div id="online-box"></div>
+      <input id="uq" placeholder="חיפוש לפי שם או אימייל">
       <div id="ulist" style="margin-top:10px"></div>`;
+    const loadOnline = async () => {
+      const box = document.getElementById("online-box");
+      if (!box) return;  // navigated away from the tab
+      const { status, data } = await API.get("/api/admin/online");
+      if (status !== 200 || !data) return;
+      const names = (data.users || []).map(u => esc(u.name || u.email));
+      box.innerHTML = `<div class="card" style="margin-bottom:12px">
+        <b>🟢 מחוברים כעת: ${data.count}</b>
+        <div class="sub" style="margin-top:6px">${names.join(" · ") || "אין משתמשים מחוברים כרגע"}</div>
+      </div>`;
+    };
+    loadOnline();
+    App._onlineTimer = setInterval(loadOnline, 10000);
     const load = async () => {
       const { data } = await API.get("/api/admin/users?q=" + encodeURIComponent(document.getElementById("uq").value));
       document.getElementById("ulist").innerHTML = `<div class="card"><table>
