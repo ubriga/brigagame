@@ -125,3 +125,8 @@ Implementation: settings key shabbat_lockdown {enabled,title,body,start,end}; ac
 Verified locally (wrangler dev --local): gate blocks user, passes admin, window semantics (past/live), validation errors, admin 403 for non-admin. Prod: /api/lockdown {active:false}, login normal. Settings seeded: enabled=false, texts set, start=null, end=2026-09-26T18:00Z (=21:00 IDT).
 Deploy: worker df3498a9, main e67757f, gh-pages 3fe6a50, v33/sw26 "26-shabbat". PAT deploy-shabbat-lockdown-20260925 minted→pushed→deleted (list-absent+401). Sudo OTP found in GMAIL TRASH (auto-filter!) — future: search in:anywhere from:github subject:"Sudo email verification code".
 ACTIVATION (on his approval): set start=<now ISO> (or enabled=true) via POST /api/admin/shabbat or D1; auto-off at 18:00Z. Preview screenshot: cloud-browser-20260925-103028.png sent to parent.
+
+## 2026-09-25 13:34 — Shabbat lockdown ACTIVATED (user "מאשר" 13:32 via WhatsApp, relayed by parent)
+D1 shabbat_lockdown: enabled=false, start=2026-09-25T10:33:17Z (=now), end=2026-09-26T18:00Z (auto-off 26.9 21:00 IDT). Window governs; manual toggle stays off so auto-off works with no further action.
+Verified live: /api/lockdown active:true; regular /api/me + google-auth-start 503 lockdown (login blocked pre-Google); /api/health 200. Admin (temp session, email=ubriga@gmail.com): GET/POST /api/admin/shabbat 200 (POST with identical values = release-capability proof, state unchanged), /api/me passes gate; session deleted after (audit rows for admin.shabbat intentionally kept as trail). Browser: prod URL shows live lock screen; screenshot cloud-browser-20260925-103355.png.
+CF token via vault fill → data: page input → execute-js .content (NOT .result — generic JSON shape). Token never printed/persisted.
