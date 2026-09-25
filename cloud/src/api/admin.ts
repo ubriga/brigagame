@@ -267,6 +267,11 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       return json({ error: "end_before_start", error_he: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, 400);
     if (cfg.repeat_weekly && !(cfg.start && cfg.end))
       return json({ error: "repeat_needs_window", error_he: "חזרה שבועית דורשת שעת התחלה וסיום מתוזמנים." }, 400);
+    // An end time is mandatory for ANY activation path: no infinite lockdowns.
+    if (cfg.enabled && !cfg.end)
+      return json({ error: "end_required", error_he: "לא ניתן להפעיל נעילה בלי שעת סיום." }, 400);
+    if (cfg.start && !cfg.end)
+      return json({ error: "start_needs_end", error_he: "התחלה מתוזמנת דורשת גם שעת סיום." }, 400);
     await db.prepare(
       "INSERT INTO settings (key, value) VALUES ('shabbat_lockdown', ?)"
       + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
