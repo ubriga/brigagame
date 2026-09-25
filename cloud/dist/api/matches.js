@@ -45,14 +45,20 @@ async function doFetch(env, matchId, path, init) {
 /** Port of app.py match_snapshot. */
 async function matchSnapshot(env, m, userId, since) {
     const state = m.state;
-    const rows = await env.DB.prepare("SELECT version, data FROM match_events WHERE match_id = ? AND version > ? ORDER BY version, id")
-        .bind(m.id, since).all();
+    // Latency: events, both player lookups and the catalog are independent.
+    const userQ = (uid) => uid != null
+        ? env.DB.prepare("SELECT id, name, picture, rating, wins, rank_points FROM users WHERE id = ?").bind(uid).first()
+        : null;
+    const [rows, u1, u2, catalog] = await Promise.all([
+        env.DB.prepare("SELECT version, data FROM match_events WHERE match_id = ? AND version > ? ORDER BY version, id")
+            .bind(m.id, since).all(),
+        userQ(m.p1), userQ(m.p2), effectiveCatalogMap(env),
+    ]);
     const events = rows.results.map((r) => JSON.parse(r.data));
     const players = {};
-    for (const side of ["p1", "p2"]) {
+    for (const [side, u] of [["p1", u1], ["p2", u2]]) {
         const uid = m[side];
         if (uid != null) {
-            const u = await env.DB.prepare("SELECT id, name, picture, rating, wins, rank_points FROM users WHERE id = ?").bind(uid).first();
             players[side] = u
                 ? { id: u.id, name: u.name, picture: u.picture, rating: u.rating,
                     rank: rankFor(Number(u.rating)), idf_rank: rankPayload(Number(u.rank_points)) }
@@ -65,7 +71,6 @@ async function matchSnapshot(env, m, userId, since) {
         }
     }
     const side = sideFor(m, userId);
-    const catalog = await effectiveCatalogMap(env);
     const mods = state.mods ?? {};
     const towers = state.towers ?? null;
     const towerDims = {};
@@ -130,18 +135,16 @@ export async function handleMatchApi(env, request, path) {
     // app.py limiter parity: state->state, fire->fire, ready/leave->mutation (move/shield unlimited there)
     const rlBucket = action === "state" ? "state" : action === "fire" ? "fire"
         : (action === "ready" || action === "leave") ? "mutation" : null;
-    if (rlBucket) {
-        const rl = await limited(env, request, rlBucket, user);
-        if (rl)
-            return rl;
-    }
-    // Authoritative live state comes from the DO; fall back to the D1
-    // checkpoint when the DO has no in-memory copy (e.g. after eviction
-    // of a finished match).
-    const row = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first();
+    // Latency: these three are independent once auth resolved - one round.
+    const [rl, row, live] = await Promise.all([
+        rlBucket ? limited(env, request, rlBucket, user) : null,
+        env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first(),
+        doFetch(env, matchId, "/snapshot"),
+    ]);
+    if (rl)
+        return rl;
     if (!row)
         return json({ error: "not_found" }, 404);
-    const live = await doFetch(env, matchId, "/snapshot");
     const m = (live && live.id)
         ? { ...row, status: live.status, version: live.version, state: live.state }
         : { ...row, state: JSON.parse(row.state || "{}") };
@@ -202,8 +205,9 @@ export async function handleMatchApi(env, request, path) {
             });
             if (out?.error)
                 return json(out, Number(out.status) || 400);
-            const after = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first();
-            const snapMatch = { ...after, state: JSON.parse(String(after.state || "{}")) };
+            // The DO returns the post-shot state directly - saves a D1 re-read.
+            const snapMatch = { ...row, state: out.state, status: out.status,
+                version: out.version };
             return json(await matchSnapshot(env, snapMatch, uid, Number(out.prevVersion)));
         }
         const actionBody = await request.json().catch(() => ({}));
@@ -212,11 +216,18 @@ export async function handleMatchApi(env, request, path) {
         });
         if (out?.error)
             return json(out, 400);
-        const after = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first();
-        const snapMatch = { ...after, state: JSON.parse(String(after.state || "{}")) };
+        const snapMatch = { ...row, state: out.state, status: out.status,
+            version: out.version };
         return json(await matchSnapshot(env, snapMatch, uid, Number(out.prevVersion)));
     }
     if (action === "leave" && request.method === "POST") {
+        // app.py parity: leaving a waiting room deletes it outright (the DO only
+        // hosts active matches, so a waiting match is a D1-only row).
+        if (m.status === "waiting" && Number(m.p1) === uid) {
+            await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(matchId).run();
+            await env.DB.prepare("DELETE FROM matches WHERE id = ? AND status = 'waiting' AND p2 IS NULL").bind(matchId).run();
+            return json({ ok: true });
+        }
         const out = await doFetch(env, matchId, "/leave", {
             method: "POST", body: JSON.stringify({ userId: uid })
         });

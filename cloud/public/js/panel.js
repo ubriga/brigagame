@@ -50,6 +50,9 @@ const PANEL_STRINGS = {
   "סיכוי להשתמש במגן (0-1)":"Shield chance (0-1)",
   "סיכוי להשתמש במגה (0-1)":"Mega chance (0-1)",
   "שמור את כל ההגדרות":"Save all settings",
+  "🕯️ מסך שבת / חג (נעילת אתר מלאה)":"🕯️ Shabbat / holiday screen (full-site lockdown)",
+  "שמור הגדרות נעילה":"Save lockdown settings",
+  "תצוגה מקדימה":"Preview",
   "הגדרות המשחק נשמרו":"Game settings saved",
   "ערך לא תקין - לא נשמר":"Invalid value - not saved",
   "פעילים היום":"Active today",
@@ -178,6 +181,17 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>מכסת הזמנות ליום</label><input type="number" min="1" max="100" step="1" value="${c.invite_system ? c.invite_system.max_per_day : 5}" data-control="invite_system.max_per_day">
         <label>שם התג למזמין</label><input type="text" maxlength="40" value="${esc(c.invite_system ? c.invite_system.tag_name : "מגייס")}" data-control="invite_system.tag_name">
         <label>נוסח הודעת ההזמנה</label><input type="text" maxlength="300" value="${esc(c.invite_system ? c.invite_system.invite_text : "")}" data-control="invite_system.invite_text"></div>
+      <div class="card"><h2>🕯️ מסך שבת / חג (נעילת אתר מלאה)</h2><p class="sub">נעילה מלאה של האתר ברמת השרת: כל פנייה (התחברות, משחק, API) חסומה לכולם חוץ מהאדמין, וכל מי שנכנס רואה רק את המסך הזה. טקסט = כותרת וגוף חופשיים (שבת שלום, חג שמח...). חלון מתוזמן = הפעלה וכיבוי אוטומטיים לפי שעת ההתחלה והסיום. מתג ידני = נעילה מיידית עד כיבוי ידני. שמירת טופס בלי סימון לא מפעילה נעילה.</p>
+        <div id="shabbat-status" class="sub" style="margin-bottom:8px">טוען מצב...</div>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="shabbat-enabled" style="width:auto">מתג ידני: נעילה מיידית (עד כיבוי ידני)</label>
+        <label>כותרת המסך</label><input type="text" id="shabbat-title" maxlength="120" placeholder="שבת שלום!">
+        <label>טקסט גוף</label><input type="text" id="shabbat-body" maxlength="500" placeholder="נחזור לפעילות בצאת השבת.">
+        <label>התחלה מתוזמנת (אופציונלי)</label><input type="datetime-local" id="shabbat-start">
+        <label>סיום מתוזמן (אופציונלי)</label><input type="datetime-local" id="shabbat-end">
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn" id="shabbat-save">שמור הגדרות נעילה</button>
+          <button class="btn secondary" id="shabbat-preview">תצוגה מקדימה</button>
+        </div></div>
       <div class="card"><h2>🤖 הצעת מעבר למשחק נגד בוט</h2><p class="sub">במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט. רמת הבוט = עוצמת הבוט במשחק הגיבוי (קל = משחק אימון בלי נקודות דירוג; בינוני ומעלה = משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_fallback.enabled" ${c.bot_fallback.enabled ? "checked" : ""} style="width:auto">מופעל</label>
         <label>זמן המתנה לפני הצגת ההצעה (שניות)</label><input type="number" min="5" max="300" step="1" value="${c.bot_fallback.wait_seconds}" data-control="bot_fallback.wait_seconds">
@@ -217,6 +231,52 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const { status: saved } = await API.post("/api/admin/gameplay-controls", { controls: updated }, { timeoutMs: 30000 });
       toast(saved === 200 ? "הגדרות המשחק נשמרו" : "ערך לא תקין - לא נשמר");
     };
+
+    // --- Shabbat / holiday lockdown card ---
+    const isoToLocal = (iso) => {
+      if (!iso) return "";
+      const d = new Date(iso), p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const shabbatStatus = (cfg, active) => {
+      const el = document.getElementById("shabbat-status");
+      const bits = [];
+      bits.push(active ? "🔴 הנעילה פעילה עכשיו" : "🟢 הנעילה כבויה");
+      if (cfg.enabled) bits.push("מתג ידני: דולק");
+      if (cfg.start) bits.push("התחלה: " + new Date(cfg.start).toLocaleString("he-IL"));
+      if (cfg.end) bits.push("סיום: " + new Date(cfg.end).toLocaleString("he-IL"));
+      el.innerHTML = "<b>" + bits.join(" · ") + "</b>";
+    };
+    const shabbatLoad = async () => {
+      const { status, data } = await API.get("/api/admin/shabbat");
+      if (status !== 200) { document.getElementById("shabbat-status").textContent = "שגיאה בטעינת מצב הנעילה"; return; }
+      const cfg = data.config || {};
+      document.getElementById("shabbat-enabled").checked = cfg.enabled === true;
+      document.getElementById("shabbat-title").value = cfg.title || "";
+      document.getElementById("shabbat-body").value = cfg.body || "";
+      document.getElementById("shabbat-start").value = isoToLocal(cfg.start);
+      document.getElementById("shabbat-end").value = isoToLocal(cfg.end);
+      shabbatStatus(cfg, data.active === true);
+    };
+    document.getElementById("shabbat-save").onclick = async () => {
+      const sv = (id) => document.getElementById(id).value;
+      const toIso = (v) => v ? new Date(v).toISOString() : null;
+      const payload = {
+        enabled: document.getElementById("shabbat-enabled").checked,
+        title: sv("shabbat-title"), body: sv("shabbat-body"),
+        start: toIso(sv("shabbat-start")), end: toIso(sv("shabbat-end")),
+      };
+      const { status, data } = await API.post("/api/admin/shabbat", payload, { timeoutMs: 30000 });
+      if (status === 200) { toast(data.active ? "נשמר - הנעילה פעילה!" : "הגדרות הנעילה נשמרו (כבוי)"); shabbatLoad(); }
+      else toast((data && data.error_he) || "שמירת הנעילה נכשלה");
+    };
+    document.getElementById("shabbat-preview").onclick = () => {
+      const sv = (id) => document.getElementById(id).value;
+      const q = new URLSearchParams({ title: sv("shabbat-title") || "שבת שלום!", body: sv("shabbat-body") || "" });
+      if (sv("shabbat-end")) q.set("end", new Date(sv("shabbat-end")).toISOString());
+      location.hash = "#/shabbat-preview?" + q.toString();
+    };
+    shabbatLoad();
   } else if (tab === "coatings") {
     const { status, data } = await API.get("/api/coatings");
     if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הציפויים.</p>"; return; }
