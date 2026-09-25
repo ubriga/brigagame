@@ -45,7 +45,12 @@ const App = {
           isAdmin = status === 200 && !!(data && data.user && data.user.is_admin);
         }
         if (!isAdmin) {
-          this.showLockdown(lockRes.data.title, lockRes.data.body, lockRes.data.ends_at);
+          // His design (25.9): visitors get the normal Google login screen
+          // carrying the Shabbat notice; only the admin email receives a
+          // session. A denied attempt lands on the full candle lock screen.
+          this._locked = true;
+          this._lockTitle = lockRes.data.title; this._lockBody = lockRes.data.body; this._lockEnds = lockRes.data.ends_at;
+          location.hash = "#/login";
           this.route();
           return;
         }
@@ -205,8 +210,8 @@ const App = {
       view.removeAttribute("aria-busy");
       return;
     }
-    // While locked, every route shows the lock screen.
-    if (this._locked) {
+    // While locked, every route except the login screen shows the lock screen.
+    if (this._locked && !hash.startsWith("#/login")) {
       this.showLockdown(this._lockTitle, this._lockBody, this._lockEnds);
       view.removeAttribute("aria-busy");
       return;
@@ -254,9 +259,25 @@ const App = {
   // ---------------- login ----------------
   vLogin(view) {
     document.getElementById("topbar").classList.add("hidden");
-    const incomingError = new URLSearchParams((location.hash.split("?")[1] || "")).get("auth_error") || "";
+    const hashParams = new URLSearchParams((location.hash.split("?")[1] || ""));
+    const incomingError = hashParams.get("auth_error") || "";
+    // Non-admin whose Google sign-in was refused during lockdown: full lock screen.
+    if (this._locked && hashParams.get("lockdenied")) {
+      this.showLockdown(this._lockTitle, this._lockBody, this._lockEnds);
+      return;
+    }
+    // Shabbat/holiday notice on top of the normal login screen (same texts as
+    // the lock screen) while the lockdown is active.
+    const lockNotice = this._locked ? `
+      <div class="card" style="text-align:center;margin-bottom:14px">
+        <div class="lockdown-candle">🕯️</div>
+        <h1 class="lockdown-title">${esc(this._lockTitle || "שבת שלום!")}</h1>
+        ${this._lockBody ? `<p class="lockdown-body">${esc(this._lockBody)}</p>` : ""}
+        ${this._lockEnds ? `<p class="sub" style="margin-top:10px;opacity:.75">חוזרים לפעילות: ${esc(new Date(this._lockEnds).toLocaleString("he-IL", { dateStyle: "full", timeStyle: "short" }))}</p>` : ""}
+      </div>` : "";
     view.innerHTML = `
       <div id="login-wrap">
+        ${lockNotice}
         <div class="logo">🎯</div>
         <h1>Brigagame <span style="color:var(--accent)">2.0</span></h1>
         <p class="sub">by OrelAI · משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!</p>
