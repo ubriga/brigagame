@@ -149,3 +149,14 @@ LESSON: gh-pages index.html HTTP-caches ~10min — bust with ?f=N when verifying
 POST /api/admin/shabbat rejects: enabled=true without end -> 400 end_required ("לא ניתן להפעיל נעילה בלי שעת סיום."); start without end -> 400 start_needs_end ("התחלה מתוזמנת דורשת גם שעת סיום."). Panel hint line added (panel v6, app v37, sw 30). Validation runs BEFORE the write, so rejected saves never touch state.
 Verified local 5 cases + prod probes with temp admin session: both rejections 400, live config untouched (enabled false, start 10:33:17Z, end 26.9 18:00Z), lockdown still active, regular user 503. Probe session deleted (count=0).
 Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required-20260925 minted→pushed→deleted (list empty).
+
+## 14:35 25.9 — Lockdown login path deployed (user design 14:16)
+- Login screen during lockdown: visitors get the normal Google login screen with the Shabbat notice card (candle + שבת שלום! + body + return line) above it; only the admin email receives a session; everyone else denied → full candle lock screen. Email-code login stays blocked (auth/options email_code:false).
+- Worker 4d1b16dc; main 647fc5f; gh-pages ac1d014 (app v40, sw 33 "33-shabbat-install-race", config.js v19).
+- BONUS FIX: created missing oauth_states table on prod D1 — the Google redirect flow had been broken on prod (500/503); now 302s to Google.
+- DEPLOY MISHAP (fixed): config.js API_BASE override written as bare `const API_BASE` instead of full CONFIG object → broke live client for ~10 min (reconnecting state). Fixed via amended gh-pages commit; learned: ALWAYS sed the API_BASE line inside CONFIG, never overwrite the file; verify live config.js content after push; rsync to worktree needs --checksum (mtime skip bit me on index.html).
+- Also fixed: install banner race (beforeinstallprompt fires before boot lock check) → boot hides install-card/btn when locked.
+- 3 PATs used this deploy (deploy-admin-login-shabbat, deploy-config-fix, deploy-install-fix + deploy-race-fix = 4 actually): all deleted, token list verified empty after each.
+- Verified live: visitor (no session) → #/login with Shabbat notice, no install banner; email/start 503; /api/me 503; auth/options email_code:false; temp D1 admin session → boots into lobby (5773 coins, ניהול tab) despite lockdown; session deleted, count=0. Lockdown config untouched (ends 26.9 21:00 IDT).
+- Non-admin Google denial path: code-verified only (503 {error:"lockdown"} + callback #/login?lockdenied=1 → candle); can't test a real non-admin Google account from here. api.js 503→candle interception already proven live earlier.
+- Screenshot: /downloads/cloud-browser-20260925-113445.png (login screen w/ notice). Note: return line shows 13:00 because cloud browser is on a US timezone; Israeli users see 21:00.
