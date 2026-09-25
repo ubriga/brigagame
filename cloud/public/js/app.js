@@ -49,6 +49,7 @@ const App = {
           // carrying the Shabbat notice; only the admin email receives a
           // session. A denied attempt lands on the full candle lock screen.
           this._locked = true;
+          window.__BG_LOCKED__ = true; // suppress the PWA install prompt during lockdown
           this._lockTitle = lockRes.data.title; this._lockBody = lockRes.data.body; this._lockEnds = lockRes.data.ends_at;
           location.hash = "#/login";
           this.route();
