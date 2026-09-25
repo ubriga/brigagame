@@ -37,9 +37,18 @@ const App = {
     try {
       const lockRes = await API.get("/api/lockdown");
       if (lockRes.status === 200 && lockRes.data && lockRes.data.active) {
-        this.showLockdown(lockRes.data.title, lockRes.data.body, lockRes.data.ends_at);
-        this.route();
-        return;
+        // Admin sessions pass the server gate: skip the lock screen so the
+        // admin can manage and lift the lockdown from the panel.
+        let isAdmin = false;
+        if (API.token) {
+          const { status, data } = await API.get("/api/me");
+          isAdmin = status === 200 && !!(data && data.user && data.user.is_admin);
+        }
+        if (!isAdmin) {
+          this.showLockdown(lockRes.data.title, lockRes.data.body, lockRes.data.ends_at);
+          this.route();
+          return;
+        }
       }
     } catch (_) { /* server unreachable: normal boot shows the offline card */ }
     if (API.token) {
