@@ -6,7 +6,7 @@ const CONFIG = {
   // presence pulse reports a different version the app reloads itself in the
   // lobby (never mid-game) to pick up the new build.
   CLIENT_VERSION: "24",
-  API_BASE: "https://brigagame.ubriga.workers.dev",  // gh-pages copy: API on the Worker
+  API_BASE: "https://brigagame.ubriga.workers.dev",
   // Google OAuth Web Client ID (same value as the backend GOOGLE_CLIENT_ID).
   GOOGLE_CLIENT_ID: "609382927099-k7b75i2igf0ka0t0ohknfa6svlcp5s29.apps.googleusercontent.com",
   // Adaptive match-state polling: hot right after activity, backs off when
