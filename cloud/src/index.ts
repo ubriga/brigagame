@@ -12,7 +12,7 @@ import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
 import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
-import { d1, getControls } from "./util.js";
+import { d1, getControls, getShabbatLockdown } from "./util.js";
 
 export { MatchRoom };
 
@@ -80,6 +80,28 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
           .bind(JSON.stringify({ body: body.slice(0, 120) }), new Date().toISOString()).run();
       } catch (_) {}
       return new Response(null, { status: 204 });
+    }
+
+    // ---- Shabbat / holiday lockdown (server-enforced full-site gate) ----
+    // Public status endpoint: the client boot reads this to decide whether to
+    // render the lock screen. Texts are exposed only while active.
+    if (path === "/api/lockdown" && request.method === "GET") {
+      const lock = await getShabbatLockdown(env);
+      if (!lock.active) return json({ active: false });
+      return json({ active: true, title: lock.title, body: lock.body, ends_at: lock.end });
+    }
+    // The gate itself: every API route (auth included, WebSocket included) is
+    // closed to non-admins while active. Admin sessions pass so the admin can
+    // manage and lift the lockdown. /api/health stays open for monitoring.
+    if (path.startsWith("/api/") && path !== "/api/health" && !path.startsWith("/api/admin/")) {
+      const lock = await getShabbatLockdown(env);
+      if (lock.active) {
+        const u = await currentUser(d1(env.DB), request).catch(() => null);
+        const admin = u && String(u.email).toLowerCase() === String((env as any).ADMIN_EMAIL ?? "").toLowerCase();
+        if (!admin) {
+          return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.end }, 503);
+        }
+      }
     }
 
     // ---- Sign-in method toggles (public; admin-controlled) ----

@@ -2056,11 +2056,20 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "auth_flow": {
         "popup_enabled": true,
         "redirect_enabled": true,
-        "email_code_enabled": true
+        "email_code_enabled": true,
+        "email_provider": "resend",
+        "inboxlv_pass": ""
+    },
+    "invite_system": {
+        "enabled": true,
+        "max_per_day": 5,
+        "tag_name": "מגייס",
+        "invite_text": "חברך {name} קורא לך לקרב ב-Brigagame 2.0! 🎯"
     },
     "bot_fallback": {
         "enabled": true,
-        "wait_seconds": 30
+        "wait_seconds": 30,
+        "difficulty": "medium"
     },
     "xp": {
         "human_win": 2.0,

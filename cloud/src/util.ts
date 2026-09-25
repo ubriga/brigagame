@@ -50,3 +50,34 @@ export async function userMods(env: Env, userId: number): Promise<PlayerMods> {
     dynamic_obstacle: (controls as any).dynamic_obstacle,
   } as PlayerMods;
 }
+
+export interface ShabbatLock {
+  active: boolean; enabled: boolean;
+  title: string; body: string;
+  start: string | null; end: string | null;
+}
+
+/** Site-wide Shabbat/holiday lockdown state (settings key shabbat_lockdown).
+ * Active when the manual toggle is on, or inside the scheduled [start, end]
+ * window. An incomplete or invalid window is never active. */
+export async function getShabbatLockdown(env: Env): Promise<ShabbatLock> {
+  const base: ShabbatLock = { active: false, enabled: false, title: "", body: "", start: null, end: null };
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
+  if (!row) return base;
+  try {
+    const d = JSON.parse(String((row as any).value));
+    const enabled = d.enabled === true;
+    const start = d.start ? String(d.start) : null;
+    const end = d.end ? String(d.end) : null;
+    const sMs = start ? Date.parse(start) : NaN;
+    const eMs = end ? Date.parse(end) : NaN;
+    const now = Date.now();
+    const inWindow = !isNaN(sMs) && !isNaN(eMs) && sMs <= now && now <= eMs;
+    return {
+      active: enabled || inWindow, enabled,
+      title: String(d.title ?? "").slice(0, 120),
+      body: String(d.body ?? "").slice(0, 500),
+      start, end,
+    };
+  } catch { return base; }
+}

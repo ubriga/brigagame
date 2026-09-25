@@ -32,6 +32,16 @@ const App = {
     ["pointerdown", "touchstart", "keydown"].forEach((ev) =>
       window.addEventListener(ev, unlockAudio, { passive: true, capture: true }));
     Sfx.preload();
+    // Shabbat/holiday lockdown: the server is authoritative and refuses every
+    // non-admin API call while active; this check only picks the first screen.
+    try {
+      const lockRes = await API.get("/api/lockdown");
+      if (lockRes.status === 200 && lockRes.data && lockRes.data.active) {
+        this.showLockdown(lockRes.data.title, lockRes.data.body, lockRes.data.ends_at);
+        this.route();
+        return;
+      }
+    } catch (_) { /* server unreachable: normal boot shows the offline card */ }
     if (API.token) {
       // Bounded retries: a busy/down server must show the reconnect indicator
       // and then an honest offline screen - never a silent endless "connecting".
@@ -143,15 +153,51 @@ const App = {
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=3").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=4").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
+  },
+
+  // Full-site Shabbat/holiday lock screen. The server enforces the lockdown
+  // (every non-admin API call returns 503 lockdown); this is only the display.
+  showLockdown(title, body, endsAt, preview = false) {
+    this._locked = !preview;
+    this._lockTitle = title; this._lockBody = body; this._lockEnds = endsAt;
+    this.stopPulse?.();
+    document.getElementById("topbar").classList.add("hidden");
+    document.body.classList.remove("login-active");
+    const t = esc(title || "שבת שלום!");
+    const b = esc(body || "");
+    const endLine = endsAt
+      ? `<p class="sub" style="margin-top:14px;opacity:.75">חוזרים לפעילות: ${esc(new Date(endsAt).toLocaleString("he-IL", { dateStyle: "full", timeStyle: "short" }))}</p>`
+      : "";
+    document.getElementById("view").innerHTML = `
+      <div class="lockdown-wrap">
+        <div class="lockdown-candle">🕯️</div>
+        <h1 class="lockdown-title">${t}</h1>
+        ${b ? `<p class="lockdown-body">${b}</p>` : ""}
+        ${endLine}
+      </div>`;
   },
 
   route() {
     if (GameView.canvas) GameView.destroy();
     const seq = ++this._routeSeq;
     const hash = location.hash || "#/lobby";
+    // Admin preview of the lock screen (no activation, no login needed):
+    // #/shabbat-preview?title=...&body=...
+    if (hash.startsWith("#/shabbat-preview")) {
+      const q = new URLSearchParams(hash.split("?")[1] || "");
+      this.showLockdown(q.get("title") || "שבת שלום!", q.get("body") || "", q.get("end") || null, true);
+      view.removeAttribute("aria-busy");
+      return;
+    }
+    // While locked, every route shows the lock screen.
+    if (this._locked) {
+      this.showLockdown(this._lockTitle, this._lockBody, this._lockEnds);
+      view.removeAttribute("aria-busy");
+      return;
+    }
     const inGame = hash.startsWith("#/game/");
     // Match music belongs to the battlefield. Always stop it when routing to
     // the lobby or any other screen (including PWA history navigation).

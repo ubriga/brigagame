@@ -41,6 +41,13 @@ const API = {
         clearTimeout(timer);
         let data = {};
         try { data = await res.json(); } catch (e) { /* non-JSON */ }
+        // Shabbat/holiday lockdown: server-enforced, never transient. Render
+        // the lock screen immediately instead of retrying or erroring.
+        if (res.status === 503 && data && data.error === "lockdown") {
+          this.setReconnecting(false);
+          window.App?.showLockdown?.(data.title, data.body, data.ends_at);
+          return { status: res.status, data };
+        }
         const transient = [502, 503, 504].includes(res.status);
         if (transient && attempt + 1 < attempts) {
           this.setReconnecting(true);

@@ -4,7 +4,7 @@
  */
 import { currentUser } from "../auth.js";
 import { limited } from "./ratelimit.js";
-import { d1, getControls } from "../util.js";
+import { d1, getControls, getShabbatLockdown } from "../util.js";
 import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
@@ -230,6 +230,47 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       .bind(title, text, nowIso()).run();
     await audit(env, request, Number(u.id), "admin.broadcast", "", "", { title });
     return json({ ok: true });
+  }
+
+  // GET|POST /api/admin/shabbat - full-site lockdown (Shabbat/holiday screen)
+  if (path === "/api/admin/shabbat" && method === "GET") {
+    const row = await db.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
+    let cfg: any = { enabled: false, title: "", body: "", start: null, end: null };
+    try { if (row) cfg = { ...cfg, ...JSON.parse(String((row as any).value)) }; } catch {}
+    const lock = await getShabbatLockdown(env);
+    return json({ config: cfg, active: lock.active, server_time: nowIso() });
+  }
+  if (path === "/api/admin/shabbat" && method === "POST") {
+    const body: any = await request.json().catch(() => ({}));
+    const row = await db.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
+    let cur: any = { enabled: false, title: "", body: "", start: null, end: null };
+    try { if (row) cur = { ...cur, ...JSON.parse(String((row as any).value)) }; } catch {}
+    const cleanTime = (v: unknown): string | null | undefined => {
+      if (v === undefined) return undefined;
+      if (v === null || v === "") return null;
+      const t = Date.parse(String(v));
+      return isNaN(t) ? ("INVALID" as any) : new Date(t).toISOString();
+    };
+    const start = cleanTime(body.start);
+    const end = cleanTime(body.end);
+    if (start === ("INVALID" as any) || end === ("INVALID" as any))
+      return json({ error: "bad_time", error_he: "אחת השעות לא תקינה." }, 400);
+    const cfg = {
+      enabled: body.enabled === undefined ? cur.enabled === true : body.enabled === true,
+      title: body.title === undefined ? String(cur.title ?? "") : String(body.title ?? "").trim().slice(0, 120),
+      body: body.body === undefined ? String(cur.body ?? "") : String(body.body ?? "").trim().slice(0, 500),
+      start: start === undefined ? cur.start ?? null : start,
+      end: end === undefined ? cur.end ?? null : end,
+    };
+    if (cfg.start && cfg.end && Date.parse(cfg.end) <= Date.parse(cfg.start))
+      return json({ error: "end_before_start", error_he: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, 400);
+    await db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('shabbat_lockdown', ?)"
+      + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .bind(JSON.stringify(cfg)).run();
+    await audit(env, request, Number(u.id), "admin.shabbat", "", "", cfg);
+    const lock = await getShabbatLockdown(env);
+    return json({ ok: true, config: cfg, active: lock.active });
   }
 
   // GET|POST /api/admin/maintenance

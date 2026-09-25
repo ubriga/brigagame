@@ -4,7 +4,7 @@
  */
 import { currentUser } from "../auth.js";
 import { limited } from "./ratelimit.js";
-import { d1, getControls } from "../util.js";
+import { d1, getControls, getShabbatLockdown } from "../util.js";
 import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
@@ -64,9 +64,13 @@ function controlSpecs() {
     return {
         auth_flow: {
             popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
-            email_code_enabled: [null, null, "bool"],
+            email_code_enabled: [null, null, "bool"], email_provider: [null, null, "email_provider"],
+            inboxlv_pass: [null, null, "secret_str"],
         },
-        bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"] },
+        bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
+            difficulty: [null, null, "difficulty"] },
+        invite_system: { enabled: [null, null, "bool"], max_per_day: [1, 100, "int"],
+            tag_name: [null, null, "str"], invite_text: [null, null, "str"] },
         xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
         premium_skins: { enabled: [null, null, "bool"], asset_budget_kb: [10, 500, "int"] },
         coatings: {
@@ -130,6 +134,13 @@ export async function handleAdminApi(env, request, path) {
         const recent = await db.prepare("SELECT t.created_at, u.email, t.delta, t.reason, t.ref"
             + " FROM transactions t JOIN users u ON u.id = t.user_id ORDER BY t.id DESC LIMIT 30").all();
         return json({ stats, recent_transactions: recent.results });
+    }
+    // GET /api/admin/online - who is connected right now (presence ping <= 45s)
+    if (path === "/api/admin/online" && method === "GET") {
+        const cutoff = new Date(Date.now() - 45 * 1000).toISOString();
+        const rows = await db.prepare("SELECT id, name, email, picture, last_seen FROM users WHERE last_seen > ? ORDER BY last_seen DESC LIMIT 200")
+            .bind(cutoff).all();
+        return json({ count: rows.results.length, users: rows.results });
     }
     // GET /api/admin/users?q=
     if (path === "/api/admin/users" && method === "GET") {
@@ -211,6 +222,55 @@ export async function handleAdminApi(env, request, path) {
         await audit(env, request, Number(u.id), "admin.broadcast", "", "", { title });
         return json({ ok: true });
     }
+    // GET|POST /api/admin/shabbat - full-site lockdown (Shabbat/holiday screen)
+    if (path === "/api/admin/shabbat" && method === "GET") {
+        const row = await db.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
+        let cfg = { enabled: false, title: "", body: "", start: null, end: null };
+        try {
+            if (row)
+                cfg = { ...cfg, ...JSON.parse(String(row.value)) };
+        }
+        catch { }
+        const lock = await getShabbatLockdown(env);
+        return json({ config: cfg, active: lock.active, server_time: nowIso() });
+    }
+    if (path === "/api/admin/shabbat" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const row = await db.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
+        let cur = { enabled: false, title: "", body: "", start: null, end: null };
+        try {
+            if (row)
+                cur = { ...cur, ...JSON.parse(String(row.value)) };
+        }
+        catch { }
+        const cleanTime = (v) => {
+            if (v === undefined)
+                return undefined;
+            if (v === null || v === "")
+                return null;
+            const t = Date.parse(String(v));
+            return isNaN(t) ? "INVALID" : new Date(t).toISOString();
+        };
+        const start = cleanTime(body.start);
+        const end = cleanTime(body.end);
+        if (start === "INVALID" || end === "INVALID")
+            return json({ error: "bad_time", error_he: "אחת השעות לא תקינה." }, 400);
+        const cfg = {
+            enabled: body.enabled === undefined ? cur.enabled === true : body.enabled === true,
+            title: body.title === undefined ? String(cur.title ?? "") : String(body.title ?? "").trim().slice(0, 120),
+            body: body.body === undefined ? String(cur.body ?? "") : String(body.body ?? "").trim().slice(0, 500),
+            start: start === undefined ? cur.start ?? null : start,
+            end: end === undefined ? cur.end ?? null : end,
+        };
+        if (cfg.start && cfg.end && Date.parse(cfg.end) <= Date.parse(cfg.start))
+            return json({ error: "end_before_start", error_he: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, 400);
+        await db.prepare("INSERT INTO settings (key, value) VALUES ('shabbat_lockdown', ?)"
+            + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+            .bind(JSON.stringify(cfg)).run();
+        await audit(env, request, Number(u.id), "admin.shabbat", "", "", cfg);
+        const lock = await getShabbatLockdown(env);
+        return json({ ok: true, config: cfg, active: lock.active });
+    }
     // GET|POST /api/admin/maintenance
     if (path === "/api/admin/maintenance" && method === "GET") {
         return json(await getMaintenance(env));
@@ -227,7 +287,11 @@ export async function handleAdminApi(env, request, path) {
     }
     // GET|POST /api/admin/gameplay-controls
     if (path === "/api/admin/gameplay-controls" && method === "GET") {
-        return json({ controls: await getControls(env) });
+        const controls = await getControls(env);
+        const af = controls.auth_flow ?? {};
+        af.inboxlv_pass_set = Boolean(String(af.inboxlv_pass ?? ""));
+        af.inboxlv_pass = "";
+        return json({ controls });
     }
     if (path === "/api/admin/gameplay-controls" && method === "POST") {
         const body = await request.json().catch(() => ({}));
@@ -258,6 +322,26 @@ export async function handleAdminApi(env, request, path) {
                     if (kind === "bool") {
                         if (typeof value !== "boolean")
                             throw new Error("bad");
+                    }
+                    else if (kind === "difficulty") {
+                        value = String(value);
+                        if (!["easy", "medium", "hard", "ultra", "expert"].includes(value))
+                            throw new Error("bad");
+                    }
+                    else if (kind === "email_provider") {
+                        value = String(value);
+                        if (!["resend", "inboxlv"].includes(value))
+                            throw new Error("bad");
+                    }
+                    else if (kind === "str") {
+                        value = String(value ?? "").trim().slice(0, 300);
+                        if (!value)
+                            throw new Error("bad");
+                    }
+                    else if (kind === "secret_str") {
+                        value = String(value ?? "").trim();
+                        if (!value)
+                            continue; // never overwrite a stored secret with empty
                     }
                     else {
                         value = kind === "int" ? Math.trunc(Number(value)) : Number(value);
