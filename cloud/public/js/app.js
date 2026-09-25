@@ -49,6 +49,7 @@ const App = {
           // carrying the Shabbat notice; only the admin email receives a
           // session. A denied attempt lands on the full candle lock screen.
           this._locked = true;
+          if (typeof Sfx !== "undefined") Sfx.stopMusic();
           window.__BG_LOCKED__ = true; // suppress the PWA install prompt during lockdown
           // The beforeinstallprompt event can fire before this boot check
           // returns, so hide any banner that already slipped through.
@@ -161,6 +162,11 @@ const App = {
   },
 
   setMe(data) {
+    // A successful /api/me proves a valid session; during lockdown that can
+    // only be the admin, so any boot-time lock flag must clear or the route
+    // guard would slam the lock screen over the lobby right after login.
+    this._locked = false;
+    window.__BG_LOCKED__ = false;
     this.me = data.user; this.inventory = data.inventory || {};
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
@@ -180,6 +186,7 @@ const App = {
   // Full-site Shabbat/holiday lock screen. The server enforces the lockdown
   // (every non-admin API call returns 503 lockdown); this is only the display.
   showLockdown(title, body, endsAt, preview = false) {
+    if (typeof Sfx !== "undefined") Sfx.stopMusic();
     this._locked = !preview;
     this._lockTitle = title; this._lockBody = body; this._lockEnds = endsAt;
     this.stopPulse?.();

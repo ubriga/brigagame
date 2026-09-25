@@ -168,7 +168,7 @@ const Sfx = {
 
   // Short original 8-bar chiptune-style loop.
   startMusic() {
-    if (this.muted || this.musicOn || !this.ensure()) return;
+    if (this.muted || this.musicOn || window.__BG_LOCKED__ || !this.ensure()) return;
     this.musicOn = true;
     const ctx = this.ctx;
     const melody = [262, 330, 392, 330, 294, 349, 440, 349,
