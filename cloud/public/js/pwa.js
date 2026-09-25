@@ -12,6 +12,7 @@ const PWAInstall = {
 
     window.addEventListener("beforeinstallprompt", event => {
       event.preventDefault();
+      if (window.__BG_LOCKED__) return; // Shabbat/holiday lock screen: no install prompt
       this.prompt = event;
       button.classList.remove("hidden");
       if (localStorage.getItem("bg_install_dismissed") !== "1")
