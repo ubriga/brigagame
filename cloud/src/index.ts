@@ -93,7 +93,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     // The gate itself: every API route (auth included, WebSocket included) is
     // closed to non-admins while active. Admin sessions pass so the admin can
     // manage and lift the lockdown. /api/health stays open for monitoring.
-    if (path.startsWith("/api/") && path !== "/api/health" && !path.startsWith("/api/admin/")) {
+    // During lockdown the Google sign-in path stays open so the admin can
+    // log in; session issuance itself is gated on the admin email below.
+    const AUTH_OPEN = new Set(["/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
+    if (path.startsWith("/api/") && path !== "/api/health" && !path.startsWith("/api/admin/") && !AUTH_OPEN.has(path)) {
       const lock = await getShabbatLockdown(env);
       if (lock.active) {
         const u = await currentUser(d1(env.DB), request).catch(() => null);
@@ -109,10 +112,11 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       const controls = await getControls(env);
       const af = (controls as any).auth_flow ?? {};
       const provider = String(af.email_provider ?? "resend");
+      const lockNow = await getShabbatLockdown(env);
       return json({
         popup: af.popup_enabled !== false,
         redirect: af.redirect_enabled === true,
-        email_code: af.email_code_enabled === true,
+        email_code: af.email_code_enabled === true && !lockNow.active,
         email_from: provider === "inboxlv" ? "brigagame.game@inbox.lv" : "onboarding@resend.dev",
         // Installed-PWA logins: the Google redirect leaves the app storage, so
         // the client emphasizes the email-code path unless the admin disables it.
@@ -171,6 +175,15 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
           return fail("ההתחברות לגוגל נכשלה. נסה שוב.");
         }
         const id = await verifyGoogleCredential(idToken, (env as any).GOOGLE_CLIENT_ID ?? "");
+        const lock = await getShabbatLockdown(env);
+        if (lock.active && String(id.email).toLowerCase() !== String((env as any).ADMIN_EMAIL ?? "").toLowerCase()) {
+          await env.DB.prepare(
+            "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+            + " VALUES (NULL, 'google_auth_attempt', 'auth', '', ?, ?)")
+            .bind(JSON.stringify({ result: "lockdown_denied", via: "redirect" }), new Date().toISOString()).run()
+            .catch(() => {});
+          return Response.redirect(frontendBase(env, url) + "/#/login?lockdenied=1", 302);
+        }
         const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
         const token = await createSession(d1(env.DB), Number(user.id));
         await env.DB.prepare(
@@ -285,6 +298,11 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
           .catch(() => {});
         try {
           const id = await verifyGoogleCredential(credential, (env as any).GOOGLE_CLIENT_ID ?? "");
+          const lock = await getShabbatLockdown(env);
+          if (lock.active && String(id.email).toLowerCase() !== String((env as any).ADMIN_EMAIL ?? "").toLowerCase()) {
+            await audit("lockdown_denied");
+            return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.effective_end }, 503);
+          }
           const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
           const token = await createSession(d1(env.DB), Number(user.id));
           await audit("ok");
