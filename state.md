@@ -144,3 +144,8 @@ Verified: local wrangler dev 4 cases (7-day-old window+repeat=active now w/ ends
 PATs: deploy-shabbat-weekly-20260925 + deploy-admin-lock-bypass-20260925 (7d, Contents RW, repo brigagame) each minted→pushed→deleted (list-verified empty). Sudo session stayed active from earlier OTP (Gmail Trash flow).
 Parent note 13:48: "release the lockdown" relays from parent are pre-approved by user; escape hatches = WhatsApp relay + his admin panel (now genuinely unblocked incl. UI).
 LESSON: gh-pages index.html HTTP-caches ~10min — bust with ?f=N when verifying version bumps in browser tests. Clear storage ON the game origin (cross-origin execute-js clears the wrong origin's storage).
+
+## 2026-09-25 14:03 — End time now REQUIRED for any lockdown activation (user "כן" 14:00 via parent)
+POST /api/admin/shabbat rejects: enabled=true without end -> 400 end_required ("לא ניתן להפעיל נעילה בלי שעת סיום."); start without end -> 400 start_needs_end ("התחלה מתוזמנת דורשת גם שעת סיום."). Panel hint line added (panel v6, app v37, sw 30). Validation runs BEFORE the write, so rejected saves never touch state.
+Verified local 5 cases + prod probes with temp admin session: both rejections 400, live config untouched (enabled false, start 10:33:17Z, end 26.9 18:00Z), lockdown still active, regular user 503. Probe session deleted (count=0).
+Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required-20260925 minted→pushed→deleted (list empty).
