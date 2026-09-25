@@ -88,7 +88,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (path === "/api/lockdown" && request.method === "GET") {
       const lock = await getShabbatLockdown(env);
       if (!lock.active) return json({ active: false });
-      return json({ active: true, title: lock.title, body: lock.body, ends_at: lock.end });
+      return json({ active: true, title: lock.title, body: lock.body, ends_at: lock.effective_end });
     }
     // The gate itself: every API route (auth included, WebSocket included) is
     // closed to non-admins while active. Admin sessions pass so the admin can
@@ -99,7 +99,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         const u = await currentUser(d1(env.DB), request).catch(() => null);
         const admin = u && String(u.email).toLowerCase() === String((env as any).ADMIN_EMAIL ?? "").toLowerCase();
         if (!admin) {
-          return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.end }, 503);
+          return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.effective_end }, 503);
         }
       }
     }

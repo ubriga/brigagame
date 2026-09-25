@@ -52,32 +52,52 @@ export async function userMods(env: Env, userId: number): Promise<PlayerMods> {
 }
 
 export interface ShabbatLock {
-  active: boolean; enabled: boolean;
+  active: boolean; enabled: boolean; repeat_weekly: boolean;
   title: string; body: string;
   start: string | null; end: string | null;
+  /** End of the window currently in force (recurring occurrence end when
+   * repeat_weekly is on, otherwise the configured end). Exposed as ends_at. */
+  effective_end: string | null;
 }
+
+const WEEK_MS = 7 * 24 * 3600 * 1000;
 
 /** Site-wide Shabbat/holiday lockdown state (settings key shabbat_lockdown).
  * Active when the manual toggle is on, or inside the scheduled [start, end]
- * window. An incomplete or invalid window is never active. */
+ * window. With repeat_weekly the window recurs every 7 days (same weekday and
+ * hours): the occurrence containing now is [start + k*week, +duration]. An
+ * incomplete or invalid window is never active. */
 export async function getShabbatLockdown(env: Env): Promise<ShabbatLock> {
-  const base: ShabbatLock = { active: false, enabled: false, title: "", body: "", start: null, end: null };
+  const base: ShabbatLock = { active: false, enabled: false, repeat_weekly: false, title: "", body: "", start: null, end: null, effective_end: null };
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
   if (!row) return base;
   try {
     const d = JSON.parse(String((row as any).value));
     const enabled = d.enabled === true;
+    const repeat = d.repeat_weekly === true;
     const start = d.start ? String(d.start) : null;
     const end = d.end ? String(d.end) : null;
     const sMs = start ? Date.parse(start) : NaN;
     const eMs = end ? Date.parse(end) : NaN;
     const now = Date.now();
-    const inWindow = !isNaN(sMs) && !isNaN(eMs) && sMs <= now && now <= eMs;
+    const valid = !isNaN(sMs) && !isNaN(eMs) && sMs < eMs;
+    const inWindow = valid && sMs <= now && now <= eMs;
+    let recActive = false, recEnd: string | null = null;
+    if (repeat && valid) {
+      const dur = eMs - sMs;
+      const k = Math.floor((now - sMs) / WEEK_MS);
+      const wStart = sMs + k * WEEK_MS;
+      if (wStart <= now && now <= wStart + dur) {
+        recActive = true;
+        recEnd = new Date(wStart + dur).toISOString();
+      }
+    }
     return {
-      active: enabled || inWindow, enabled,
+      active: enabled || inWindow || recActive, enabled, repeat_weekly: repeat,
       title: String(d.title ?? "").slice(0, 120),
       body: String(d.body ?? "").slice(0, 500),
       start, end,
+      effective_end: recActive ? recEnd : end,
     };
   } catch { return base; }
 }

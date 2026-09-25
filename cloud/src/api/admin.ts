@@ -235,7 +235,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   // GET|POST /api/admin/shabbat - full-site lockdown (Shabbat/holiday screen)
   if (path === "/api/admin/shabbat" && method === "GET") {
     const row = await db.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
-    let cfg: any = { enabled: false, title: "", body: "", start: null, end: null };
+    let cfg: any = { enabled: false, repeat_weekly: false, title: "", body: "", start: null, end: null };
     try { if (row) cfg = { ...cfg, ...JSON.parse(String((row as any).value)) }; } catch {}
     const lock = await getShabbatLockdown(env);
     return json({ config: cfg, active: lock.active, server_time: nowIso() });
@@ -243,7 +243,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (path === "/api/admin/shabbat" && method === "POST") {
     const body: any = await request.json().catch(() => ({}));
     const row = await db.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
-    let cur: any = { enabled: false, title: "", body: "", start: null, end: null };
+    let cur: any = { enabled: false, repeat_weekly: false, title: "", body: "", start: null, end: null };
     try { if (row) cur = { ...cur, ...JSON.parse(String((row as any).value)) }; } catch {}
     const cleanTime = (v: unknown): string | null | undefined => {
       if (v === undefined) return undefined;
@@ -257,6 +257,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       return json({ error: "bad_time", error_he: "אחת השעות לא תקינה." }, 400);
     const cfg = {
       enabled: body.enabled === undefined ? cur.enabled === true : body.enabled === true,
+      repeat_weekly: body.repeat_weekly === undefined ? cur.repeat_weekly === true : body.repeat_weekly === true,
       title: body.title === undefined ? String(cur.title ?? "") : String(body.title ?? "").trim().slice(0, 120),
       body: body.body === undefined ? String(cur.body ?? "") : String(body.body ?? "").trim().slice(0, 500),
       start: start === undefined ? cur.start ?? null : start,
@@ -264,6 +265,8 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     };
     if (cfg.start && cfg.end && Date.parse(cfg.end) <= Date.parse(cfg.start))
       return json({ error: "end_before_start", error_he: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, 400);
+    if (cfg.repeat_weekly && !(cfg.start && cfg.end))
+      return json({ error: "repeat_needs_window", error_he: "חזרה שבועית דורשת שעת התחלה וסיום מתוזמנים." }, 400);
     await db.prepare(
       "INSERT INTO settings (key, value) VALUES ('shabbat_lockdown', ?)"
       + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
