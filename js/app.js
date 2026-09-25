@@ -164,6 +164,10 @@ const App = {
     this._locked = !preview;
     this._lockTitle = title; this._lockBody = body; this._lockEnds = endsAt;
     this.stopPulse?.();
+    // While the lock screen is up, suppress the PWA install prompt.
+    if (!preview) window.__BG_LOCKED__ = true;
+    document.getElementById("install-card")?.classList.add("hidden");
+    document.getElementById("install-btn")?.classList.add("hidden");
     document.getElementById("topbar").classList.add("hidden");
     document.body.classList.remove("login-active");
     const t = esc(title || "שבת שלום!");
