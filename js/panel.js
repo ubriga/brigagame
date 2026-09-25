@@ -51,6 +51,8 @@ const PANEL_STRINGS = {
   "סיכוי להשתמש במגה (0-1)":"Mega chance (0-1)",
   "שמור את כל ההגדרות":"Save all settings",
   "🕯️ מסך שבת / חג (נעילת אתר מלאה)":"🕯️ Shabbat / holiday screen (full-site lockdown)",
+  "חזרה שבועית: החלון חוזר אוטומטית כל שבוע באותו יום ושעות":"Repeat weekly: the window recurs automatically every week on the same day and hours",
+  "🔁 חוזר שבועית":"🔁 Repeats weekly",
   "שמור הגדרות נעילה":"Save lockdown settings",
   "תצוגה מקדימה":"Preview",
   "הגדרות המשחק נשמרו":"Game settings saved",
@@ -181,13 +183,14 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>מכסת הזמנות ליום</label><input type="number" min="1" max="100" step="1" value="${c.invite_system ? c.invite_system.max_per_day : 5}" data-control="invite_system.max_per_day">
         <label>שם התג למזמין</label><input type="text" maxlength="40" value="${esc(c.invite_system ? c.invite_system.tag_name : "מגייס")}" data-control="invite_system.tag_name">
         <label>נוסח הודעת ההזמנה</label><input type="text" maxlength="300" value="${esc(c.invite_system ? c.invite_system.invite_text : "")}" data-control="invite_system.invite_text"></div>
-      <div class="card"><h2>🕯️ מסך שבת / חג (נעילת אתר מלאה)</h2><p class="sub">נעילה מלאה של האתר ברמת השרת: כל פנייה (התחברות, משחק, API) חסומה לכולם חוץ מהאדמין, וכל מי שנכנס רואה רק את המסך הזה. טקסט = כותרת וגוף חופשיים (שבת שלום, חג שמח...). חלון מתוזמן = הפעלה וכיבוי אוטומטיים לפי שעת ההתחלה והסיום. מתג ידני = נעילה מיידית עד כיבוי ידני. שמירת טופס בלי סימון לא מפעילה נעילה.</p>
+      <div class="card"><h2>🕯️ מסך שבת / חג (נעילת אתר מלאה)</h2><p class="sub">נעילה מלאה של האתר ברמת השרת: כל פנייה (התחברות, משחק, API) חסומה לכולם חוץ מהאדמין, וכל מי שנכנס רואה רק את המסך הזה. טקסט = כותרת וגוף חופשיים (שבת שלום, חג שמח...). חלון מתוזמן = הפעלה וכיבוי אוטומטיים לפי שעת ההתחלה והסיום. מתג ידני = נעילה מיידית עד כיבוי ידני. חזרה שבועית = אחרי שהחלון מסתיים, הוא נדלק שוב מעצמו כל שבוע באותן שעות (למשל שישי-שבת), בלי להגדיר מחדש; דורש שעת התחלה וסיום. שמירת טופס בלי סימון לא מפעילה נעילה.</p>
         <div id="shabbat-status" class="sub" style="margin-bottom:8px">טוען מצב...</div>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="shabbat-enabled" style="width:auto">מתג ידני: נעילה מיידית (עד כיבוי ידני)</label>
         <label>כותרת המסך</label><input type="text" id="shabbat-title" maxlength="120" placeholder="שבת שלום!">
         <label>טקסט גוף</label><input type="text" id="shabbat-body" maxlength="500" placeholder="נחזור לפעילות בצאת השבת.">
         <label>התחלה מתוזמנת (אופציונלי)</label><input type="datetime-local" id="shabbat-start">
         <label>סיום מתוזמן (אופציונלי)</label><input type="datetime-local" id="shabbat-end">
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="shabbat-repeat" style="width:auto">חזרה שבועית: החלון חוזר אוטומטית כל שבוע באותו יום ושעות</label>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn" id="shabbat-save">שמור הגדרות נעילה</button>
           <button class="btn secondary" id="shabbat-preview">תצוגה מקדימה</button>
@@ -245,6 +248,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       if (cfg.enabled) bits.push("מתג ידני: דולק");
       if (cfg.start) bits.push("התחלה: " + new Date(cfg.start).toLocaleString("he-IL"));
       if (cfg.end) bits.push("סיום: " + new Date(cfg.end).toLocaleString("he-IL"));
+      if (cfg.repeat_weekly) bits.push("🔁 חוזר שבועית");
       el.innerHTML = "<b>" + bits.join(" · ") + "</b>";
     };
     const shabbatLoad = async () => {
@@ -256,6 +260,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       document.getElementById("shabbat-body").value = cfg.body || "";
       document.getElementById("shabbat-start").value = isoToLocal(cfg.start);
       document.getElementById("shabbat-end").value = isoToLocal(cfg.end);
+      document.getElementById("shabbat-repeat").checked = cfg.repeat_weekly === true;
       shabbatStatus(cfg, data.active === true);
     };
     document.getElementById("shabbat-save").onclick = async () => {
@@ -265,6 +270,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         enabled: document.getElementById("shabbat-enabled").checked,
         title: sv("shabbat-title"), body: sv("shabbat-body"),
         start: toIso(sv("shabbat-start")), end: toIso(sv("shabbat-end")),
+        repeat_weekly: document.getElementById("shabbat-repeat").checked,
       };
       const { status, data } = await API.post("/api/admin/shabbat", payload, { timeoutMs: 30000 });
       if (status === 200) { toast(data.active ? "נשמר - הנעילה פעילה!" : "הגדרות הנעילה נשמרו (כבוי)"); shabbatLoad(); }
