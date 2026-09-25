@@ -365,3 +365,20 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 
 .spinner{width:26px;height:26px;border:3px solid rgba(255,255,255,.25);border-top-color:var(--accent);border-radius:50%;margin:0 auto;animation:bg-spin .8s linear infinite}
 @keyframes bg-spin{to{transform:rotate(360deg)}}
+
+/* Shabbat/holiday full-site lock screen */
+.lockdown-wrap {
+  min-height: 78vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 24px;
+}
+.lockdown-candle {
+  font-size: 72px; margin-bottom: 18px;
+  filter: drop-shadow(0 0 22px rgba(255, 196, 87, .55));
+  animation: lockdownGlow 2.6s ease-in-out infinite;
+}
+@keyframes lockdownGlow {
+  0%, 100% { filter: drop-shadow(0 0 14px rgba(255, 196, 87, .4)); }
+  50% { filter: drop-shadow(0 0 30px rgba(255, 214, 120, .75)); }
+}
+.lockdown-title { font-size: 44px; font-weight: 900; color: var(--accent, #ffd657); margin: 0 0 14px; }
+.lockdown-body { font-size: 20px; color: var(--text, #e2e8f0); max-width: 420px; line-height: 1.6; margin: 0; }
