@@ -1,7 +1,13 @@
 /**
- * Rate limiting - port of backend/security.py (SQLite fixed-window buckets).
+ * Rate limiting - port of backend/security.py (fixed-window buckets).
  * Same buckets/windows, same 429 payload. Identity = user id when authed,
  * else client IP (CF-Connecting-IP on Workers).
+ *
+ * Write-reduction (27.9): every bucket except "auth" is enforced per-isolate
+ * in memory - no D1 reads/writes per request. The auth bucket stays D1-backed
+ * so login brute-force protection is global across isolates. Per-isolate
+ * enforcement can multiply the effective allowance of the other buckets by
+ * the isolate count; those buckets guard comfort, not credentials.
  */
 import { json } from "./routes.js";
 import type { Env } from "../do/MatchRoom";
@@ -16,9 +22,32 @@ const RATE_LIMITS: Record<string, [number, number]> = {
   default: [300, 60],
 };
 
+// Per-isolate windows for the non-auth buckets.
+const mem = new Map<string, { start: number; count: number }>();
+let memOps = 0;
+
+function memRateLimit(bucket: string, identity: string, limit: number, window: number): boolean {
+  const key = `${bucket}:${identity}`;
+  const now = Date.now() / 1000;
+  const e = mem.get(key);
+  if (!e || now - e.start > window) {
+    mem.set(key, { start: now, count: 1 });
+  } else if (e.count >= limit) {
+    return false;
+  } else {
+    e.count++;
+  }
+  // Cheap sweep so a flood of distinct identities cannot grow the map forever.
+  if (++memOps % 1000 === 0 && mem.size > 5000) {
+    for (const [k, v] of mem) if (now - v.start > 300) mem.delete(k);
+  }
+  return true;
+}
+
 /** True if allowed under the configured limit (security.py rate_limit). */
 export async function rateLimit(env: Env, bucket: string, identity: string): Promise<boolean> {
   const [limit, window] = RATE_LIMITS[bucket] ?? RATE_LIMITS.default;
+  if (bucket !== "auth") return memRateLimit(bucket, identity, limit, window);
   const key = `${bucket}:${identity}`;
   const now = Date.now() / 1000;
   const row: any = await env.DB.prepare("SELECT * FROM rate_limits WHERE key = ?").bind(key).first();
