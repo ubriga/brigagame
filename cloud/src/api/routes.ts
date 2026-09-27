@@ -168,17 +168,24 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
   if (path === "/api/me" && method === "GET") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
-    const inv = await inventoryOf(env, Number(u.id));
-    const fbCtl = (await getControls(env) as any).bot_fallback ?? {};
+    // These reads are independent of each other: run them in parallel so the
+    // endpoint pays one D1 roundtrip instead of six (matters for far colos).
+    const [inv, controls, maintenance, coating, expansion] = await Promise.all([
+      inventoryOf(env, Number(u.id)),
+      getControls(env) as Promise<any>,
+      getMaintenance(env),
+      coatingPayload(env, Number(u.id)),
+      expansionPayload(env, Number(u.id)),
+    ]);
+    const fbCtl = controls.bot_fallback ?? {};
     return json({
       user: publicUser(u, env), server_version: env.SERVER_VERSION,
       bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
-      maintenance: await getMaintenance(env), inventory: inv,
-      invite_enabled: (await getControls(env) as any).invite_system?.enabled === true,
+      maintenance, inventory: inv,
+      invite_enabled: controls.invite_system?.enabled === true,
       daily_available: u.last_daily !== today(),
       streak: u.streak, server_date: today(),
-      coating: await coatingPayload(env, Number(u.id)),
-      expansion: await expansionPayload(env, Number(u.id)),
+      coating, expansion,
     });
   }
 
@@ -567,17 +574,22 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
     const rl_state = await limited(env, request, "state", u);
     if (rl_state) return rl_state;
     const uid = Number(u.id);
-    await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
     const now = Date.now() / 1000;
-    const offer: any = await env.DB.prepare(
-      "SELECT match_id, expires_at FROM match_offers WHERE invited_user_id = ? AND expires_at > ?"
-      + " ORDER BY expires_at DESC LIMIT 1").bind(uid, now).first();
-    const unread: any = await env.DB.prepare(
-      "SELECT COUNT(*) c FROM messages m LEFT JOIN message_reads r"
-      + " ON r.message_id = m.id AND r.user_id = ?"
-      + " WHERE (m.user_id IS NULL OR m.user_id = ?) AND r.read_at IS NULL").bind(uid, uid).first();
+    // Independent of each other: one parallel round instead of four serial
+    // D1 roundtrips.
+    const [, offer, unread, maintenance] = await Promise.all([
+      env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run(),
+      env.DB.prepare(
+        "SELECT match_id, expires_at FROM match_offers WHERE invited_user_id = ? AND expires_at > ?"
+        + " ORDER BY expires_at DESC LIMIT 1").bind(uid, now).first() as Promise<any>,
+      env.DB.prepare(
+        "SELECT COUNT(*) c FROM messages m LEFT JOIN message_reads r"
+        + " ON r.message_id = m.id AND r.user_id = ?"
+        + " WHERE (m.user_id IS NULL OR m.user_id = ?) AND r.read_at IS NULL").bind(uid, uid).first() as Promise<any>,
+      getMaintenance(env),
+    ]);
     const out: any = { ok: true, offer: null, unread_messages: (unread as any)?.c ?? 0,
-      server_version: env.SERVER_VERSION, maintenance: await getMaintenance(env) };
+      server_version: env.SERVER_VERSION, maintenance };
     if (offer) {
       out.offer = { match_id: offer.match_id, expires_in: Math.max(1, Math.trunc(offer.expires_at - now)) };
     }

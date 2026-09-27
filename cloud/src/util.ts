@@ -67,7 +67,20 @@ const WEEK_MS = 7 * 24 * 3600 * 1000;
  * window. With repeat_weekly the window recurs every 7 days (same weekday and
  * hours): the occurrence containing now is [start + k*week, +duration]. An
  * incomplete or invalid window is never active. */
+// Short per-isolate cache: the gate calls this on every API request, and each
+// call is a full D1 roundtrip (hundreds of ms from distant colos). A 30s TTL
+// bounds how long an admin toggle takes to appear while saving one roundtrip
+// per request.
+let _shabbatCache: { ts: number; value: ShabbatLock } | null = null;
+
 export async function getShabbatLockdown(env: Env): Promise<ShabbatLock> {
+  if (_shabbatCache && Date.now() - _shabbatCache.ts < 30_000) return _shabbatCache.value;
+  const value = await getShabbatLockdownUncached(env);
+  _shabbatCache = { ts: Date.now(), value };
+  return value;
+}
+
+async function getShabbatLockdownUncached(env: Env): Promise<ShabbatLock> {
   const base: ShabbatLock = { active: false, enabled: false, repeat_weekly: false, title: "", body: "", start: null, end: null, effective_end: null };
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'shabbat_lockdown'").first();
   if (!row) return base;
