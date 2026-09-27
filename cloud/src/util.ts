@@ -114,3 +114,86 @@ async function getShabbatLockdownUncached(env: Env): Promise<ShabbatLock> {
     };
   } catch { return base; }
 }
+
+// ---------------------------------------------------------------- login streak
+/** YYYY-MM-DD in Asia/Jerusalem (the game's home timezone), shifted by
+ * offsetDays. Login streaks run on the Israel calendar day, per spec. */
+export function israelDate(offsetDays = 0): string {
+  return new Date(Date.now() + offsetDays * 86400000)
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+}
+
+export interface LoginStreakCfg {
+  enabled: boolean;
+  /** Coins for a regular streak day (no milestone). */
+  base_amount: number;
+  /** Milestone day -> coins (keys are day numbers as strings). */
+  milestones: Record<string, number>;
+  /** What a skipped day does to the streak: reset to 1 (default), reset to 0,
+   * or keep counting as if no day was skipped. */
+  reset_policy: "to_one" | "to_zero" | "keep";
+}
+
+export const DEFAULT_LOGIN_STREAK: LoginStreakCfg = {
+  enabled: true,
+  base_amount: 5,
+  milestones: { "3": 10, "7": 25, "30": 100 },
+  reset_policy: "to_one",
+};
+
+// Short per-isolate cache: /api/me reads this on every app load, and each read
+// is a D1 roundtrip. A 30s TTL bounds admin-toggle propagation (same pattern
+// as the lockdown gate).
+let _streakCache: { ts: number; value: LoginStreakCfg } | null = null;
+
+export async function getLoginStreak(env: Env): Promise<LoginStreakCfg> {
+  if (_streakCache && Date.now() - _streakCache.ts < 30_000) return _streakCache.value;
+  let cfg = DEFAULT_LOGIN_STREAK;
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'login_streak'").first();
+  if (row) {
+    try {
+      const d = JSON.parse(String((row as any).value));
+      cfg = sanitizeLoginStreak(d);
+    } catch {}
+  }
+  _streakCache = { ts: Date.now(), value: cfg };
+  return cfg;
+}
+
+/** Merge + clamp a stored/admin-provided config onto the defaults. */
+export function sanitizeLoginStreak(d: any): LoginStreakCfg {
+  const clampAmt = (v: unknown, fallback: number): number => {
+    const n = Math.trunc(Number(v));
+    return isFinite(n) && n >= 0 && n <= 100000 ? n : fallback;
+  };
+  const milestones: Record<string, number> = {};
+  if (d && typeof d.milestones === "object" && d.milestones) {
+    for (const [k, v] of Object.entries(d.milestones as Record<string, unknown>)) {
+      const day = Math.trunc(Number(k));
+      if (isFinite(day) && day >= 1 && day <= 365)
+        milestones[String(day)] = clampAmt(v, DEFAULT_LOGIN_STREAK.base_amount);
+    }
+  } else {
+    Object.assign(milestones, DEFAULT_LOGIN_STREAK.milestones);
+  }
+  const policy = d?.reset_policy;
+  return {
+    enabled: d?.enabled === undefined ? DEFAULT_LOGIN_STREAK.enabled : d.enabled === true,
+    base_amount: clampAmt(d?.base_amount, DEFAULT_LOGIN_STREAK.base_amount),
+    milestones,
+    reset_policy: policy === "to_zero" || policy === "keep" ? policy : "to_one",
+  };
+}
+
+/** Coins for landing on the given streak day. */
+export function streakRewardFor(cfg: LoginStreakCfg, streakDay: number): number {
+  return cfg.milestones[String(streakDay)] ?? cfg.base_amount;
+}
+
+/** The next milestone strictly above the current streak (for the UI ladder). */
+export function nextStreakMilestone(cfg: LoginStreakCfg, streakDay: number): { day: number; amount: number } | null {
+  const days = Object.keys(cfg.milestones).map(Number).filter(d => d > streakDay).sort((a, b) => a - b);
+  if (!days.length) return null;
+  const day = days[0];
+  return { day, amount: cfg.milestones[String(day)] };
+}

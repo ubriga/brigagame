@@ -1,5 +1,5 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "34-admin-login-lockfix";
+const RELEASE = "35-login-streak";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
