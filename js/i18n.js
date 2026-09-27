@@ -23,6 +23,7 @@ const Lang = {
     "⚡ משחק מהיר":"⚡ Quick match","🤖 משחק מול בוט":"🤖 Play vs bot","🔗 משחק חברים (צור קוד)":"🔗 Friend match (create code)","הצטרף":"Join",
     "רמת קושי":"Difficulty","קוד משחק":"Match code","📊 הסטטיסטיקה שלך":"📊 Your statistics","דרגה נוכחית:":"Current rank:","הבאה:":"Next:",
     "דירוג":"Rating","נצחונות":"Wins","הפסדים":"Losses","🎁 בונוס יומי (נאסף)":"🎁 Daily bonus (collected)","🎁 בונוס יומי":"🎁 Daily bonus",
+    "רצף ימי התחברות":"Daily login streak","יאללה!":"Let's go!","סגור":"Close","קיבלת":"You got","מטבעות":"coins","הרצף נמשך!":"The streak continues!",
     "משחק חינמי, ללא פרסים או ערך כספי":"Free game, no prizes or monetary value","הצג הודעת תחזוקה":"Show maintenance notice",
     "להתקין את Brigagame?":"Install Brigagame?","גישה מהירה ומסך מלא לרוחב":"Quick access and full-screen landscape mode",
     "🛒 חנות":"🛒 Shop","יתרה:":"Balance:","🎟️ מימוש קופון":"🎟️ Redeem coupon","קוד קופון":"Coupon code","ממש":"Redeem",
