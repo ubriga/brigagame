@@ -4,7 +4,7 @@
  */
 import { currentUser } from "../auth.js";
 import { limited } from "./ratelimit.js";
-import { d1, getControls, getShabbatLockdown } from "../util.js";
+import { d1, getControls, getShabbatLockdown, getLoginStreak, sanitizeLoginStreak, nextStreakMilestone } from "../util.js";
 import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
@@ -279,6 +279,32 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     await audit(env, request, Number(u.id), "admin.shabbat", "", "", cfg);
     const lock = await getShabbatLockdown(env);
     return json({ ok: true, config: cfg, active: lock.active });
+  }
+
+  // GET|POST /api/admin/login-streak - daily login streak (auto-granted on
+  // the first app load of the Israel calendar day)
+  if (path === "/api/admin/login-streak" && method === "GET") {
+    const cfg = await getLoginStreak(env);
+    return json({ config: cfg, next_example: nextStreakMilestone(cfg, 1) });
+  }
+  if (path === "/api/admin/login-streak" && method === "POST") {
+    const body: any = await request.json().catch(() => ({}));
+    const row = await db.prepare("SELECT value FROM settings WHERE key = 'login_streak'").first();
+    let cur: any = {};
+    try { if (row) cur = JSON.parse(String((row as any).value)); } catch {}
+    const merged: any = {
+      enabled: body.enabled === undefined ? cur.enabled : body.enabled === true,
+      base_amount: body.base_amount === undefined ? cur.base_amount : Math.trunc(Number(body.base_amount)),
+      milestones: body.milestones === undefined ? cur.milestones : body.milestones,
+      reset_policy: body.reset_policy === undefined ? cur.reset_policy : body.reset_policy,
+    };
+    const cfg = sanitizeLoginStreak(merged);
+    await db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('login_streak', ?)"
+      + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .bind(JSON.stringify(cfg)).run();
+    await audit(env, request, Number(u.id), "admin.login_streak", "", "", cfg);
+    return json({ ok: true, config: cfg });
   }
 
   // GET|POST /api/admin/maintenance

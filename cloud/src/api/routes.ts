@@ -10,7 +10,7 @@ import { CATALOG, DEFAULT_SKIN, COATING_ORDER, COATING_NAMES } from "../game/cat
 import { DAILY_BASE, DAILY_STREAK_STEP, DAILY_CAP, rankFor } from "../game/economy.js";
 import { rankPayload } from "../game/ranks.js";
 import { addCoins } from "../game/finalize.js";
-import { d1, getControls } from "../util.js";
+import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStreakMilestone } from "../util.js";
 import { limited } from "./ratelimit.js";
 import type { Env } from "../do/MatchRoom";
 
@@ -166,8 +166,30 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
 
   // GET /api/me
   if (path === "/api/me" && method === "GET") {
-    const u = await needAuth();
+    let u: any = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    // Login streak: the first app load of the Israel calendar day increments
+    // the streak and pays the day's reward automatically. A skipped day
+    // applies the admin's reset policy. Runs before the parallel reads so the
+    // response carries the post-grant streak/coins.
+    const streakCfg = await getLoginStreak(env);
+    let loginReward: any = null;
+    if (streakCfg.enabled) {
+      const todayIL = israelDate(0);
+      if (u.last_daily !== todayIL) {
+        const continued = u.last_daily === israelDate(-1);
+        const newStreak = continued ? Number(u.streak) + 1
+          : streakCfg.reset_policy === "keep" ? Math.max(1, Number(u.streak))
+          : streakCfg.reset_policy === "to_zero" ? 0 : 1;
+        const amount = newStreak >= 1 ? streakRewardFor(streakCfg, newStreak) : 0;
+        await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ? WHERE id = ?")
+          .bind(todayIL, newStreak, Number(u.id)).run();
+        if (amount > 0) await addCoins(db, Number(u.id), amount, "login_streak");
+        await audit(env, request, Number(u.id), "user.login_streak", "user", Number(u.id), { streak: newStreak, amount });
+        loginReward = { streak: newStreak, amount };
+        u = { ...u, last_daily: todayIL, streak: newStreak, coins: Number(u.coins) + amount };
+      }
+    }
     // These reads are independent of each other: run them in parallel so the
     // endpoint pays one D1 roundtrip instead of six (matters for far colos).
     const [inv, controls, maintenance, coating, expansion] = await Promise.all([
@@ -183,8 +205,16 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
       bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
       maintenance, inventory: inv,
       invite_enabled: controls.invite_system?.enabled === true,
-      daily_available: u.last_daily !== today(),
+      daily_available: streakCfg.enabled ? false : u.last_daily !== today(),
       streak: u.streak, server_date: today(),
+      login_reward: loginReward,
+      login_streak: {
+        enabled: streakCfg.enabled,
+        base_amount: streakCfg.base_amount,
+        milestones: streakCfg.milestones,
+        reset_policy: streakCfg.reset_policy,
+        next: nextStreakMilestone(streakCfg, Number(u.streak)),
+      },
       coating, expansion,
     });
   }
@@ -483,6 +513,10 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
     if (!u) return json({ error: "unauthorized" }, 401);
     const rl_mutation = await limited(env, request, "mutation", u);
     if (rl_mutation) return rl_mutation;
+    const streakCfgClaim = await getLoginStreak(env);
+    if (streakCfgClaim.enabled) {
+      return json({ error: "streak_mode", error_he: "הבונוס היומי נאסף אוטומטית בכניסה הראשונה של היום 🔥" }, 400);
+    }
     const uid = Number(u.id);
     if (u.last_daily === today()) {
       return json({ error: "already_claimed", error_he: "כבר אספת היום. חזור מחר!" }, 400);
