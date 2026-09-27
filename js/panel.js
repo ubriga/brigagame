@@ -197,6 +197,21 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
           <button class="btn" id="shabbat-save">שמור הגדרות נעילה</button>
           <button class="btn secondary" id="shabbat-preview">תצוגה מקדימה</button>
         </div></div>
+      <div class="card"><h2>🔥 רצף התחברות יומי</h2><p class="sub">הכניסה הראשונה של כל יום (לפי תאריך ישראל) מעלה את הרצף ונותנת מטבעות אוטומטית, עם חלון "יום X ברצף!". יום שמדולג מפעיל את מדיניות האיפוס. סכום רגיל = מה שמקבלים ביום בלי אבן דרך. אבני דרך = סכום מיוחד ביום הספציפי (ימים 3, 7, 30 קבועים; הסכומים בשליטתך). בכיבוי - חוזר כפתור הבונוס היומי הידני הישן (50 מטבעות + 10 ליום רצף, עד 150). שים לב: שינויים נכנסים לתוקף עד 30 שניות (קאש שרת).</p>
+        <div id="streak-status" class="sub" style="margin-bottom:8px">טוען הגדרות...</div>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="streak-enabled" style="width:auto">מופעל (בונוס אוטומטי בכניסה יומית)</label>
+        <label>מטבעות ביום רגיל</label><input type="number" id="streak-base" min="0" max="10000" step="1">
+        <label>מטבעות ביום 3 (אבן דרך)</label><input type="number" id="streak-m3" min="0" max="100000" step="1">
+        <label>מטבעות ביום 7 (אבן דרך)</label><input type="number" id="streak-m7" min="0" max="100000" step="1">
+        <label>מטבעות ביום 30 (אבן דרך מיוחדת)</label><input type="number" id="streak-m30" min="0" max="100000" step="1">
+        <label>מדיניות יום מדולג</label><select id="streak-reset">
+          <option value="to_one">מתאפס ליום 1 (ברירת מחדל)</option>
+          <option value="to_zero">מתאפס ליום 0 (בלי פרס ביום החזרה)</option>
+          <option value="keep">לא מתאפס - הרצף נשמר</option>
+        </select>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn" id="streak-save">שמור הגדרות רצף</button>
+        </div></div>
       <div class="card"><h2>🤖 הצעת מעבר למשחק נגד בוט</h2><p class="sub">במשחק מהיר, אם לא נמצא יריב אנושי תוך הזמן הזה, השחקן מקבל הצעה לעבור למשחק מיידי נגד הבוט. רמת הבוט = עוצמת הבוט במשחק הגיבוי (קל = משחק אימון בלי נקודות דירוג; בינוני ומעלה = משחק מדורג). בכיבוי - ההצעה לא מוצגת והחיפוש אחר יריב ממשיך כרגיל.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_fallback.enabled" ${c.bot_fallback.enabled ? "checked" : ""} style="width:auto">מופעל</label>
         <label>זמן המתנה לפני הצגת ההצעה (שניות)</label><input type="number" min="5" max="300" step="1" value="${c.bot_fallback.wait_seconds}" data-control="bot_fallback.wait_seconds">
@@ -285,6 +300,32 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       location.hash = "#/shabbat-preview?" + q.toString();
     };
     shabbatLoad();
+    const streakLoad = async () => {
+      const { status, data } = await API.get("/api/admin/login-streak");
+      if (status !== 200) { document.getElementById("streak-status").textContent = "שגיאה בטעינת הגדרות הרצף"; return; }
+      const cfg = data.config || {};
+      const m = cfg.milestones || {};
+      document.getElementById("streak-status").textContent = cfg.enabled ? "הרצף פעיל - הבונוס נאסף אוטומטית בכניסה היומית הראשונה" : "הרצף כבוי - פעיל כפתור הבונוס היומי הידני הישן";
+      document.getElementById("streak-enabled").checked = cfg.enabled === true;
+      document.getElementById("streak-base").value = cfg.base_amount ?? 5;
+      document.getElementById("streak-m3").value = m["3"] ?? 10;
+      document.getElementById("streak-m7").value = m["7"] ?? 25;
+      document.getElementById("streak-m30").value = m["30"] ?? 100;
+      document.getElementById("streak-reset").value = cfg.reset_policy || "to_one";
+    };
+    document.getElementById("streak-save").onclick = async () => {
+      const num = (id) => Math.max(0, Math.trunc(Number(document.getElementById(id).value) || 0));
+      const payload = {
+        enabled: document.getElementById("streak-enabled").checked,
+        base_amount: num("streak-base"),
+        milestones: { "3": num("streak-m3"), "7": num("streak-m7"), "30": num("streak-m30") },
+        reset_policy: document.getElementById("streak-reset").value,
+      };
+      const { status, data } = await API.post("/api/admin/login-streak", payload);
+      if (status === 200) { toast("הגדרות הרצף נשמרו (חל עד 30 שניות)"); streakLoad(); }
+      else toast((data && data.error_he) || "שמירת הרצף נכשלה");
+    };
+    streakLoad();
   } else if (tab === "coatings") {
     const { status, data } = await API.get("/api/coatings");
     if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הציפויים.</p>"; return; }

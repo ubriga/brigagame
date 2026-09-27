@@ -171,6 +171,16 @@ const App = {
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
     this._daily = data.daily_available; this._streak = data.streak;
+    this._loginStreak = data.login_streak || null;
+    const streakChip = document.getElementById("streak-chip");
+    if (this._loginStreak && this._loginStreak.enabled) {
+      streakChip.textContent = "🔥 " + (data.streak || 0);
+      streakChip.classList.remove("hidden");
+    } else streakChip.classList.add("hidden");
+    if (data.login_reward && !this._loginRewardShown) {
+      this._loginRewardShown = true;
+      setTimeout(() => this.showLoginReward(data.login_reward), 400);
+    }
     document.getElementById("topbar").classList.remove("hidden");
     document.getElementById("coin-chip").textContent = "🪙 " + this.me.coins;
     document.getElementById("rank-chip").textContent = this.me.rank + " · " + this.me.rating;
@@ -178,7 +188,7 @@ const App = {
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=6").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=7").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -598,7 +608,7 @@ const App = {
             <span><b>🪙 ${u.coins}</b>מטבעות</span>
           </div>
           <button class="btn" id="daily-btn" style="margin-top:14px"
-            ${this._daily ? "" : "disabled"}>🎁 בונוס יומי${this._daily ? "" : " (נאסף)"}</button>
+            ${this._loginStreak && this._loginStreak.enabled ? "" : (this._daily ? "" : "disabled")}>${this._loginStreak && this._loginStreak.enabled ? "🔥 רצף יומי · יום " + (this._streak || 0) : "🎁 בונוס יומי" + (this._daily ? "" : " (נאסף)")}</button>
         </div>
       </div>`;
     const go = (id) => { location.hash = "#/game/" + id; };
@@ -655,6 +665,7 @@ const App = {
       else toast(apiError(result, "הקוד לא תקין"));
     };
     document.getElementById("daily-btn").onclick = async (e) => {
+      if (this._loginStreak && this._loginStreak.enabled) { this.showStreakLadder(); return; }
       const result = await API.post("/api/daily/claim");
       const { status } = result;
       const data = result.data || {};
@@ -668,6 +679,57 @@ const App = {
     };
   },
 
+
+  // Login streak: first-login-of-day reward popup ("יום X ברצף! קיבלת Y").
+  showLoginReward(r) {
+    if (this._lrBox) this._lrBox.remove();
+    const cfg = this._loginStreak || {};
+    const next = cfg.next;
+    const box = document.createElement("div");
+    box.className = "match-offer";
+    box.innerHTML = `<div class="card match-offer-card">
+      <div class="match-offer-icon">🔥</div>
+      <h2>יום ${r.streak} ברצף!</h2>
+      <p>${r.amount > 0 ? `קיבלת 🪙 ${r.amount} מטבעות` : "הרצף נמשך!"}</p>
+      ${next ? `<p class="sub">בעוד ${next.day - r.streak} ימים: פרס של 🪙 ${next.amount} ביום ${next.day}</p>` : ""}
+      <div class="match-offer-actions">
+        <button class="btn" id="lr-ok">יאללה!</button>
+      </div>
+    </div>`;
+    document.body.appendChild(box);
+    this._lrBox = box;
+    Sfx.play("coin");
+    document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
+  }
+
+  // Streak ladder: the daily button opens this when streak mode is on (the
+  // reward itself is granted automatically at first login of the day).
+  showStreakLadder() {
+    if (this._lrBox) this._lrBox.remove();
+    const cfg = this._loginStreak || { base_amount: 0, milestones: {} };
+    const cur = this._streak || 0;
+    const days = Object.keys(cfg.milestones || {}).map(Number).sort((a, b) => a - b);
+    const rows = days.map(d => {
+      const hit = cur >= d;
+      const isNext = cfg.next && cfg.next.day === d;
+      return `<p style="margin:4px 0">${hit ? "✅" : isNext ? "👉" : "▫️"} יום ${d}: 🪙 ${cfg.milestones[d]}${hit ? " - הושג!" : isNext ? " - הבא!" : ""}</p>`;
+    }).join("");
+    const box = document.createElement("div");
+    box.className = "match-offer";
+    box.innerHTML = `<div class="card match-offer-card">
+      <div class="match-offer-icon">🔥</div>
+      <h2>רצף יומי - יום ${cur}</h2>
+      <p class="sub">התחברות יומית מעלה את הרצף ונותנת מטבעות אוטומטית. יום שמדולג מאפס את הרצף.</p>
+      <p style="margin:4px 0">▫️ כל יום: 🪙 ${cfg.base_amount}</p>
+      ${rows}
+      <div class="match-offer-actions">
+        <button class="btn" id="lr-ok">סגור</button>
+      </div>
+    </div>`;
+    document.body.appendChild(box);
+    this._lrBox = box;
+    document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
+  }
 
   showMatchOffer(matchId, seconds) {
     if (this._offerBox) this._offerBox.remove();
