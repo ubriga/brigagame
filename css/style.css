@@ -154,8 +154,7 @@ tr:hover td { background: #ffffff08; }
 .msg.unread { border-right: 3px solid var(--accent); }
 .msg .t { color: var(--muted); font-size: 12px; }
 @media (max-width: 640px) {
-  #topbar { gap: 8px; } .brand { font-size: 15px; }
-  .brand .by { display: none; }
+  #topbar { gap: 8px; } .brand { display: none; }
   h1 { font-size: 22px; }
 }
 
