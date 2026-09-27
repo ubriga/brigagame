@@ -174,3 +174,12 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Option 3 (commit a50d16c, worker c106f823): /api/me and /api/presence/ping independent D1 reads parallelized (Promise.all) — me went from ~8 serial RTTs to ~2-3; getShabbatLockdown now has a 30s per-isolate cache (gate + options save 1 RTT/request; admin lockdown toggles take up to 30s to propagate).
 - Verified: health 200, login path, options, lockdown inactive; real /api/me with injected session returns full correct payload (Orel, 5773 coins); session deleted after.
 - Awaiting his live traffic for Israel-vantage before/after numbers (tail was quiet at 11:18). One-shot wake set ~14:30 to sample tail and report real numbers.
+
+## 27.9 14:10 — D1 quota scare: READ-ONLY investigation (user froze changes 14:06)
+- CF email 14:05: 75% of 100k daily rows_written cap; reset 00:00 UTC (03:00 Israel).
+- Billing dataset (d1AnalyticsAdaptiveGroups, matches the email): today new DB 70,861 + old DB 4,310 = 75,171 written. Reads 258k total (cap 5M - fine).
+- Hourly: 05:00 UTC 720 (old, light), 07:00 UTC 3,590 (old, Yoav morning peak, mostly match_events 3,588), 08:00 UTC 68,721 (NEW DB = the migration restore hour; ~3x the 22,845-row backup => restore ran ~3 passes), 10:00 UTC 2,140 (new, post-cutover).
+- Real game traffic all day = ~6,450 writes; ~590/hr avg; peak 3,590/hr. Biggest per-game writer: match_events (1 row/shot/turn), then rate_limits + last_seen.
+- Projection to 03:00 Israel: avg pace -> ~83k (safe); heavy evening -> 90-100k (thin). Headroom ~25k.
+- User: "רגע אל תעשה כלום" 14:06 - no code changes, no deploys. Mitigations ready if approved: in-memory rate limiter (except auth bucket), last_seen throttle 60s.
+- Repo was re-cloned (sandbox wiped since morning). CF token fetched via vault for read-only GraphQL, /tmp/cf_tok deleted after.
