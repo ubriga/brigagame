@@ -151,9 +151,16 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
 
   // app.py poll parity: a waiting match stays alive only while its owner
   // actively polls; quick-match owners keep inviting present players.
+  // Write-reduction (27.9): the keepalive touch persists at most once per
+  // 60s - the stale sweeper purges waiting matches only after 5 minutes
+  // (WAITING_MATCH_STALE_SECONDS), so a 60s-fresh timestamp is always
+  // comfortably alive. Owners poll every ~1-3s, cutting these writes ~97%.
   if (action === "state" && m.status === "waiting") {
-    await env.DB.prepare("UPDATE matches SET updated_at = ? WHERE id = ?")
-      .bind(nowIso(), matchId).run();
+    const touchedAt = row.updated_at ? Date.parse(row.updated_at) / 1000 : 0;
+    if (Date.now() / 1000 - touchedAt > 60) {
+      await env.DB.prepare("UPDATE matches SET updated_at = ? WHERE id = ?")
+        .bind(nowIso(), matchId).run();
+    }
     if (m.mode === "quick") await offerToPresentPlayer(env, matchId, uid);
   }
 
