@@ -21,7 +21,7 @@ new_sqlite_classes = ["MatchRoom"]
 [[d1_databases]]
 binding = "DB"
 database_name = "brigagame"
-database_id = "531332d3-b09f-4429-9a3a-09791139b782"
+database_id = "6e304f1a-295a-4ac0-83c8-9af6145e18e5"
 
 # Secrets (set via wrangler secret put, never in repo):
 #   GOOGLE_CLIENT_ID, SESSION_SIGNING_KEY
