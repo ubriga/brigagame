@@ -700,7 +700,7 @@ const App = {
     this._lrBox = box;
     Sfx.play("coin");
     document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
-  }
+  },
 
   // Streak ladder: the daily button opens this when streak mode is on (the
   // reward itself is granted automatically at first login of the day).
@@ -729,7 +729,7 @@ const App = {
     document.body.appendChild(box);
     this._lrBox = box;
     document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
-  }
+  },
 
   showMatchOffer(matchId, seconds) {
     if (this._offerBox) this._offerBox.remove();
