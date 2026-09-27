@@ -188,7 +188,7 @@ const App = {
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=7").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./js/panel.js?v=7").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
