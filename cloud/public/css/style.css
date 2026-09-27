@@ -384,3 +384,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 }
 .lockdown-title { font-size: 44px; font-weight: 900; color: var(--accent, #ffd657); margin: 0 0 14px; }
 .lockdown-body { font-size: 20px; color: var(--text, #e2e8f0); max-width: 420px; line-height: 1.6; margin: 0; }
+
+/* Final mobile HUD rule - must stay last so it beats the earlier
+   body.game-active nowrap compact block. On phones the two player tags plus
+   the exit button overflow a 390px row and clip the left tag; wrap the HUD
+   and let the tags shrink. */
+@media (max-width: 600px) {
+  body.game-active #game-hud { flex-wrap: wrap; }
+  body.game-active #game-hud .player-tag { flex: 1 1 0; min-width: 0; padding: 5px 7px; gap: 5px; }
+  body.game-active #game-hud .player-tag .tag-mid { min-width: 0; }
+}
