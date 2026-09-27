@@ -14,6 +14,7 @@ import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStrea
 import { limited } from "./ratelimit.js";
 import type { Env } from "../do/MatchRoom";
 
+
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
@@ -609,10 +610,17 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
     if (rl_state) return rl_state;
     const uid = Number(u.id);
     const now = Date.now() / 1000;
+    // Write-reduction (27.9): last_seen persists at most once per 20s per
+    // user, enforced globally by reading the stored value first - D1 reads
+    // do not count against the rows_written quota, so the SELECT is free
+    // quota-wise and works across isolates (a per-isolate memory throttle
+    // let concurrent isolates each write). Presence consumers stay correct:
+    // matchmaking treats last_seen within 25s as online and admin-online
+    // uses 45s, so a <=20s throttle never hides an active player. Pings
+    // arrive every ~8s, cutting last_seen writes by ~60%.
     // Independent of each other: one parallel round instead of four serial
     // D1 roundtrips.
-    const [, offer, unread, maintenance] = await Promise.all([
-      env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run(),
+    const [offer, unread, maintenance, lsRow] = await Promise.all([
       env.DB.prepare(
         "SELECT match_id, expires_at FROM match_offers WHERE invited_user_id = ? AND expires_at > ?"
         + " ORDER BY expires_at DESC LIMIT 1").bind(uid, now).first() as Promise<any>,
@@ -621,7 +629,12 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
         + " ON r.message_id = m.id AND r.user_id = ?"
         + " WHERE (m.user_id IS NULL OR m.user_id = ?) AND r.read_at IS NULL").bind(uid, uid).first() as Promise<any>,
       getMaintenance(env),
+      env.DB.prepare("SELECT last_seen FROM users WHERE id = ?").bind(uid).first() as Promise<any>,
     ]);
+    const lsStored = lsRow?.last_seen ? Date.parse(lsRow.last_seen) / 1000 : 0;
+    if (now - lsStored > 20) {
+      await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
+    }
     const out: any = { ok: true, offer: null, unread_messages: (unread as any)?.c ?? 0,
       server_version: env.SERVER_VERSION, maintenance };
     if (offer) {
