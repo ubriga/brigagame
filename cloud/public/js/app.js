@@ -1170,4 +1170,8 @@ const App = {
 
 };
 
+// Classic-script top-level const does not create a window property; game.js
+// feature-toggle guards read window.App, so expose it explicitly.
+window.App = App;
+
 App.boot();
