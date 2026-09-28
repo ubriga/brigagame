@@ -1018,6 +1018,16 @@ const App = {
   // preview, every owned skin selectable, apply-on-click.
   async vCustom(view, seq = this._routeSeq) {
     if (!this.me) { location.hash = "#/login"; return; }
+    if (this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🏗️ סדנת המגדל</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <p class="sub">סדנת המגדל זמינה לשחקנים רשומים בלבד. הרישום חינם, וכל ההתקדמות שצברת כאורח עוברת איתך.</p>
+          <button class="primary" onclick="location.hash='#/login'">הירשם בחינם</button>
+        </div>`;
+      return;
+    }
     const { data } = await API.get("/api/store");
     const { data: coatingData } = await API.get("/api/coatings");
     const { data: expansionData } = await API.get("/api/expansions");
@@ -1162,6 +1172,16 @@ const App = {
   },
 
   async vStore(view, seq = this._routeSeq) {
+    if (this.me && this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🛒 חנות</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <p class="sub">החנות זמינה לשחקנים רשומים בלבד. הרישום חינם, וכל ההתקדמות שצברת כאורח עוברת איתך.</p>
+          <button class="primary" onclick="location.hash='#/login'">הירשם בחינם</button>
+        </div>`;
+      return;
+    }
     const { status, data } = await API.get("/api/store");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה בטעינת החנות"); return; }
@@ -1299,15 +1319,56 @@ const App = {
     const { status, data } = await API.get("/api/messages");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }
-    let html = `<h1>✉️ הודעות</h1>`;
-    if (!data.messages.length) html += `<p class="sub">אין הודעות עדיין.</p>`;
-    for (const m of data.messages) {
-      html += `<div class="msg ${m.read ? "" : "unread"}">
-        <b>${esc(m.title)}</b> <span class="t">${esc(m.created_at.slice(0, 16).replace("T", " "))}</span>
-        <p>${esc(m.body)}</p></div>`;
+    // Read-state is tracked locally ("סמן הכל כנקרא" button); the server keeps
+    // its own auto-mark for the nav badge until the mark-all endpoint ships.
+    let seen = [];
+    try { seen = JSON.parse(localStorage.getItem("brigagame_msg_seen") || "[]"); } catch (e) {}
+    const msgs = data.messages || [];
+    const isNew = (m) => !seen.includes(m.id);
+    const unreadCount = msgs.filter(isNew).length;
+    const fmtWhen = (iso) => {
+      try {
+        const d = new Date(iso), now = new Date();
+        const hm = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+        const day = (x) => x.toDateString();
+        if (day(d) === day(now)) return `היום ${hm}`;
+        const y = new Date(now); y.setDate(y.getDate() - 1);
+        if (day(d) === day(y)) return `אתמול ${hm}`;
+        return d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "numeric" });
+      } catch (e) { return ""; }
+    };
+    let html = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <h1 style="margin:0">✉️ הודעות</h1>
+      ${msgs.length && unreadCount ? `<button class="btn small secondary" id="msg-mark-all">✓ סמן הכל כנקרא</button>` : ""}
+    </div>`;
+    if (!msgs.length) {
+      html += `<div class="card" style="text-align:center;padding:40px 18px;margin-top:14px">
+        <div style="font-size:46px">📭</div>
+        <h2 style="margin:8px 0 4px">אין הודעות עדיין</h2>
+        <p class="sub">כשיגיעו עדכונים, הם יופיעו כאן.</p>
+      </div>`;
+    } else {
+      for (const m of msgs) {
+        html += `<div class="card" style="display:flex;gap:12px;align-items:flex-start;margin-top:10px;padding:14px 16px">
+          <div style="font-size:24px;line-height:1.2">${isNew(m) ? "✉️" : "📄"}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <b>${esc(m.title)}</b>
+              ${isNew(m) ? `<span style="background:var(--accent);color:#06222e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">חדש</span>` : ""}
+              <span class="sub" style="margin-inline-start:auto;font-size:12px">${esc(fmtWhen(m.created_at))}</span>
+            </div>
+            <p style="margin:6px 0 0">${esc(m.body)}</p>
+          </div>
+        </div>`;
+      }
     }
     view.removeAttribute("aria-busy");
     view.innerHTML = html;
+    const markBtn = document.getElementById("msg-mark-all");
+    if (markBtn) markBtn.onclick = () => {
+      try { localStorage.setItem("brigagame_msg_seen", JSON.stringify(msgs.map((m) => m.id))); } catch (e) {}
+      this.vMessages(view, seq);
+    };
     this.setUnread(0);
   },
 
