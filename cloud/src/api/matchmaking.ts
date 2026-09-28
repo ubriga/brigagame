@@ -10,6 +10,7 @@ import { newState } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
+import { getGuestCfg } from "./guest.js";
 import type { Env } from "../do/MatchRoom";
 
 // config.py defaults (free tier has no task runner; API traffic carries the sweep)
@@ -121,10 +122,14 @@ export async function offerToPresentPlayer(env: Env, matchId: string, ownerId: n
   const presenceCutoff = new Date((now - PRESENCE_WINDOW_SECONDS) * 1000).toISOString();
   const cooldownCutoff = new Date((now - INVITE_COOLDOWN_SECONDS) * 1000).toISOString();
   const liveWaitingCutoff = new Date((now - 10) * 1000).toISOString();
+  // Guests never receive ranked quick-match offers while the admin keeps
+  // guest ranked play off (they can still play bot matches).
+  const guestClause = (await getGuestCfg(env)).ranked_allowed ? "" : " AND u.is_guest = 0";
   const row: any = await env.DB.prepare(
     "SELECT u.id FROM users u WHERE u.id != ?"
     + " AND u.last_seen IS NOT NULL AND u.last_seen >= ?"
     + " AND u.suspended = 0"
+    + guestClause
     + " AND (u.banned_until IS NULL OR u.banned_until <= ?)"
     + " AND NOT EXISTS (SELECT 1 FROM match_offers o"
     + "  WHERE o.invited_user_id = u.id AND o.expires_at > ?)"
@@ -275,6 +280,9 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     if (rl) return rl;
     const blocked = blockedReason(u);
     if (blocked) return json({ error: "blocked", error_he: blocked }, 403);
+    if (u.is_guest && !(await getGuestCfg(env)).ranked_allowed)
+      return json({ error: "guest_ranked_forbidden",
+        error_he: "משחק מהיר לדירוג זמין לשחקנים רשומים. אפשר לשחק מול בוט, או להירשם בחינם ולשמור את כל ההתקדמות." }, 403);
     const uid = Number(u.id);
     const now = Date.now() / 1000;
     await sweepExpiredOffers(env);
@@ -366,6 +374,9 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     if (rl) return rl;
     const blocked = blockedReason(u);
     if (blocked) return json({ error: "blocked", error_he: blocked }, 403);
+    if (u.is_guest)
+      return json({ error: "guest_forbidden",
+        error_he: "משחקי חברים זמינים לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
     const mid = newMatchId();
     const code = friendCode();
     const iso = nowIso();
@@ -384,6 +395,9 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     if (rl) return rl;
     const blocked = blockedReason(u);
     if (blocked) return json({ error: "blocked", error_he: blocked }, 403);
+    if (u.is_guest)
+      return json({ error: "guest_forbidden",
+        error_he: "משחקי חברים זמינים לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
     const body: any = await request.json().catch(() => ({}));
     const code = String(body.code ?? "").trim().toUpperCase();
     const m: any = await env.DB.prepare("SELECT id, p1 FROM matches WHERE code = ?").bind(code).first();
@@ -427,6 +441,9 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     }
 
     // accept
+    if (u.is_guest && !(await getGuestCfg(env)).ranked_allowed)
+      return json({ error: "guest_ranked_forbidden",
+        error_he: "משחק מהיר לדירוג זמין לשחקנים רשומים. אפשר לשחק מול בוט, או להירשם בחינם ולשמור את כל ההתקדמות." }, 403);
     const offer: any = await env.DB.prepare(
       "SELECT * FROM match_offers WHERE match_id = ? AND invited_user_id = ? AND expires_at > ?")
       .bind(mid, uid, now).first();

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_seen TEXT,
     banned_until TEXT,
     suspended INTEGER NOT NULL DEFAULT 0,
+    is_guest INTEGER NOT NULL DEFAULT 0,
+    guest_created_at TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sessions (

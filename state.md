@@ -203,3 +203,16 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - GOTCHA: background tabs throttle rAF - overlay/countdown QA needs the tab focused (focus-tab).
 - GOTCHA: tutorial overlay auto-dismisses on the 10s shot-clock auto-fire; countdown visible ~1s after match load eats 2s of the 3s hold.
 - NOTE: this state.md update is committed locally but NOT pushed (no live PAT; push on next deploy cycle).
+
+## 2026-09-28 ~18:53 IDT - Guest mode + i18n + cookie consent (v29) - local QA green
+- Server+client complete: guest mode (admin-controlled: enabled/ttl_hours/games_until_register_prompt/ranked_allowed),
+  i18n (login+game, lang switcher, EN default non-Hebrew), real cookie consent (bg_consent + /api/legal/consent).
+- Guests: random name "אורח <adj> <4digits>", never on leaderboard (is_guest=0 filter), 403 on store/expansions/
+  coatings/daily/coupons/invites, quick-match gated by ranked_allowed, AI games allowed, registration upgrades
+  SAME row in place (+200 welcome coins, stats carry).
+- REAL BUG FOUND+FIXED: sweepExpiredGuests ran as floating promise - Workers runtime killed the isolate mid-cascade
+  (sessions deleted, users row survived). Fixed by threading ExecutionContext into handleApi and ctx.waitUntil() at
+  both call sites (POST /api/guest, presence ping). Verified: backdated guest fully cascade-deleted.
+- Versions: CLIENT_VERSION 29, SERVER_VERSION 29, SW release 47-guest.
+- NOT YET DONE: remote D1 ALTERs (is_guest, guest_created_at), zero-player check+report, CF token re-mint,
+  wrangler deploy, PAT flow (needs sudo code), gh-pages push, live QA, PAT revoke.
