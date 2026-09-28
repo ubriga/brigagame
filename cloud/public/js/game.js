@@ -1001,8 +1001,8 @@ const GameView = {
     // UX onboarding (item ח): the server holds the bot's first shot for a
     // few seconds; show the countdown so the pause reads as intentional.
     const bh = document.getElementById("bot-hold-ov");
-    if (bh && this.snap && this.snap.state) {
-      const holdUntil = Number(this.snap.state.bot_hold_until || 0);
+    if (bh && this.snap) {
+      const holdUntil = Number(this.snap.bot_hold_until || 0);
       const left = Math.ceil(holdUntil - (Date.now() / 1000 + this.serverOffset));
       if (left > 0 && this.snap.status === "active") {
         bh.innerHTML = `<div class="bot-hold-box"><b>${left}</b><br>הבוט מתכונן לירייה הראשונה...<br><span class="sub">זמן להסתכל על הזווית, העוצמה והרוח</span></div>`;
