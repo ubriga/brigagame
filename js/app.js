@@ -182,6 +182,7 @@ const App = {
       setTimeout(() => this.showLoginReward(data.login_reward), 400);
     }
     document.getElementById("topbar").classList.remove("hidden");
+    document.getElementById("seo-intro")?.classList.add("hidden");
     document.getElementById("coin-chip").textContent = "🪙 " + this.me.coins;
     document.getElementById("rank-chip").textContent = this.me.rank + " · " + this.me.rating;
     const pic = document.getElementById("user-pic");
@@ -280,6 +281,7 @@ const App = {
 
   // ---------------- login ----------------
   vLogin(view) {
+    document.getElementById("seo-intro")?.classList.remove("hidden");
     document.getElementById("topbar").classList.add("hidden");
     const hashParams = new URLSearchParams((location.hash.split("?")[1] || ""));
     const incomingError = hashParams.get("auth_error") || "";
