@@ -1,7 +1,12 @@
 // Lightweight, persistent whole-app language layer. It also translates DOM
 // added later by game/store views, so one user choice covers every route.
 const Lang = {
-  current: localStorage.getItem("brigagame_lang") === "en" ? "en" : "he",
+  current: (() => {
+    const stored = localStorage.getItem("brigagame_lang");
+    if (stored === "en" || stored === "he") return stored;
+    const nav = String((navigator.languages && navigator.languages[0]) || navigator.language || "").toLowerCase();
+    return (nav.startsWith("he") || nav.startsWith("iw")) ? "he" : "en";
+  })(),
   exact: new Map(Object.entries({
     "לובי":"Lobby","תגים":"Tags","📨 הזמן חבר":"📨 Invite a friend","🎖️ התגים שלי":"🎖️ My tags","תגים מיוחדים שצברת במשחק.":"Special tags you earned in the game.","עדיין אין לך תגים.":"No tags yet.","⚔️ נכנסים לקרב":"⚔️ To battle","🚀 הצטרפה למשחק":"🚀 Join the game","חזרה ללובי":"Back to lobby","לכניסה למשחק":"To sign in","חנות":"Shop","ההתאמה שלי":"My collection","דירוג":"Leaderboard","הודעות":"Messages",
     "התקנה":"Install","התנתקות":"Sign out","השתקה":"Mute","מתחבר מחדש...":"Reconnecting...","בקרוב":"Coming soon",
@@ -52,7 +57,12 @@ const Lang = {
     "ציפוי מגדל":"Tower coating","הוספת קוביות":"Add cubes","מראה המגדל":"Tower appearance","בניית ציפוי למגדל שלי":"Build tower coating","הרחבת שטח המגדל":"Expand tower footprint",
     "נשקים":"Weapons","שדרוגים":"Upgrades","מראות":"Cosmetics","הכל":"All","מחפש ציפוי או קוביות למגדל?":"Looking for coatings or tower cubes?","הם נמצאים בסדנת המגדל, יחד עם הפועלים וזמני הבנייה.":"Find them in the tower workshop with builders and build times.","לסדנת המגדל":"Open tower workshop",
     "תנועות אחרונות":"Recent transactions","ציפויים":"Coatings","אין ציפוי פעיל":"No active coating","אין בנייה פעילה.":"No active build.","התחל בנייה":"Start build","הושלם":"Complete","נעול":"Locked","בתור":"Queued","בבנייה":"Building",
-    "טוען…":"Loading…","משחקים פעילים":"Active matches","מטבעות הונפקו":"Coins issued","מטבעות הוצאו":"Coins spent","חסומים":"Blocked"
+    "טוען…":"Loading…","משחקים פעילים":"Active matches","מטבעות הונפקו":"Coins issued","מטבעות הוצאו":"Coins spent","חסומים":"Blocked",
+    "🎭 שחק כאורח":"🎭 Play as guest","בלי הרשמה · חשבון זמני שנמחק אוטומטית":"No sign-up · a temporary account that deletes itself automatically",
+    "🟢 כניסה עם חשבון גוגל":"🟢 Sign in with Google","או כניסה עם קוד למייל:":"Or sign in with an email code:","המייל שלך":"Your email","שלח לי קוד כניסה":"Send me a sign-in code","קוד בן 6 ספרות":"6-digit code","חזרה":"Back","מתחבר…":"Signing in…",
+    "בהתחברות אתה מאשר את":"By signing in you agree to the","תנאי השימוש":"Terms of Service","מדיניות הפרטיות":"privacy policy","משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!":"A multiplayer artillery game - destroy the enemy tower!",
+    "גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז, ובכל משחק המגדלים במיקומים אחרים.":"Drag from your tower to aim, release to fire. Wind pushes the shell, and tower positions change every match.",
+    "🎭 מצב אורח":"🎭 Guest mode","הגדרות המשחק נשמרו":"Game settings saved"
   })),
   words: [],
   text(value) {

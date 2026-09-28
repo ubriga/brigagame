@@ -178,7 +178,7 @@ const App = {
       ? `<button class="maintenance-chip" title="${esc(message)}" aria-label="הצג הודעת תחזוקה">🚧 תחזוקה</button>`
       : `<span>🚧 ${esc(message)}</span><button class="maintenance-close" aria-label="סגירת הודעת תחזוקה">×</button>`;
     const close = el.querySelector(".maintenance-close");
-    if (close) close.onclick = () => { localStorage.setItem(key, "1"); this.setMaintenance(m); };
+    if (close) close.onclick = () => { Consent.setPref(key, "1"); this.setMaintenance(m); };
     const chip = el.querySelector(".maintenance-chip");
     if (chip) chip.onclick = () => { localStorage.removeItem(key); this.setMaintenance(m); };
   },
@@ -191,6 +191,9 @@ const App = {
     window.__BG_LOCKED__ = false;
     this.me = data.user; this.inventory = data.inventory || {};
     this.ux = data.ux || {};
+    this._guest = this.me && this.me.is_guest ? (data.guest || {}) : null;
+    document.body.classList.toggle("guest-mode", !!this._guest);
+    if (this._guest) this.showGuestBanner(); else this.hideGuestBanner();
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
     this._daily = data.daily_available; this._streak = data.streak;
@@ -219,6 +222,42 @@ const App = {
 
   // Full-site Shabbat/holiday lock screen. The server enforces the lockdown
   // (every non-admin API call returns 503 lockdown); this is only the display.
+  // Persistent guest warning: the account deletes itself at expires_at
+  // (TTL from FIRST entry, admin-controlled). The countdown banner is the
+  // visible pre-deletion warning the spec requires, with a register CTA
+  // that keeps every bit of progress (server converts the same row).
+  showGuestBanner() {
+    this.hideGuestBanner();
+    const en = Lang.current === "en";
+    const bar = document.createElement("div");
+    bar.id = "guest-banner";
+    bar.innerHTML = `
+      <span id="guest-banner-text"></span>
+      <button class="btn small" id="guest-register-btn">${en ? "Sign up & keep progress" : "הירשם ושמור את ההתקדמות"}</button>`;
+    document.body.appendChild(bar);
+    const tick = () => {
+      const el = document.getElementById("guest-banner-text");
+      if (!el) { clearInterval(this._guestTimer); return; }
+      const exp = Date.parse(this._guest && this._guest.expires_at || "") || (Date.now() + 24 * 3600e3);
+      const left = Math.max(0, exp - Date.now());
+      const h = Math.floor(left / 3600e3), m = Math.floor((left % 3600e3) / 60e3);
+      el.textContent = en
+        ? `🎭 Guest account - deletes itself in ${h}h ${m}m · progress is not kept`
+        : `🎭 חשבון אורח - נמחק בעוד ${h} שעות ו-${m} דקות · ההתקדמות לא נשמרת`;
+    };
+    tick();
+    this._guestTimer = setInterval(tick, 30000);
+    document.getElementById("guest-register-btn").onclick = () => {
+      this._guestUpgrade = true;
+      location.hash = "#/login";
+    };
+  },
+
+  hideGuestBanner() {
+    clearInterval(this._guestTimer); this._guestTimer = null;
+    document.getElementById("guest-banner")?.remove();
+  },
+
   showLockdown(title, body, endsAt, preview = false) {
     if (typeof Sfx !== "undefined") Sfx.stopMusic();
     this._locked = !preview;
@@ -322,12 +361,21 @@ const App = {
         ${this._lockBody ? `<p class="lockdown-body">${esc(this._lockBody)}</p>` : ""}
         ${this._lockEnds ? `<p class="sub" style="margin-top:10px;opacity:.75">חוזרים לפעילות: ${esc(new Date(this._lockEnds).toLocaleString("he-IL", { dateStyle: "full", timeStyle: "short" }))}</p>` : ""}
       </div>` : "";
+    const guestUpgradeNote = (this._guestUpgrade && API.token) ? `
+        <div class="card" style="text-align:center;margin-bottom:12px;border:1px solid var(--accent)">
+          🎭 ${Lang.current === "en"
+            ? "Signing up now attaches to your guest session - all progress is kept, nothing lost."
+            : "נרשמים עכשיו על סשן האורח - כל ההתקדמות נשמרת, שום דבר לא אובד."}
+        </div>` : "";
     view.innerHTML = `
       <div id="login-wrap">
+        <button id="login-lang" class="lang-switch" title="Language">${Lang.current === "en" ? "עברית" : "EN"}</button>
         ${lockNotice}
+        ${guestUpgradeNote}
         <div class="logo">🎯</div>
         <h1>Brigagame <span style="color:var(--accent)">2.0</span></h1>
         <p class="sub">by OrelAI · משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!</p>
+        <p class="sub" style="font-size:13px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז, ובכל משחק המגדלים במיקומים אחרים.</p>
         <div class="card">
           <div id="login-error" class="hidden" style="background:rgba(255,80,80,.12);border:1px solid rgba(255,80,80,.45);border-radius:10px;padding:10px;margin-bottom:12px;text-align:center">
             <div id="login-error-text" style="font-size:14px"></div>
@@ -345,6 +393,8 @@ const App = {
             </div>
             <div id="gsi-btn" style="display:flex;justify-content:center;margin-top:8px"></div>
             <button class="btn" id="redirect-btn" style="width:100%;margin-top:8px">🟢 כניסה עם חשבון גוגל</button>
+            <button class="btn secondary hidden" id="guest-btn" style="width:100%;margin-top:8px">🎭 שחק כאורח</button>
+            <p class="sub hidden" id="guest-note" style="font-size:12px;margin-top:4px">בלי הרשמה · חשבון זמני שנמחק אוטומטית</p>
             <div id="email-block" class="hidden" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.12);padding-top:12px">
               <div class="sub" style="font-size:13px;margin-bottom:6px">או כניסה עם קוד למייל:</div>
               <div id="email-step1">
@@ -377,7 +427,7 @@ const App = {
       </div>`;
     const rememberEl = document.getElementById("remember-me");
     rememberEl.checked = localStorage.getItem("bg_remember") !== "0";
-    rememberEl.onchange = () => localStorage.setItem("bg_remember", rememberEl.checked ? "1" : "0");
+    rememberEl.onchange = () => Consent.setPref("bg_remember", rememberEl.checked ? "1" : "0");
     let failCount = Number(sessionStorage.getItem("bg_login_fails") || 0);
     let lastMethod = "";
     const errBox = document.getElementById("login-error");
@@ -398,6 +448,10 @@ const App = {
     const finishLogin = async (data) => {
       API.setToken(data.token, rememberEl.checked);
       sessionStorage.setItem("bg_login_fails", "0");
+      if (data.upgraded) {
+        App._guestUpgrade = false;
+        toast(Lang.current === "en" ? "🎉 Progress saved - welcome!" : "🎉 ההתקדמות נשמרה! ברוך הבא", 4500);
+      }
       const me = await API.get("/api/me");
       if (me.status === 200) App.setMe(me.data);
       App.startPulse();
@@ -438,8 +492,14 @@ const App = {
     document.getElementById("redirect-btn").onclick = redirectStart;
     const isPwa = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
       || window.navigator.standalone === true;
+    document.getElementById("login-lang").onclick = () =>
+      Lang.set(Lang.current === "en" ? "he" : "en");
     API.get("/api/auth/options").then(({ status, data }) => {
       if (status !== 200 || !data) return;
+      if (data.guest_enabled) {
+        document.getElementById("guest-btn").classList.remove("hidden");
+        document.getElementById("guest-note").classList.remove("hidden");
+      }
       if (data.email_code) document.getElementById("email-block").classList.remove("hidden");
       if (isPwa && data.pwa_email_hint !== false) {
         document.getElementById("pwa-login-hint").classList.remove("hidden");
@@ -450,6 +510,22 @@ const App = {
         document.getElementById("email-from-note").innerHTML =
           'הקוד יגיע מ-<b dir="ltr">' + data.email_from + '</b><br>לא מוצאים? בדקו גם בתיקיית הספאם.';
     });
+    document.getElementById("guest-btn").onclick = async () => {
+      lastMethod = "guest"; clearError(); setSpin(true);
+      const { status, data } = await API.post("/api/guest");
+      if (status === 200) {
+        // Guest token lives in sessionStorage only: closing the tab ends the
+        // session (the server account still self-deletes on its TTL).
+        API.setToken(data.token, false);
+        sessionStorage.setItem("bg_login_fails", "0");
+        const me = await API.get("/api/me");
+        if (me.status === 200) App.setMe(me.data);
+        App.startPulse();
+        Sfx.ensure(); Sfx.startMusic();
+        App._guestUpgrade = false;
+        location.hash = "#/lobby";
+      } else showError((data && data.error_he) || "כניסת אורחים נכשלה. נסה שוב.");
+    };
     document.getElementById("email-send").onclick = async () => {
       const email = document.getElementById("email-input").value.trim();
       if (!email) return;
@@ -587,6 +663,7 @@ const App = {
     if (!this.routeCurrent(seq)) return;
     if (!this.me) { location.hash = "#/login"; return; }
     const u = this.me;
+    const guest = this._guest;
     view.removeAttribute("aria-busy");
     view.innerHTML = `
       <h1>שלום, ${esc(u.name)} 👋</h1>
@@ -596,8 +673,8 @@ const App = {
         <div class="card">
           <h2>🎮 משחק</h2>
           <div class="grid">
-            <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
-            ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">מול שחקן אמיתי אקראי - נספר לדירוג</p>` : ""}
+            ${!guest || guest.ranked_allowed ? `<button class="btn" id="quick-btn">⚡ משחק מהיר</button>
+            ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">מול שחקן אמיתי אקראי - נספר לדירוג</p>` : ""}` : `<p class="sub ux-hint">⚡ משחק מהיר מדורג זמין לשחקנים רשומים - אפשר מול בוט, או להירשם ולשמור את ההתקדמות</p>`}
             <div class="ai-start">
               <label for="ai-tier" class="sub" style="margin:0">רמת קושי מול בוט:</label>
               <select id="ai-tier" aria-label="רמת קושי">
@@ -610,20 +687,25 @@ const App = {
               <button class="btn" id="ai-btn">🤖 התחל משחק מול בוט</button>
             </div>
             ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">מול המחשב - רמה קלה היא תרגול שלא נספר לדירוג</p>` : ""}
-            <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
+            ${!guest ? `<button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
             ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">יוצר קוד לשיתוף חבר - הוא מזין אותו בשדה "קוד משחק" כאן למטה</p>` : ""}
             <div style="display:flex;gap:8px">
               <input id="join-code" placeholder="קוד משחק" maxlength="6" style="text-transform:uppercase">
               <button class="btn secondary" id="join-btn">הצטרף</button>
             </div>
             <div id="friend-code" class="hidden" style="margin-top:8px"></div>
-            <button class="btn secondary" id="invite-btn" ${u.invite_enabled ? "" : 'style="display:none"'}>📨 הזמן חבר</button>
+            <button class="btn secondary" id="invite-btn" ${u.invite_enabled ? "" : 'style="display:none"'}>📨 הזמן חבר</button>` : ""}
             ${this.ux.how_to_play_button !== false ? `<button class="btn secondary" id="howto-btn">❓ איך משחקים?</button>` : ""}
           </div>
         </div>
         <div class="card">
-          <h2>📊 הסטטיסטיקה שלך</h2>
-          <div class="rank-progress-card">
+          ${guest ? `<h2>🎭 משחק אורח</h2>
+          <p class="sub">משחק אורח: הסטטיסטיקה לא נשמרת בין סשנים והחשבון נמחק אוטומטית. אורחים לא מופיעים בטבלת הדירוג. רוצה לשמור הכל? <b>הירשם בחינם</b> - ההתקדמות עוברת איתך.</p>
+          <div class="stat-row"><span><b>${u.wins}</b>נצחונות</span><span><b>${u.losses}</b>הפסדים</span></div>
+          <button class="btn" id="daily-btn" style="margin-top:14px;display:none"></button>
+        </div>` : ""}
+          <h2 ${guest ? 'style="display:none"' : ""}>📊 הסטטיסטיקה שלך</h2>
+          <div class="rank-progress-card" ${guest ? 'style="display:none"' : ""}>
             <div class="rank-progress-head">
               <span>דרגה נוכחית: <b>${esc(u.idf_rank.name_he)} (${esc(u.idf_rank.abbr_he)})</b></span>
               <span>${u.idf_rank.next ? `הבאה: <b>${esc(u.idf_rank.next.name_he)} (${esc(u.idf_rank.next.abbr_he)})</b>` : "הגעת לדרגה הגבוהה ביותר"}</span>
@@ -631,18 +713,19 @@ const App = {
             <div class="rank-progress-track"><div style="width:${u.idf_rank.progress_pct}%"></div></div>
             <p>${u.idf_rank.next ? `נשארו <b>${u.idf_rank.next.wins_to_go}</b> XP לקידום` : "רא״ל - דרגה מרבית"}</p>
           </div>
-          <div class="stat-row">
+          ${!guest ? `<div class="stat-row">
             <span><b>${u.rating}</b>דירוג (${esc(u.rank)})</span>
             <span><b>${u.wins}</b>נצחונות</span>
             <span><b>${u.losses}</b>הפסדים</span>
             <span><b>🪙 ${u.coins}</b>מטבעות</span>
           </div>
           <button class="btn" id="daily-btn" style="margin-top:14px"
-            ${this._loginStreak && this._loginStreak.enabled ? "" : (this._daily ? "" : "disabled")}>${this._loginStreak && this._loginStreak.enabled ? "🔥 רצף יומי · יום " + (this._streak || 0) : "🎁 בונוס יומי" + (this._daily ? "" : " (נאסף)")}</button>
+            ${this._loginStreak && this._loginStreak.enabled ? "" : (this._daily ? "" : "disabled")}>${this._loginStreak && this._loginStreak.enabled ? "🔥 רצף יומי · יום " + (this._streak || 0) : "🎁 בונוס יומי" + (this._daily ? "" : " (נאסף)")}</button>` : ""}
         </div>
       </div>`;
     const go = (id) => { location.hash = "#/game/" + id; };
-    document.getElementById("quick-btn").onclick = async () => {
+    const quickBtn = document.getElementById("quick-btn");
+    if (quickBtn) quickBtn.onclick = async () => {
       Sfx.play("click");
       const result = await API.post("/api/matches/quick");
       const data = result.data || {};
@@ -655,22 +738,23 @@ const App = {
       else toast(apiError(result, "שגיאה ביצירת משחק מהיר"));
     };
     const aiTier = document.getElementById("ai-tier");
-    const savedAiTier = localStorage.getItem("brigagame.aiTier");
+    const savedAiTier = localStorage.getItem("brigagame.aiTier") || sessionStorage.getItem("brigagame.aiTier");
     if (["easy", "medium", "hard", "ultra", "expert"].includes(savedAiTier)) aiTier.value = savedAiTier;
     else if (Number(this.me.matches_played || 0) < Math.trunc(Number(this.ux.newbie_easy_matches ?? 0))) aiTier.value = "easy";
     else aiTier.value = "medium";
-    aiTier.onchange = () => localStorage.setItem("brigagame.aiTier", aiTier.value);
+    aiTier.onchange = () => Consent.setPref("brigagame.aiTier", aiTier.value);
     document.getElementById("ai-btn").onclick = async () => {
       Sfx.play("click");
       const difficulty = aiTier.value;
-      localStorage.setItem("brigagame.aiTier", difficulty);
+      Consent.setPref("brigagame.aiTier", difficulty);
       const result = await API.post("/api/matches/ai", { difficulty });
       const data = result.data || {};
       if (data.match_id) go(data.match_id); else toast(apiError(result, "שגיאה ביצירת משחק מול בוט"));
     };
     const howtoBtn = document.getElementById("howto-btn");
     if (howtoBtn) howtoBtn.onclick = () => { Sfx.play("click"); this.showHowTo(); };
-    document.getElementById("friend-btn").onclick = async () => {
+    const friendBtn = document.getElementById("friend-btn");
+    if (friendBtn) friendBtn.onclick = async () => {
       Sfx.play("click");
       const result = await API.post("/api/matches/friend");
       const data = result.data || {};
@@ -691,8 +775,10 @@ const App = {
         go(data.match_id);
       } else toast(apiError(result, "שגיאה ביצירת משחק חברים"));
     };
-    document.getElementById("invite-btn").onclick = () => { Sfx.play("click"); this.inviteFriend(); };
-    document.getElementById("join-btn").onclick = async () => {
+    const inviteBtn = document.getElementById("invite-btn");
+    if (inviteBtn) inviteBtn.onclick = () => { Sfx.play("click"); this.inviteFriend(); };
+    const joinBtn = document.getElementById("join-btn");
+    if (joinBtn) joinBtn.onclick = async () => {
       const code = document.getElementById("join-code").value.trim();
       if (!code) return;
       Sfx.play("click");
@@ -701,7 +787,8 @@ const App = {
       if (data.match_id) go(data.match_id);
       else toast(apiError(result, "הקוד לא תקין"));
     };
-    document.getElementById("daily-btn").onclick = async (e) => {
+    const dailyBtn = document.getElementById("daily-btn");
+    if (dailyBtn) dailyBtn.onclick = async (e) => {
       if (this._loginStreak && this._loginStreak.enabled) { this.showStreakLadder(); return; }
       const result = await API.post("/api/daily/claim");
       const { status } = result;
@@ -714,6 +801,29 @@ const App = {
         window.refreshMe?.();
       } else toast(apiError(result, "שגיאה באיסוף הבונוס היומי"));
     };
+    // Guest register prompt: after the admin-set number of games, offer once
+    // per session to keep everything via a free sign-up.
+    if (guest && Number(guest.games_until_register_prompt) > 0
+        && Number(u.matches_played || 0) >= Number(guest.games_until_register_prompt)
+        && !sessionStorage.getItem("bg_guest_prompted")) {
+      sessionStorage.setItem("bg_guest_prompted", "1");
+      const en = Lang.current === "en";
+      const ov = document.createElement("div");
+      ov.className = "guest-prompt-overlay";
+      ov.innerHTML = `<div class="card guest-prompt-card">
+        <h2>🎭 ${en ? "Nice streak!" : "משחק יפה!"}</h2>
+        <p>${en
+          ? `You already played ${u.matches_played} guest games. Sign up free and keep every bit of progress - the account stops being temporary.`
+          : `כבר שיחקת ${u.matches_played} משחקים כאורח. נרשמים בחינם ושומרים את כל ההתקדמות - החשבון מפסיק להיות זמני.`}</p>
+        <button class="btn" id="guest-prompt-yes">${en ? "Sign up free" : "הרשמה חינם"}</button>
+        <button class="btn secondary" id="guest-prompt-no">${en ? "Maybe later" : "אולי אחר כך"}</button>
+      </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector("#guest-prompt-yes").onclick = () => {
+        ov.remove(); this._guestUpgrade = true; location.hash = "#/login";
+      };
+      ov.querySelector("#guest-prompt-no").onclick = () => ov.remove();
+    }
   },
 
 
