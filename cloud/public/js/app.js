@@ -1297,7 +1297,7 @@ const App = {
     data.leaderboard.forEach((p, i) => {
       const medal = ["🥇", "🥈", "🥉"][i] || (i + 1);
       html += `<tr style="${p.id === data.me ? "outline:2px solid var(--accent)" : ""}">
-        <td>${medal}</td><td>${esc(p.name)}</td><td>${esc(p.idf_rank.name_he)}</td>
+        <td>${medal}</td><td data-i18n-skip>${esc(p.name)}</td><td>${esc(p.idf_rank.name_he)}</td>
         <td>${Number(p.rank_points || 0).toFixed(1)}</td><td>${p.wins}</td><td>${p.losses}</td></tr>`;
     });
     html += `</table></div>`;
@@ -1353,11 +1353,11 @@ const App = {
           <div style="font-size:24px;line-height:1.2">${isNew(m) ? "✉️" : "📄"}</div>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <b>${esc(m.title)}</b>
+              <b data-i18n-skip>${esc(m.title)}</b>
               ${isNew(m) ? `<span style="background:var(--accent);color:#06222e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">חדש</span>` : ""}
               <span class="sub" style="margin-inline-start:auto;font-size:12px">${esc(fmtWhen(m.created_at))}</span>
             </div>
-            <p style="margin:6px 0 0">${esc(m.body)}</p>
+            <p data-i18n-skip style="margin:6px 0 0">${esc(m.body)}</p>
           </div>
         </div>`;
       }
