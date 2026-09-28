@@ -1018,6 +1018,16 @@ const App = {
   // preview, every owned skin selectable, apply-on-click.
   async vCustom(view, seq = this._routeSeq) {
     if (!this.me) { location.hash = "#/login"; return; }
+    if (this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🏗️ סדנת המגדל</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <p class="sub">סדנת המגדל זמינה לשחקנים רשומים בלבד. הרישום חינם, וכל ההתקדמות שצברת כאורח עוברת איתך.</p>
+          <button class="primary" onclick="location.hash='#/login'">הירשם בחינם</button>
+        </div>`;
+      return;
+    }
     const { data } = await API.get("/api/store");
     const { data: coatingData } = await API.get("/api/coatings");
     const { data: expansionData } = await API.get("/api/expansions");
@@ -1162,6 +1172,16 @@ const App = {
   },
 
   async vStore(view, seq = this._routeSeq) {
+    if (this.me && this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🛒 חנות</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <p class="sub">החנות זמינה לשחקנים רשומים בלבד. הרישום חינם, וכל ההתקדמות שצברת כאורח עוברת איתך.</p>
+          <button class="primary" onclick="location.hash='#/login'">הירשם בחינם</button>
+        </div>`;
+      return;
+    }
     const { status, data } = await API.get("/api/store");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה בטעינת החנות"); return; }
