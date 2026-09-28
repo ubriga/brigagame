@@ -213,6 +213,10 @@ const App = {
     document.getElementById("rank-chip").textContent = this.me.rank + " · " + this.me.rating;
     const pic = document.getElementById("user-pic");
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
+    // Permanent rule: non-admins must not see any trace that an admin area
+    // exists - remove a stale panel button left by a previous admin session
+    // in this tab (logout/login does not clear injected DOM).
+    if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
       import("./panel.js?v=7").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
@@ -640,6 +644,15 @@ const App = {
   async vTags(view, seq = this._routeSeq) {
     if (!this.routeCurrent(seq)) return;
     if (!this.me) { location.hash = "#/login"; return; }
+    if (this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🎖️ התגים שלי</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <p class="sub">תגים זמינים לשחקנים רשומים בלבד.</p>
+        </div>`;
+      return;
+    }
     const { status, data } = await API.get("/api/tags");
     if (!this.routeCurrent(seq)) return;
     view.removeAttribute("aria-busy");
@@ -1245,6 +1258,17 @@ const App = {
 
   // ---------------- leaderboard ----------------
   async vLeaderboard(view, seq = this._routeSeq) {
+    if (this.me && this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🏆 טבלת דירוג</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <h2>הירשם כדי לראות את הטבלה</h2>
+          <p class="sub">טבלת הדירוג פתוחה לשחקנים רשומים בלבד. הרישום חינם, וכל ההתקדמות שצברת כאורח עוברת איתך.</p>
+          <button class="primary" onclick="location.hash='#/login'">הירשם בחינם</button>
+        </div>`;
+      return;
+    }
     const { status, data } = await API.get("/api/leaderboard");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }
@@ -1263,6 +1287,15 @@ const App = {
 
   // ---------------- messages ----------------
   async vMessages(view, seq = this._routeSeq) {
+    if (this.me && this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>✉️ הודעות</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">🔒</div>
+          <p class="sub">הודעות זמינות לשחקנים רשומים בלבד.</p>
+        </div>`;
+      return;
+    }
     const { status, data } = await API.get("/api/messages");
     if (!this.routeCurrent(seq)) return;
     if (status !== 200) { toast("שגיאה"); return; }

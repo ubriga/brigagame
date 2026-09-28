@@ -437,7 +437,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 
 /* Guest mode + consent + login language switcher (client v29) */
 body.guest-mode #topbar nav a[data-nav="store"],
-body.guest-mode #topbar nav a[data-nav="custom"] { display: none; }
+body.guest-mode #topbar nav a[data-nav="custom"],
+body.guest-mode #topbar nav a[data-nav="messages"],
+body.guest-mode #topbar nav a[data-nav="tags"] { display: none; }
 
 #guest-banner {
   position: fixed; top: 0; left: 0; right: 0; z-index: 900;

@@ -328,6 +328,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
   if (path === "/api/tags" && method === "GET") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "תגים זמינים לשחקנים רשומים." }, 403);
     const rows = await env.DB.prepare(
       "SELECT tag, granted_at, source FROM user_tags WHERE user_id = ? ORDER BY granted_at DESC")
       .bind(Number(u.id)).all();
@@ -609,6 +610,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
   if (path === "/api/messages" && method === "GET") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "הודעות זמינות לשחקנים רשומים." }, 403);
     const uid = Number(u.id);
     const rows = await env.DB.prepare(
       "SELECT m.*, r.read_at FROM messages m LEFT JOIN message_reads r"
@@ -676,6 +678,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
   if (path === "/api/leaderboard" && method === "GET") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "הטבלה זמינה לשחקנים רשומים." }, 403);
     const rows = await env.DB.prepare(
       "SELECT id, name, picture, rating, wins, losses, rank_points FROM users"
       + " WHERE matches_played > 0 AND is_guest = 0"
