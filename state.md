@@ -192,3 +192,14 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Left for his decision: match_events journal (1 row/game event, dominant in-match writer; needed by polling clients) and matches checkpoint per action (DO eviction safety).
 - Deploy tokens today: 7 minted/used/deleted, list verified clean each time; last ones via /tmp/gh_pat file injection (never inline). QA users 27/28/29 + sessions/transactions/audit/matches cleaned, counts=0. /tmp/cf_tok, /tmp/qa*.env removed.
 - CF token still re-fetched per session via vault ("Cloudflare API token (ubriga account)", kind login key password -> data:-page input -> execute-js read-back).
+
+## 2026-09-28 ~16:20 IDT - UX onboarding deploy + 2 hotfixes
+- Deployed UX onboarding א-ח (main 3e6fa26, gh-pages 93ef1a8, worker 66460661) at ~12:56 in verified zero-player window.
+- Hotfix 1 (window.App): tutorial (א) + admin UX toggles were inert - classic-script const App is not a window property. Fix: window.App = App in app.js. main 2c355cc, gh-pages 0aa4c91, worker 26ad13c8 (app v49, sw 45-uxfix2).
+- Hotfix 2 (bot_hold_until): countdown (ח) never shown - snapshot flattens state; server now returns bot_hold_until top-level, client reads this.snap.bot_hold_until. main 0adda1d, gh-pages 31468d3, worker 1bf634ef (server v28, game v20, sw 46-uxfix3).
+- Live versions: server 28, client 28, app v49, game v20, css v25, sw 46-uxfix3.
+- QA user 34 + 13 matches + 446 events deleted; users=19. All secrets shredded. PATs deploy-windowapp-fix + deploy-countdown-fix minted/deleted (401-verified).
+- GOTCHA: D1 last_seen has MIXED formats (ISO-T vs space) - string-compare presence queries overcount. Normalize: replace(substr(last_seen,1,19),'T',' ') > strftime('%Y-%m-%d %H:%M:%S','now','-2 minutes').
+- GOTCHA: background tabs throttle rAF - overlay/countdown QA needs the tab focused (focus-tab).
+- GOTCHA: tutorial overlay auto-dismisses on the 10s shot-clock auto-fire; countdown visible ~1s after match load eats 2s of the 3s hold.
+- NOTE: this state.md update is committed locally but NOT pushed (no live PAT; push on next deploy cycle).
