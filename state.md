@@ -216,3 +216,15 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Versions: CLIENT_VERSION 29, SERVER_VERSION 29, SW release 47-guest.
 - NOT YET DONE: remote D1 ALTERs (is_guest, guest_created_at), zero-player check+report, CF token re-mint,
   wrangler deploy, PAT flow (needs sudo code), gh-pages push, live QA, PAT revoke.
+
+## 2026-09-28 ~19:36 IDT - v29 WORKER LIVE on prod; awaiting GitHub sudo code for gh-pages push
+- CF token re-minted from vault via data: page + vault fill + execute-js --async (token never in transcript/reports; /tmp/cf_token 600; verified active via CF API).
+- Remote D1 migration applied+verified: users.is_guest (DEFAULT 0), users.guest_created_at. 0 guests existed.
+- Zero-player gate: 0 users last_seen<45s, 0 active/waiting/offered matches -> reported to parent BEFORE deploy.
+- wrangler deploy: worker v29 live (Version ID 3c2b30ac-6599-41ed-a5e1-72e61390160f).
+- Live API QA on prod worker GREEN: options.guest_enabled, guest create (name, 24h expiry in .guest.expires_at / guest_expires_at top-level),
+  store 403 guest_forbidden, quick 403 guest_ranked_forbidden, consent 200, admin gameplay-controls guest_mode group readable.
+- Prod QA probes cleaned (2 guests + planted admin session removed; verified 0). Leases released, guidance recorded.
+- /tmp/ghp worktree staged on origin/gh-pages (fcf48e6) for the push.
+- BLOCKED ON: user's GitHub sudo code (requested via parent 19:29) for PAT mint -> gh-pages push + main push (local main 1e6889b ahead).
+- THEN: live client QA on game URL, revoke PAT + verify 401 + shred, final Hebrew report.
