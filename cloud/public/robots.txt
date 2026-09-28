@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ubriga.github.io/brigagame/sitemap.xml

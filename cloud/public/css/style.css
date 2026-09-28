@@ -394,3 +394,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   body.game-active #game-hud .player-tag { flex: 1 1 0; min-width: 0; padding: 5px 7px; gap: 5px; }
   body.game-active #game-hud .player-tag .tag-mid { min-width: 0; }
 }
+
+/* Static landing intro for SEO - visible pre-login, hidden after login. */
+#seo-intro { max-width: 640px; margin: 18px auto 0; padding: 0 18px; text-align: center; color: var(--muted); }
+#seo-intro h1 { font-size: 20px; color: var(--text); margin: 0 0 10px; }
+#seo-intro p { font-size: 13.5px; line-height: 1.7; margin: 0 0 10px; }
+#seo-intro.hidden { display: none; }
