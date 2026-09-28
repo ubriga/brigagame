@@ -190,6 +190,7 @@ const App = {
     this._locked = false;
     window.__BG_LOCKED__ = false;
     this.me = data.user; this.inventory = data.inventory || {};
+    this.ux = data.ux || {};
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
     this._daily = data.daily_available; this._streak = data.streak;
@@ -590,11 +591,13 @@ const App = {
     view.innerHTML = `
       <h1>שלום, ${esc(u.name)} 👋</h1>
       <p class="sub">הפל את מגדל היריב לפני שהוא מפיל את שלך.</p>
+      ${(this.ux.lobby_labels !== false && Number(u.matches_played || 0) === 0) ? `<div class="card ux-welcome"><b>🎓 משחק ראשון?</b> מומלץ להתחיל מול בוט קל - משחק תרגול בלי דירוג ובלי לחץ. אפשר גם לפתוח את "איך משחקים?" למטה.</div>` : ""}
       <div class="grid cols2">
         <div class="card">
           <h2>🎮 משחק</h2>
           <div class="grid">
             <button class="btn" id="quick-btn">⚡ משחק מהיר</button>
+            ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">מול שחקן אמיתי אקראי - נספר לדירוג</p>` : ""}
             <div class="ai-start">
               <label for="ai-tier" class="sub" style="margin:0">רמת קושי מול בוט:</label>
               <select id="ai-tier" aria-label="רמת קושי">
@@ -606,13 +609,16 @@ const App = {
               </select>
               <button class="btn" id="ai-btn">🤖 התחל משחק מול בוט</button>
             </div>
+            ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">מול המחשב - רמה קלה היא תרגול שלא נספר לדירוג</p>` : ""}
             <button class="btn secondary" id="friend-btn">🔗 משחק חברים (צור קוד)</button>
+            ${this.ux.lobby_labels !== false ? `<p class="sub ux-hint">יוצר קוד לשיתוף חבר - הוא מזין אותו בשדה "קוד משחק" כאן למטה</p>` : ""}
             <div style="display:flex;gap:8px">
               <input id="join-code" placeholder="קוד משחק" maxlength="6" style="text-transform:uppercase">
               <button class="btn secondary" id="join-btn">הצטרף</button>
             </div>
             <div id="friend-code" class="hidden" style="margin-top:8px"></div>
             <button class="btn secondary" id="invite-btn" ${u.invite_enabled ? "" : 'style="display:none"'}>📨 הזמן חבר</button>
+            ${this.ux.how_to_play_button !== false ? `<button class="btn secondary" id="howto-btn">❓ איך משחקים?</button>` : ""}
           </div>
         </div>
         <div class="card">
@@ -651,6 +657,7 @@ const App = {
     const aiTier = document.getElementById("ai-tier");
     const savedAiTier = localStorage.getItem("brigagame.aiTier");
     if (["easy", "medium", "hard", "ultra", "expert"].includes(savedAiTier)) aiTier.value = savedAiTier;
+    else if (Number(this.me.matches_played || 0) < Math.trunc(Number(this.ux.newbie_easy_matches ?? 0))) aiTier.value = "easy";
     else aiTier.value = "medium";
     aiTier.onchange = () => localStorage.setItem("brigagame.aiTier", aiTier.value);
     document.getElementById("ai-btn").onclick = async () => {
@@ -661,6 +668,8 @@ const App = {
       const data = result.data || {};
       if (data.match_id) go(data.match_id); else toast(apiError(result, "שגיאה ביצירת משחק מול בוט"));
     };
+    const howtoBtn = document.getElementById("howto-btn");
+    if (howtoBtn) howtoBtn.onclick = () => { Sfx.play("click"); this.showHowTo(); };
     document.getElementById("friend-btn").onclick = async () => {
       Sfx.play("click");
       const result = await API.post("/api/matches/friend");
