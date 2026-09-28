@@ -253,3 +253,12 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Deploy: combined v31+v32 at zero-player window, wake wakeschedule-01M3MHVWJY22NNZEWPKMDYSA2T (30min, trigger=zero players) does full deploy + EN sweep + QA re-seed/cleanup + report.
 - QA user 42 seeded for sweep then DELETED (would pollute prod leaderboard); wake re-seeds post-deploy. Learnings recorded: hash-nav doesn't reload SPA; D1 datetime() vs toISOString format trap; screenshot --save works in text mode.
 - /tmp/cf_token KEPT for the wake. Lease released, guidance recorded.
+
+## 28.9 late night - v32+v33 deployed (items 1+2+A complete)
+- v32 (22:03): worker e7ef40b7, gh-pages 1a0b42a, main 0f8e99a. popup_enabled=false live, messages board refresh, i18n round.
+- v33 (22:13): worker 9da75049, gh-pages 877d119, main f70ca33. FIX: i18n substring pass mangled server content (גרסא Newה, Drawני באגים) - boundary-aware regex (?<![א-ת])...(?![א-ת]) + data-i18n-skip on message title/body + leaderboard names.
+- CRITICAL LEARNING: TWO D1 databases on the account! "brigagame" (531332d3, OLD/orphaned, 23.9) vs "brigagame-eu" (6e304f1a, REAL production, bound in cloud/wrangler.toml). `wrangler d1 execute brigagame` from repo ROOT resolves by NAME -> hits the OLD DB. Always run d1 commands from cloud/ (uses wrangler.toml database_id) or use the REST API with the uuid. QA seeds before 22:07 went to the wrong DB.
+- Zero-player gate re-verified on REAL DB post-deploy: 0 connected during deploy window, no matches since 27.9. Condition held.
+- PATs: deploy-v32-2026-09-28 + deploy-v33-2026-09-28, both Contents RW repo-scoped 7-day, both deleted after push (API 401 verified).
+- QA users cleaned: id 44 + guest 43 (real DB), id 27 (old DB). FK cascade includes audit_logs.actor_user_id.
+- Deploy cadence wake deleted. Health wake + PH wake (29.9 10:15) remain.
