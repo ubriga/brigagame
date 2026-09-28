@@ -112,6 +112,7 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
     match_ends_at: m.status === "active" ? Number(state.started_at ?? 0) + MATCH_DURATION_SECONDS : null,
     ready: state.ready ?? {},
     ai_difficulty: state.ai_difficulty ?? null,
+    bot_hold_until: state.bot_hold_until ?? null,
     ai_tier: state.ai_tier ?? null,
     ai_rank_level: state.ai_rank_level ?? null,
     bot_ammo: m.p2_ai ? (state.bot_ammo ?? null) : null,
