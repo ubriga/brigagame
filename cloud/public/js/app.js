@@ -121,6 +121,28 @@ const App = {
     this._pulse = setInterval(beat, CONFIG.PRESENCE_PULSE_MS || 8000);
   },
 
+  // "איך משחקים?" (item ג): a short visual guide modal, reachable from the
+  // lobby and from inside a match. Static panels, no server round trip.
+  showHowTo() {
+    let ov = document.getElementById("howto-ov");
+    if (ov) ov.remove();
+    ov = document.createElement("div");
+    ov.id = "howto-ov";
+    ov.innerHTML = `<div class="howto-card">
+      <h2>❓ איך משחקים?</h2>
+      <div class="howto-panel"><div class="howto-ico">🎯</div><div><b>מטרה:</b> להפיל את מגדל היריב לפני שהוא מפיל את שלך. כל פגיעה מפרקת עוד חלק מהמגדל.</div></div>
+      <div class="howto-panel"><div class="howto-ico">👆</div><div><b>ירייה:</b> גוררים מהמגדל שלך לכיוון היריב - הגרירה קובעת זווית ועוצמה - ומשחררים. מדדי הזווית והעוצמה למטה מראים את הכיוון הנוכחי.</div></div>
+      <div class="howto-panel"><div class="howto-ico">💨</div><div><b>רוח:</b> החץ ליד גלולת הרוח למעלה מזיז את הפגז במעופו. הרוח משתנה אחרי כל ירייה - בודקים לפני כל יריה.</div></div>
+      <div class="howto-panel"><div class="howto-ico">⏳</div><div><b>שעון ירייה:</b> יש 10 שניות לירות ברגע שהתותח טעון. באפס - הירייה יוצאת אוטומטית בכיוון הנוכחי.</div></div>
+      <div class="howto-panel"><div class="howto-ico">🛡️</div><div><b>יכולות:</b> הזזה מזיזה את המגדל צעד, מגן סופג פגיעה, מגה היא ירייה עוצמתית. תחמושת מיוחדת (כפולה, מסתובב, מרושת) נקנית בחנות במטבעות.</div></div>
+      <button class="btn" id="howto-close">הבנתי, יאללה!</button>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+    document.getElementById("howto-close").onclick = () => { Sfx.play("click"); ov.remove(); };
+    Lang.apply(ov);
+  },
+
   stopPulse() {
     clearInterval(this._pulse);
     this._pulse = null;
@@ -648,7 +670,11 @@ const App = {
         box.classList.remove("hidden");
         box.innerHTML = `<p class="sub">שתף את הקוד עם חבר:</p>
           <div class="code-box">${esc(data.code)}</div>
-          <button class="btn small secondary" id="copy-code" style="margin-top:8px">העתק קוד</button>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn small secondary" id="copy-code">העתק קוד</button>
+            ${this.ux.friend_share_button !== false ? `<a class="btn small secondary wa-share" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("בוא לקרב מולי ב-Brigagame 2.0! 🎯 הקוד: " + data.code + " - נכנסים ל-" + location.origin + location.pathname + " ומזינים את הקוד בשדה 'קוד משחק' בלובי")}">🟢 שתף בוואטסאפ</a>` : ""}
+          </div>
+          ${this.ux.friend_share_button !== false ? `<p class="sub ux-hint" style="margin-top:6px">החבר נכנס לאתר, מתחבר, ומזין את הקוד בשדה "קוד משחק" בלובי</p>` : ""}
           <p class="sub" style="margin-top:6px">ממתין שהחבר יצטרף...</p>`;
         document.getElementById("copy-code").onclick = () => {
           navigator.clipboard?.writeText(data.code); toast("הקוד הועתק");
@@ -802,7 +828,9 @@ const App = {
           ov.classList.remove("hidden");
           ov.innerHTML = `<h2>⏳ מחכים ליריב...</h2>
             ${GameView.snap.code ? `<div class="code-box">${esc(GameView.snap.code)}</div>
-            <p class="sub">שתף את הקוד עם חבר</p>` : "<p>משחק מהיר - מחפש יריב</p>"}
+            <p class="sub">שתף את הקוד עם חבר</p>
+            ${(App.ux || {}).friend_share_button !== false ? `<a class="btn small secondary wa-share" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("בוא לקרב מולי ב-Brigagame 2.0! 🎯 הקוד: " + GameView.snap.code + " - נכנסים ל-" + location.origin + location.pathname + " ומזינים את הקוד בשדה 'קוד משחק' בלובי")}">🟢 שתף בוואטסאפ</a>
+            <p class="sub ux-hint">החבר נכנס לאתר, מתחבר, ומזין את הקוד בשדה "קוד משחק" בלובי</p>` : ""}` : "<p>משחק מהיר - מחפש יריב</p>"}
             <button class="btn secondary" id="cancel-wait">ביטול</button>`;
           document.getElementById("cancel-wait").onclick = async () => {
             await API.post(`/api/matches/${matchId}/leave`);

@@ -48,6 +48,7 @@ const GameView = {
         <div class="player-tag" id="tag-p1"></div>
         <div id="match-info"><div id="match-timer">⏱️ 03:00</div><div id="wind-ind">💨 ...</div></div>
         <div class="player-tag" id="tag-p2"></div>
+        <button id="howto-ingame" class="btn small secondary" title="איך משחקים?" aria-label="איך משחקים?" style="padding:4px 10px">❓</button>
         <button id="exit-match-btn" title="יציאה מהמשחק" aria-label="יציאה מהמשחק"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 3v8"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg></button>
       </div>
       <div id="exit-confirm" class="hidden">
@@ -63,8 +64,11 @@ const GameView = {
       </div>
       <div id="reload-wrap"><div id="reload-bar"></div></div>
       <div id="shot-clock">⏳ 10</div>
+      <div id="turn-banner" class="hidden">🎯 מוכן לירייה! גרור מהמגדל שלך לכיוון המטרה ושחרר</div>
+      <div id="bot-hold-ov" class="hidden"></div>
+      <div id="tutorial-ov" class="hidden"></div>
       <div id="aim-info" aria-label="מדדי כיוון ועוצמה"><span>זווית</span><div class="aim-gauge"><i id="angle-gauge"></i></div><span>עוצמה</span><div class="aim-gauge"><i id="power-gauge"></i></div></div>
-      <div id="ability-bar"><button id="move-left" class="btn small secondary">⬅ הזזה</button><button id="move-right" class="btn small secondary">הזזה ➡</button><button id="shield-btn" class="btn small secondary">🛡 מגן</button><button id="mega-btn" class="btn small secondary">⚡ מגה</button></div>
+      <div id="ability-bar"><button id="move-left" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">⬅ הזזה</button><button id="move-right" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">הזזה ➡</button><button id="shield-btn" class="btn small secondary" title="מגן זמני שסופג את הפגיעה הבאה במגדל.">🛡 מגן</button><button id="mega-btn" class="btn small secondary" title="יריית מגה עוצמתית - מתמלאת עם הזמן.">⚡ מגה</button></div>
       <div id="weapon-bar"></div>
       <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
@@ -106,6 +110,17 @@ const GameView = {
       Sfx.stopMusic();
       location.hash = "#/lobby";
     };
+    // Item ו: control tooltips are native title attributes; strip them when
+    // the admin turns the feature off.
+    if (window.App && (App.ux || {}).control_tooltips === false) {
+      document.querySelectorAll("#ability-bar [title], #weapon-bar [title]").forEach(b => b.removeAttribute("title"));
+      this._noTooltips = true;
+    }
+    const howtoIn = document.getElementById("howto-ingame");
+    if (howtoIn) {
+      if ((window.App && (App.ux || {}).how_to_play_button === false)) howtoIn.style.display = "none";
+      else howtoIn.onclick = () => { Sfx.play("click"); App.showHowTo(); };
+    }
     this.bindInput();
     const ability = async (path, body = {}) => {
       const { status, data } = await API.post(`/api/matches/${this.matchId}/${path}`, body);
@@ -409,6 +424,32 @@ const GameView = {
       this.renderHud();
       return;
     }
+    // UX onboarding (item א): first-match tutorial overlay. Shows once for a
+    // player with zero matches, points at their tower, and dismisses on the
+    // first shot (or a tap). Server-controlled via ux.tutorial_first_match.
+    if (s.status === "active" && !this._tutorialChecked) {
+      this._tutorialChecked = true;
+      const uxOn = !window.App || (App.ux || {}).tutorial_first_match !== false;
+      const isNew = window.App && App.me && Number(App.me.matches_played || 0) === 0;
+      if (uxOn && isNew && localStorage.getItem("bg_tutorial_done") !== "1") {
+        const ov = document.getElementById("tutorial-ov");
+        if (ov) {
+          ov.innerHTML = `<div class="tutorial-box">
+            <div class="tutorial-arrow">⬇️</div>
+            <b>המשחק הראשון שלך!</b><br>
+            גרור מהמגדל שלך (הכחול, בצד שלך) לכיוון היריב ושחרר כדי לירות.<br>
+            💨 הרוח מזיזה את הפגז - היא משתנה אחרי כל ירייה.<br>
+            <span class="sub">⏳ יש 10 שניות לכל ירייה · ❓ כאן למעלה פותח מדריך מלא</span><br>
+            <button class="btn small" id="tutorial-ok">הבנתי!</button>
+          </div>`;
+          ov.classList.remove("hidden");
+          const done = () => { ov.classList.add("hidden"); localStorage.setItem("bg_tutorial_done", "1"); };
+          document.getElementById("tutorial-ok").onclick = (e) => { e.stopPropagation(); Sfx.play("click"); done(); };
+          ov.onclick = done;
+          this._tutorialDoneFn = done;
+        }
+      }
+    }
     if (s.status === "aborted" && !this.ended) {
       // Technical abort (opponent left before real play, stale sweep): no
       // winner, no coins. Show an honest overlay instead of a frozen field.
@@ -524,6 +565,10 @@ const GameView = {
       const b = document.createElement("button");
       b.className = "wpn" + (this.weapon === id ? " sel" : "");
       b.textContent = qty === null ? label : `${label} (${qty})`;
+      if (!this._noTooltips) b.title = { standard: "פגז רגיל - ללא הגבלה",
+        double_bomb: "פצצה כפולה - שתי פגיעות. נקנית בחנות במטבעות",
+        homing_missile: "טיל מתביית - מתקן מסלול לארץ. נקנה בחנות במטבעות",
+        cluster_shell: "פגז מצרר - מתפזר לכמה פגיעות. נקנה בחנות במטבעות" }[id] || "";
       b.disabled = qty !== null && qty <= 0;
       b.onclick = () => { this.weapon = id; Sfx.play("click"); this.renderWeapons(); };
       bar.appendChild(b);
@@ -534,6 +579,7 @@ const GameView = {
 
   async fire() {
     if (!this.canFire()) return;
+    if (this._tutorialDoneFn) { this._tutorialDoneFn(); this._tutorialDoneFn = null; }
     this.firing = true;
     this.startRecoil(this.mySide());
     this.lastActionAt = performance.now();
@@ -930,7 +976,39 @@ const GameView = {
 
     // reload bar
     const bar = document.getElementById("reload-bar");
-    if (bar) bar.style.width = (this.reloadFrac() * 100) + "%";
+    const frac = this.reloadFrac();
+    if (bar) bar.style.width = (frac * 100) + "%";
+    // UX onboarding (item ה): turn banner + tower pulse when the cannon is
+    // loaded and it's effectively your moment to fire.
+    const tb = document.getElementById("turn-banner");
+    if (tb) {
+      const uxOn = !window.App || (App.ux || {}).turn_banner !== false;
+      const ready = uxOn && this.snap && this.snap.status === "active" && frac >= 1 && !this.ended;
+      if (ready && !this._turnBannerShown) {
+        this._turnBannerShown = true;
+        tb.classList.remove("hidden");
+        tb.classList.add("banner-pop");
+        this._turnBannerHideAt = performance.now() + 3000;
+      }
+      if (this._turnBannerShown && (performance.now() > this._turnBannerHideAt || frac < 1)) {
+        tb.classList.add("hidden");
+        tb.classList.remove("banner-pop");
+        if (frac < 1) this._turnBannerShown = false;
+      }
+      const stage = document.getElementById("game-stage");
+      if (stage) stage.classList.toggle("turn-pulse", Boolean(ready && this._turnBannerShown));
+    }
+    // UX onboarding (item ח): the server holds the bot's first shot for a
+    // few seconds; show the countdown so the pause reads as intentional.
+    const bh = document.getElementById("bot-hold-ov");
+    if (bh && this.snap && this.snap.state) {
+      const holdUntil = Number(this.snap.state.bot_hold_until || 0);
+      const left = Math.ceil(holdUntil - (Date.now() / 1000 + this.serverOffset));
+      if (left > 0 && this.snap.status === "active") {
+        bh.innerHTML = `<div class="bot-hold-box"><b>${left}</b><br>הבוט מתכונן לירייה הראשונה...<br><span class="sub">זמן להסתכל על הזווית, העוצמה והרוח</span></div>`;
+        bh.classList.remove("hidden");
+      } else bh.classList.add("hidden");
+    }
   },
 
   drawShot(a) {

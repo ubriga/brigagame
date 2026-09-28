@@ -206,6 +206,7 @@ export async function handleApi(env: Env, request: Request, path: string): Promi
       bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
       maintenance, inventory: inv,
       invite_enabled: controls.invite_system?.enabled === true,
+      ux: controls.ux_onboarding ?? {},
       daily_available: streakCfg.enabled ? false : u.last_daily !== today(),
       streak: u.streak, server_date: today(),
       login_reward: loginReward,

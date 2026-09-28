@@ -281,6 +281,13 @@ export class MatchRoom {
       }
     }
     if (!m.p2_ai) { await this.scheduleClock(); return; }
+    // UX onboarding (item ח): the bot holds fire until bot_hold_until so the
+    // player gets a countdown to orient. Reschedule instead of shooting.
+    const holdUntil = Number(m.state.bot_hold_until ?? 0);
+    if (holdUntil > Date.now() / 1000) {
+      await this.state.storage.setAlarm(holdUntil * 1000);
+      return;
+    }
     const events: any[] = [];
     events.push(...applyBotTactics(m, defaultRng));
     const profile = m.state.ai_profile ?? {};
