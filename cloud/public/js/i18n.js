@@ -121,9 +121,14 @@ const Lang = {
     const trim=value.trim(), direct=this.exact.get(trim);
     if (direct) return value.replace(trim,direct);
     let out=value;
-    // Phrase replacement is safe because every source is an explicit UI string,
-    // never a loose fragment. It also translates values embedded with numbers.
-    for (const [he,en] of [...this.exact].sort((a,b)=>b[0].length-a[0].length)) out=out.split(he).join(en);
+    // Phrase replacement is boundary-aware: a dictionary source matches only
+    // when it is not glued to more Hebrew letters, so "חדש" never eats "חדשה"
+    // and "תיקו" never eats "תיקוני" inside server-provided content.
+    for (const [he,en] of [...this.exact].sort((a,b)=>b[0].length-a[0].length)) {
+      if (!out.includes(he)) continue;
+      const re = new RegExp("(?<![\u05D0-\u05EA])" + he.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\u05D0-\u05EA])", "g");
+      out = out.replace(re, en);
+    }
     for (const [re,en] of this.words) out=out.replace(re,en);
     return out;
   },
@@ -131,15 +136,19 @@ const Lang = {
     document.documentElement.lang=this.current;
     document.documentElement.dir=this.current === "en" ? "ltr" : "rtl";
     if (this.current !== "en") return;
-    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:(n)=>{
+      const p=n.parentElement;
+      if(!p||['SCRIPT','STYLE'].includes(p.tagName)||p.closest('[data-i18n-skip]')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }});
     const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
-    nodes.forEach(n=>{ if(!['SCRIPT','STYLE'].includes(n.parentElement?.tagName)) n.nodeValue=this.text(n.nodeValue); });
+    nodes.forEach(n=>{ n.nodeValue=this.text(n.nodeValue); });
     root.querySelectorAll?.('[title],[aria-label],[placeholder]').forEach(el=>['title','aria-label','placeholder'].forEach(a=>{if(el.hasAttribute(a))el.setAttribute(a,this.text(el.getAttribute(a)))}));
   },
   set(lang) { localStorage.setItem("brigagame_lang",lang); location.reload(); },
   boot() {
     this.apply();
-    new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.nodeType===1)this.apply(n);else if(n.nodeType===3)n.nodeValue=this.text(n.nodeValue)}))).observe(document.body,{subtree:true,childList:true});
+    new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.nodeType===1)this.apply(n);else if(n.nodeType===3&&!n.parentElement?.closest('[data-i18n-skip]'))n.nodeValue=this.text(n.nodeValue)}))).observe(document.body,{subtree:true,childList:true});
     const b=document.getElementById('lang-btn'); if(b){b.textContent=this.current==='en'?'עברית':'EN';b.onclick=()=>this.set(this.current==='en'?'he':'en');}
   },
   pick(item,key='name'){ return this.current==='en' ? (item[key] || item.name) : (item[key+'_he'] || item[key] || item.name); }
