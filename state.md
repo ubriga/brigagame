@@ -237,3 +237,11 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Prod probe cleanup: 1 UI-created guest cascade-deleted, 0 guests remain. CF token re-minted for cleanup then shredded (final). All leases released, guidance recorded.
 - state.md unpushed (PAT revoked) - push with next token flow.
 - Tomorrow 10:15: PH launch verification wake pending.
+
+## 2026-09-28 20:45 IDT - v31 built, deploy gated by live traffic
+- Guest-eye audit complete (login/lobby/rating/messages/tags/store/custom/how-to-play/bot game as real guest).
+- Findings beyond user's four: #/store + #/custom direct URLs render fully for guests (server already 403s all guest actions there). FIXED client-side in v31 (commit 9bd0439, local main, UNPUSHED): locked cards for guests + i18n EN entries for all guest strings (fixes v30 garble).
+- v31: CLIENT_VERSION 31, SERVER_VERSION 31, sw 49-storelocks, app.js?v=52.
+- DEPLOY BLOCKED: 8 users active in last 45s (0 live matches) - zero-player rule. Monitoring wake wakeschedule-01M3MHVWJY22NNZEWPKMDYSA2T (30min, trigger=zero players) will deploy when clear. PAT mint needs sudo; if expired, ask parent for fresh sudo code relay.
+- Audit guest id 40 (אורח זריז 3631) cascade-deleted from prod D1, verified 0. Guest id 39 (אורח מדויק 8867, created 19:59 IDT) left untouched - possibly a real visitor.
+- /tmp/cf_token KEPT (needed by the wake). /tmp/cb_lease shredded, lease released.
