@@ -189,7 +189,13 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string): Promi
   for (const name of ["medium", "hard", "ultra", "expert"])
     offsets[name] = Number(botControls[`${name}_rank_offset`] ?? 0);
   offsets.normal = offsets.medium; offsets.ranked = offsets.medium;
-  const tier = String(tierRaw ?? "medium").toLowerCase();
+  // UX onboarding (item ב): a brand-new player's first N bot matches are
+  // forced to easy, which finalize.ts already treats as practice (no rating,
+  // no coins) - the first game teaches instead of costing -16 rating.
+  const ux = (controls as any).ux_onboarding ?? {};
+  const newbieN = Math.trunc(Number(ux.newbie_easy_matches ?? 0));
+  let tier = String(tierRaw ?? "medium").toLowerCase();
+  if (newbieN > 0 && Number(user.matches_played ?? 0) < newbieN) tier = "easy";
   let difficulty: string, aiTier: string, aiRankLevel: number;
   if (tier === "easy") {
     difficulty = "easy"; aiTier = "easy";
@@ -234,6 +240,11 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string): Promi
     }
   }
   state.ready = { p1: false, p2: true }; // the bot is born ready (app.py parity)
+  // UX onboarding (item ח): hold the bot's first shot for a short countdown
+  // so a fresh player orients before coming under fire. Server-enforced in
+  // MatchRoom.alarm; the client shows the countdown from this field.
+  const holdSecs = Math.trunc(Number(ux.bot_first_shot_countdown ?? 0));
+  if (holdSecs > 0) state.bot_hold_until = Math.floor(Date.now() / 1000) + holdSecs;
   state.bot_controls = controls.bot_system;
   state.bot_ammo = {
     double_bomb: Number(state.ai_profile.double_ammo ?? 0),

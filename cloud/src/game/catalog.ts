@@ -2077,6 +2077,16 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "wait_seconds": 30,
     "difficulty": "medium"
   },
+  "ux_onboarding": {
+    "tutorial_first_match": true,
+    "newbie_easy_matches": 3,
+    "how_to_play_button": true,
+    "lobby_labels": true,
+    "turn_banner": true,
+    "control_tooltips": true,
+    "friend_share_button": true,
+    "bot_first_shot_countdown": 3
+  },
   "xp": {
     "human_win": 2.0,
     "bot_win": 1.0,
