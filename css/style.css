@@ -400,3 +400,37 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 #seo-intro h1 { font-size: 20px; color: var(--text); margin: 0 0 10px; }
 #seo-intro p { font-size: 13.5px; line-height: 1.7; margin: 0 0 10px; }
 #seo-intro.hidden { display: none; }
+
+/* UX onboarding (א-ח): tutorial, turn banner, bot countdown, lobby hints, how-to */
+.ux-hint { margin: -6px 0 4px; font-size: 12px; opacity: .75; }
+.ux-welcome { margin-bottom: 14px; border: 1px solid rgba(94,234,212,.5); background: rgba(94,234,212,.08); line-height: 1.6; }
+.wa-share { text-decoration: none; display: inline-flex; align-items: center; }
+#turn-banner { position: sticky; top: 8px; z-index: 30; text-align: center; margin: 6px auto 0; width: fit-content; max-width: 92%;
+  background: linear-gradient(135deg, #0d9488, #14b8a6); color: #fff; padding: 8px 18px; border-radius: 999px;
+  font-weight: 700; box-shadow: 0 4px 18px rgba(20,184,166,.45); }
+#turn-banner.banner-pop { animation: bannerPop .35s ease-out; }
+@keyframes bannerPop { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+#game-stage.turn-pulse { outline: 3px solid rgba(94,234,212,.55); outline-offset: -3px; border-radius: 12px;
+  animation: stagePulse 1.2s ease-in-out infinite; }
+@keyframes stagePulse { 0%,100% { outline-color: rgba(94,234,212,.55); } 50% { outline-color: rgba(94,234,212,.15); } }
+#bot-hold-ov { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  background: rgba(2,8,20,.55); pointer-events: none; }
+#bot-hold-ov.hidden, #tutorial-ov.hidden, #turn-banner.hidden { display: none; }
+.bot-hold-box { text-align: center; background: rgba(10,20,35,.92); border: 1px solid rgba(94,234,212,.5);
+  border-radius: 16px; padding: 22px 30px; font-size: 18px; }
+.bot-hold-box b { font-size: 44px; color: #5eead4; }
+#tutorial-ov { position: fixed; inset: 0; z-index: 45; display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(2,8,20,.45); padding-bottom: 90px; }
+.tutorial-box { background: rgba(10,20,35,.95); border: 2px solid #5eead4; border-radius: 16px; padding: 18px 22px;
+  max-width: 420px; text-align: center; line-height: 1.7; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+.tutorial-box .tutorial-arrow { font-size: 30px; animation: tutBounce 1s ease-in-out infinite; }
+@keyframes tutBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.tutorial-box button { margin-top: 10px; }
+#howto-ov { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  background: rgba(2,8,20,.7); padding: 16px; }
+.howto-card { background: #0b1626; border: 1px solid rgba(94,234,212,.4); border-radius: 18px; padding: 22px;
+  max-width: 520px; width: 100%; max-height: 88vh; overflow-y: auto; }
+.howto-card h2 { margin-top: 0; }
+.howto-panel { display: flex; gap: 12px; align-items: flex-start; margin: 12px 0; line-height: 1.6; }
+.howto-ico { font-size: 24px; flex-shrink: 0; }
+.howto-card .btn { width: 100%; margin-top: 8px; }
