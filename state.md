@@ -228,3 +228,12 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - /tmp/ghp worktree staged on origin/gh-pages (fcf48e6) for the push.
 - BLOCKED ON: user's GitHub sudo code (requested via parent 19:29) for PAT mint -> gh-pages push + main push (local main 1e6889b ahead).
 - THEN: live client QA on game URL, revoke PAT + verify 401 + shred, final Hebrew report.
+
+## 2026-09-28 ~19:53 IDT - v29 FULLY DEPLOYED (guest mode + i18n + consent live on game URL)
+- GitHub sudo code relayed by user 19:43 -> PAT deploy-guest-v29-2026-09-28 minted (ubriga/brigagame only, Contents RW + Metadata RO, expires Oct 5).
+- Pushes: gh-pages 537d803..032a0bf, main fa14d97..fb50639. CAUGHT+FIXED: GSC verification meta existed only on gh-pages - persisted to master index.html (fb50639) before push.
+- Live verified: config.js CLIENT_VERSION 29 + API_BASE worker, app v50, consent v1, sw 47-guest. Login page shows guest button + REAL consent banner (EN default confirmed - browser locale en).
+- PAT REVOKED via UI (gone from list) + 401 verified via API. gh_pat shredded. NOTE: token was accidentally exposed once in a read-page transcript (textbox value) - neutralized by immediate revocation after pushes.
+- Prod probe cleanup: 1 UI-created guest cascade-deleted, 0 guests remain. CF token re-minted for cleanup then shredded (final). All leases released, guidance recorded.
+- state.md unpushed (PAT revoked) - push with next token flow.
+- Tomorrow 10:15: PH launch verification wake pending.
