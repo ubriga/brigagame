@@ -245,3 +245,11 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - DEPLOY BLOCKED: 8 users active in last 45s (0 live matches) - zero-player rule. Monitoring wake wakeschedule-01M3MHVWJY22NNZEWPKMDYSA2T (30min, trigger=zero players) will deploy when clear. PAT mint needs sudo; if expired, ask parent for fresh sudo code relay.
 - Audit guest id 40 (אורח זריז 3631) cascade-deleted from prod D1, verified 0. Guest id 39 (אורח מדויק 8867, created 19:59 IDT) left untouched - possibly a real visitor.
 - /tmp/cf_token KEPT (needed by the wake). /tmp/cb_lease shredded, lease released.
+
+## 2026-09-28 21:08 IDT - items 1+2+א built, awaiting zero-player deploy
+- Item 1 DONE + live: auth_flow.popup_enabled=false in prod D1 (settings/gameplay_controls, all other keys preserved), /api/auth/options returns popup:false, login page visually verified: ONE green Google button, no GSI iframe.
+- Item 2 DONE (code): 110+ dictionary entries added to i18n.js covering all missing app.js+game.js player-facing strings (panel.js admin strings not covered - reported). Commits 3ca541d + abde227 (v32: client 32/server 32/sw 50-msgs-i18n/app.js?v=53).
+- Item א DONE (code): vMessages rewritten - card per message with icon, readable dates (היום/אתמול), "חדש" badge, "סמן הכל כנקרא" button (localStorage seen-set), designed empty-state. Auto-mark caveat: server marks read on GET - full button semantics need the tiny server change (parent asked user 20:56, PENDING). NOT shipped: any mark-all server change.
+- Deploy: combined v31+v32 at zero-player window, wake wakeschedule-01M3MHVWJY22NNZEWPKMDYSA2T (30min, trigger=zero players) does full deploy + EN sweep + QA re-seed/cleanup + report.
+- QA user 42 seeded for sweep then DELETED (would pollute prod leaderboard); wake re-seeds post-deploy. Learnings recorded: hash-nav doesn't reload SPA; D1 datetime() vs toISOString format trap; screenshot --save works in text mode.
+- /tmp/cf_token KEPT for the wake. Lease released, guidance recorded.
