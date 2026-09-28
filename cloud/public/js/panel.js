@@ -59,6 +59,7 @@ const PANEL_STRINGS = {
   "תצוגה מקדימה":"Preview",
   "הגדרות המשחק נשמרו":"Game settings saved",
   "ערך לא תקין - לא נשמר":"Invalid value - not saved",
+  "🎭 מצב אורח":"🎭 Guest mode","מצב אורח פעיל":"Guest mode enabled","שעות עד מחיקת חשבון אורח (מהכניסה הראשונה)":"Hours until guest account deletion (from first entry)","משחקים עד הצעת הרשמה":"Games until sign-up prompt","אורחים יכולים לשחק משחק מהיר מדורג (לא רק מול בוט)":"Guests can play ranked quick match (not only vs bot)",
   "פעילים היום":"Active today",
   "משחקים פעילים":"Active matches",
   "מטבעות הונפקו":"Coins issued",
@@ -185,6 +186,11 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>מכסת הזמנות ליום</label><input type="number" min="1" max="100" step="1" value="${c.invite_system ? c.invite_system.max_per_day : 5}" data-control="invite_system.max_per_day">
         <label>שם התג למזמין</label><input type="text" maxlength="40" value="${esc(c.invite_system ? c.invite_system.tag_name : "מגייס")}" data-control="invite_system.tag_name">
         <label>נוסח הודעת ההזמנה</label><input type="text" maxlength="300" value="${esc(c.invite_system ? c.invite_system.invite_text : "")}" data-control="invite_system.invite_text"></div>
+      <div class="card"><h2>🎭 מצב אורח</h2><p class="sub">כפתור "שחק כאורח" בשער הכניסה: משחק מיידי בחשבון זמני אנונימי עם שם אקראי. החשבון נמחק אוטומטית מהשרת X שעות אחרי הכניסה הראשונה, עם באנר אזהרה גלוי וספירה לאחור אצל האורח. הרשמה מצטרפת לסשן האורח - אותה שורה, כל ההתקדמות נשמרת. אורחים לעולם לא מופיעים בטבלת הדירוג, בלי חנות, קוסמטיקה, קופונים או משחקי חברים, והסטטיסטיקה לא נשמרת בין סשנים.</p>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="guest_mode.enabled" ${c.guest_mode && c.guest_mode.enabled !== false ? "checked" : ""} style="width:auto">מצב אורח פעיל</label>
+        <label>שעות עד מחיקת חשבון אורח (מהכניסה הראשונה)</label><input type="number" min="1" max="168" step="1" value="${c.guest_mode ? c.guest_mode.ttl_hours : 24}" data-control="guest_mode.ttl_hours">
+        <label>משחקים עד הצעת הרשמה</label><input type="number" min="0" max="50" step="1" value="${c.guest_mode ? c.guest_mode.games_until_register_prompt : 3}" data-control="guest_mode.games_until_register_prompt">
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="guest_mode.ranked_allowed" ${c.guest_mode && c.guest_mode.ranked_allowed ? "checked" : ""} style="width:auto">אורחים יכולים לשחק משחק מהיר מדורג (לא רק מול בוט)</label></div>
       <div class="card"><h2>🕯️ מסך שבת / חג (נעילת אתר מלאה)</h2><p class="sub">נעילה מלאה של האתר ברמת השרת: כל פנייה (התחברות, משחק, API) חסומה לכולם חוץ מהאדמין, וכל מי שנכנס רואה רק את המסך הזה. טקסט = כותרת וגוף חופשיים (שבת שלום, חג שמח...). חלון מתוזמן = הפעלה וכיבוי אוטומטיים לפי שעת ההתחלה והסיום. מתג ידני = נעילה מיידית עד כיבוי ידני. חזרה שבועית = אחרי שהחלון מסתיים, הוא נדלק שוב מעצמו כל שבוע באותן שעות (למשל שישי-שבת), בלי להגדיר מחדש; דורש שעת התחלה וסיום. שמירת טופס בלי סימון לא מפעילה נעילה. שים לב: שעת סיום היא חובה לכל הפעלה (מתג ידני או תזמון) - אין נעילה בלי כיבוי מתוכנן.</p>
         <div id="shabbat-status" class="sub" style="margin-bottom:8px">טוען מצב...</div>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="shabbat-enabled" style="width:auto">מתג ידני: נעילה מיידית (עד כיבוי ידני)</label>

@@ -12,6 +12,7 @@ import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
 import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
+import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
 
 export { MatchRoom };
@@ -121,6 +122,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         // Installed-PWA logins: the Google redirect leaves the app storage, so
         // the client emphasizes the email-code path unless the admin disables it.
         pwa_email_hint: af.pwa_email_hint !== false,
+        guest_enabled: !lockNow.active && (controls as any).guest_mode?.enabled !== false,
       });
     }
 
@@ -280,6 +282,17 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       await env.DB.prepare("UPDATE auth_codes SET attempts = attempts + 1 WHERE email = ?").bind(email).run();
       if (!ok) return json({ error: "bad_code", error_he: "הקוד שגוי. נסה שוב." }, 401);
       await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
+      // Registration attaches to the guest session: same row, same token,
+      // all progress carries over (only when the email is not taken).
+      const up = await upgradeGuestIfPresent(env, request, email, email.split("@")[0], "");
+      if (up) {
+        await env.DB.prepare(
+          "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+          + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
+          .bind(Number(up.user.id), String(up.user.id), JSON.stringify({ via: "email_code" }),
+            new Date().toISOString()).run().catch(() => {});
+        return json({ token: up.token, user: up.user, upgraded: true });
+      }
       const user = await getOrCreateUser(d1(env.DB), email, email.split("@")[0], "");
       const token = await createSession(d1(env.DB), Number(user.id));
       return json({ token, user });
@@ -303,6 +316,16 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
             await audit("lockdown_denied");
             return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.effective_end }, 503);
           }
+          const up = await upgradeGuestIfPresent(env, request, id.email, id.name, id.picture);
+          if (up) {
+            await env.DB.prepare(
+              "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+              + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
+              .bind(Number(up.user.id), String(up.user.id), JSON.stringify({ via: "google_popup" }),
+                new Date().toISOString()).run().catch(() => {});
+            await audit("ok");
+            return json({ token: up.token, user: up.user, upgraded: true });
+          }
           const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
           const token = await createSession(d1(env.DB), Number(user.id));
           await audit("ok");
@@ -322,6 +345,40 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
           error_he: "שירות ההתחברות לא זמין כרגע. נסה שוב בעוד רגע." }, 503);
       }
     }
+    // ---- Guest mode: instant anonymous play ("שחק כאורח") ----
+    if (path === "/api/guest" && request.method === "POST") {
+      const rlG = await limited(env, request, "auth", null);
+      if (rlG) return rlG;
+      const cfg = await getGuestCfg(env);
+      if (!cfg.enabled)
+        return json({ error: "guest_disabled", error_he: "כניסת אורחים כבויה כרגע." }, 403);
+      ctx.waitUntil(sweepExpiredGuests(env).catch((e) => console.error("SWEEP_FAIL", e && e.message ? e.message : String(e))));
+      const { token, user, expires_at } = await createGuest(env);
+      await env.DB.prepare(
+        "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+        + " VALUES (?, 'guest.create', 'user', ?, '{}', ?)")
+        .bind(Number(user.id), String(user.id), new Date().toISOString()).run().catch(() => {});
+      return json({ token, user, guest_expires_at: expires_at });
+    }
+
+    // ---- Cookie-consent evidence: the client records the visitor's choice.
+    // No auth; the IP is stored hashed like every audit row. ----
+    if (path === "/api/legal/consent" && request.method === "POST") {
+      const rlC = await limited(env, request, "auth", null);
+      if (rlC) return rlC;
+      const body: any = await request.json().catch(() => ({}));
+      const choice = body.choice === "all" ? "all" : "essential";
+      const { sha256Hex: sh } = await import("./auth.js");
+      const ip = request.headers.get("CF-Connecting-IP") ?? "";
+      await env.DB.prepare(
+        "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, ip_hash, user_agent, created_at)"
+        + " VALUES (NULL, 'consent.choice', 'legal', '', ?, ?, ?, ?)")
+        .bind(JSON.stringify({ choice, lang: String(body.lang ?? "").slice(0, 8) }),
+          ip ? await sh(ip) : "", (request.headers.get("User-Agent") ?? "").slice(0, 300),
+          new Date().toISOString()).run().catch(() => {});
+      return json({ ok: true });
+    }
+
     if (path === "/api/auth/logout" && request.method === "POST") {
       const auth = request.headers.get("authorization") ?? "";
       if (auth.startsWith("Bearer ")) await destroySession(d1(env.DB), auth.slice(7).trim());
@@ -358,7 +415,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (adminHandled) return adminHandled;
     const matchHandled = await handleMatchApi(env, request, path);
     if (matchHandled) return matchHandled;
-    const handled = await handleApi(env, request, path);
+    const handled = await handleApi(env, request, path, ctx);
     if (handled) return handled;
 
     // Everything else: static assets (PWA).

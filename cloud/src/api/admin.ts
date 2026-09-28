@@ -87,6 +87,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       friend_share_button: [null, null, "bool"],
       bot_first_shot_countdown: [0, 15, "int"],
     },
+    guest_mode: { enabled: [null, null, "bool"], ttl_hours: [1, 168, "int"],
+      games_until_register_prompt: [0, 50, "int"], ranked_allowed: [null, null, "bool"] },
     invite_system: { enabled: [null, null, "bool"], max_per_day: [1, 100, "int"],
       tag_name: [null, null, "str"], invite_text: [null, null, "str"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },

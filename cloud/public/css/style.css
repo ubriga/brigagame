@@ -434,3 +434,42 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .howto-panel { display: flex; gap: 12px; align-items: flex-start; margin: 12px 0; line-height: 1.6; }
 .howto-ico { font-size: 24px; flex-shrink: 0; }
 .howto-card .btn { width: 100%; margin-top: 8px; }
+
+/* Guest mode + consent + login language switcher (client v29) */
+body.guest-mode #topbar nav a[data-nav="store"],
+body.guest-mode #topbar nav a[data-nav="custom"] { display: none; }
+
+#guest-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  background: rgba(120, 72, 0, .92); color: #ffe9c4;
+  padding: 8px 12px; font-size: 14px; text-align: center;
+  border-bottom: 1px solid rgba(255, 200, 90, .5);
+}
+body.guest-mode #topbar { margin-top: 40px; }
+
+.lang-switch {
+  position: absolute; top: 12px; inset-inline-start: 12px; z-index: 5;
+  background: var(--panel2, #1e293b); color: var(--muted, #94a3b8);
+  border: 1px solid rgba(255,255,255,.15); border-radius: 8px;
+  padding: 4px 10px; font-size: 13px; cursor: pointer;
+}
+#login-wrap { position: relative; }
+
+.guest-prompt-overlay {
+  position: fixed; inset: 0; z-index: 950;
+  background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center;
+}
+.guest-prompt-card { max-width: 380px; text-align: center; }
+.guest-prompt-card .btn { width: 100%; margin-top: 8px; }
+
+#consent-banner {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 960;
+  display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+  background: rgba(15, 23, 42, .97); color: #e2e8f0;
+  border-top: 1px solid rgba(255,255,255,.18);
+  padding: 12px 16px; font-size: 14px; line-height: 1.5;
+}
+#consent-banner .consent-text { max-width: 640px; }
+#consent-banner a { color: var(--accent, #38bdf8); }
+#consent-banner .consent-actions { display: flex; gap: 8px; }

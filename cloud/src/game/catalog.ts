@@ -2066,6 +2066,12 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "email_provider": "resend",
     "inboxlv_pass": ""
   },
+  "guest_mode": {
+    "enabled": true,
+    "ttl_hours": 24,
+    "games_until_register_prompt": 3,
+    "ranked_allowed": false
+  },
   "invite_system": {
     "enabled": true,
     "max_per_day": 5,
