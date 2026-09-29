@@ -131,12 +131,13 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         ${(data.users || []).map(u => `<tr>
           <td>${esc(u.name)}<br><span class="sub" style="margin:0">${esc(u.email)}</span></td>
           <td>${u.coins}</td><td>${u.rating}</td><td>${u.wins}/${u.losses}</td>
-          <td>${u.suspended ? "🚫 מושהה" : u.banned_until ? "⏸️ חסום" : "✓"}</td>
+          <td>${u.suspended ? "🚫 מושהה" : u.banned_until ? "⏸️ חסום" : "✓"}${u.broken_on ? `<br><span class="sub">💔 רצף שבור (${u.broken_streak} ימים)</span>` : ""}</td>
           <td style="white-space:nowrap">
             <button class="btn small secondary" data-coins="${u.id}">🪙±</button>
             <button class="btn small secondary" data-ban="${u.id}">חסום 24ש׳</button>
             <button class="btn small secondary" data-susp="${u.id}">השהה</button>
             <button class="btn small secondary" data-lift="${u.id}">שחרר</button>
+            ${u.broken_on ? `<button class="btn small secondary" data-streakfix="${u.id}">🔥 שחזר רצף</button>` : ""}
           </td></tr>`).join("")}</table></div>`;
       body.querySelectorAll("[data-ban]").forEach(b => b.onclick = async () => {
         await API.post(`/api/admin/users/${b.dataset.ban}/moderate`, { action: "ban", hours: 24 });
@@ -149,6 +150,13 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       body.querySelectorAll("[data-lift]").forEach(b => b.onclick = async () => {
         await API.post(`/api/admin/users/${b.dataset.lift}/moderate`, { action: "lift" });
         toast("שוחרר"); load();
+      });
+      body.querySelectorAll("[data-streakfix]").forEach(b => b.onclick = async () => {
+        if (!confirm("לשחזר את הרצף השבור לשחקן בחינם (מחווה מההנהלה)?")) return;
+        const { status, data } = await API.post(`/api/admin/users/${b.dataset.streakfix}/streak-restore`, {});
+        if (status === 200) toast(`🔥 הרצף שוחזר ל-${data.streak} ימים`);
+        else toast((data && data.error_he) || "השחזור נכשל");
+        load();
       });
       body.querySelectorAll("[data-coins]").forEach(b => b.onclick = async () => {
         const v = prompt("כמה מטבעות להוסיף/להוריד? (למשל 500 או -200)");
@@ -215,6 +223,8 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
           <option value="to_zero">מתאפס ליום 0 (בלי פרס ביום החזרה)</option>
           <option value="keep">לא מתאפס - הרצף נשמר</option>
         </select>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="streak-repair-enabled" style="width:auto">שחזור רצף: שחקן שדילג יום מקבל הצעה לשחזר את הרצף (בתוקף ביום החזרה עד חצות בלבד)</label>
+        <label>מחיר שחזור רצף (מטבעות)</label><input type="number" id="streak-repair-price" min="0" max="100000" step="1">
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button class="btn" id="streak-save">שמור הגדרות רצף</button>
         </div></div>
@@ -318,6 +328,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       document.getElementById("streak-m7").value = m["7"] ?? 25;
       document.getElementById("streak-m30").value = m["30"] ?? 100;
       document.getElementById("streak-reset").value = cfg.reset_policy || "to_one";
+      const rep = cfg.repair || {};
+      document.getElementById("streak-repair-enabled").checked = rep.enabled !== false;
+      document.getElementById("streak-repair-price").value = rep.price ?? 100;
     };
     document.getElementById("streak-save").onclick = async () => {
       const num = (id) => Math.max(0, Math.trunc(Number(document.getElementById(id).value) || 0));
@@ -326,6 +339,10 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         base_amount: num("streak-base"),
         milestones: { "3": num("streak-m3"), "7": num("streak-m7"), "30": num("streak-m30") },
         reset_policy: document.getElementById("streak-reset").value,
+        repair: {
+          enabled: document.getElementById("streak-repair-enabled").checked,
+          price: num("streak-repair-price"),
+        },
       };
       const { status, data } = await API.post("/api/admin/login-streak", payload);
       if (status === 200) { toast("הגדרות הרצף נשמרו (חל עד 30 שניות)"); streakLoad(); }
