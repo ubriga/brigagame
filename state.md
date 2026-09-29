@@ -334,3 +334,22 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - In-game verified (cloud browser, guest bot match): painterly night scene renders, meteor event + explosions + gears + portholes + airship drift all live, no console errors seen. Known remaining gaps vs mockup: cannon barrel still classic gray (game.js-drawn, not skinned), center obstacle classic gray/yellow, hitflash white overlay unchanged, faint arc ghost barely visible in sky, airship inpaint smudge reads as dark cloud top-left.
 - Frozen: stage-3 brass lobby CSS (built+deployed on test, uncommitted? NO - included in commit b50a178 but NOT to be worked on until design approval). All other development frozen.
 - Side-by-side comparison: /downloads/art-v3-vs-mockup.png. Test env worker 4c0afcb8. Live UNTOUCHED (v38).
+
+## Art v4 (2026-09-29 ~21:15 IDT) - DEPLOYED TO TEST, awaiting Orel design verdict
+- Tower sheet: mockup left-tower body sliced 104x156 (4x6 grid, 26px cells), rounded-rect alpha r26; p2 columns mirrored. Cannon: extracted from mockup right tower, rotates around trunnion (rest 53.7deg).
+- clockwork.js: per-block sheet slices; crumbling uses sheet tiles; strip/doorway/window/gauge suppressed in sheet mode; gears/chimney/pennant/steam kept. game.js drawCannon clockwork branch draws cannon.webp.
+- Assets now 105.7KB / 400KB. sw.js RELEASE "59-clockwork-twr".
+- QA: 180831 full-HP both towers read as mockup cylinders; 181249 mid-damage (holes+cracks over sheet). End-overlay shots 180936/181002/181050/181141 not useful.
+- Honest gaps: towers narrower than mockup proportions; hitflash still square; center obstacle still classic; mobile emulation + his-device check pending; rank badge plaque still on tower front (product UI).
+- FREEZE stands: no stage 3, nothing else until parent relays design verdict. Deployed to TEST only; no live deploy without explicit מאשר + zero-player window.
+
+## Gemini gap-list session (2026-09-29 ~21:35 IDT)
+- User approved one-off Google sign-in (WhatsApp 21:20:14, verified in observations). Signed into AI Studio as ubriga@gmail.com via cloud browser config-c; 2FA = Tap Yes number matching on his Galaxy S24 (relayed via parent). Uploaded mockup + 180831 + side-by-side to Gemini 3.1 Pro Preview; got 34-item gap list (/tmp/gemini_gaplist.txt, sent to parent verbatim + achievability assessment). Signed OUT and confirmed ("Signed out" on chooser); lease released; guidance recorded.
+- Gemini misreads to remember: called v4 towers "flat rectangles/ghostly" (actually mockup sheet, alpha fixed) and "no explosion" (idle screenshot). Real gaps: proportions/3D base, flags/lanterns/pipes, sharp moon/stars/bridge, ground pier, hazard block, trajectory/healthbar styling, palindrome-tiling kaleidoscope artifact.
+- FREEZE stands: no implementation until he marks which items he wants.
+
+## WebGL 3D spec (2026-09-29 ~22:25 IDT) - PENDING OREL APPROVAL
+- User verdict 22:17 via parent: "אז לך על החלק הראשון של ההודעה, לא רוצה את הפתרון הסטטי" = real WebGL 3D, rejecting static sprites. Spec written BEFORE any code per freeze rule.
+- Spec = File file-01M3Q9Q4NMAM7QV7C0CPKGTNBT (PRIVATE, published rev filerevision-01M3Q9VX02ZWN7FBFR4KWG1GV9): https://files.instinct.com/file-01M3Q9Q4NMAM7QV7C0CPKGTNBT — Hebrew RTL page, verified in preview.
+- Key spec points: Three.js lazy render layer over server-owned block state; GLB models (Blender) for tower/cannon/background/ground; damage = 4 block states mapped to model segments; auto-fallback to v4 2D under 45fps; admin graphics_pack.webgl3d toggle with instant rollback; 60fps target on his S24 Ultra + adaptive pixel ratio; NEW 450KB lazy budget for 3D path (needs his explicit approval); staged rollout 5 phases, test-only; QA as human player; estimate 10-14 sessions; v4 becomes the official 2D fallback.
+- FREEZE still stands: no code until he approves the spec + budget + phase-1 start.

@@ -87,6 +87,7 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 /* game */
 #game-stage { position: relative; width: 100%; animation: stage-in .28s ease-out; }
 #game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: pan-y; background: #071b2d; border: 1px solid rgba(99,170,187,.48); box-shadow: 0 16px 36px rgba(2,11,19,.38), inset 0 0 0 1px rgba(255,255,255,.03); }
+#game-canvas.gl3d { background: transparent; }
 #game-hud { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .player-tag { display: flex; align-items: center; gap: 8px; background: linear-gradient(145deg, #14364c, #0d293d); padding: 7px 12px; border: 1px solid rgba(78,132,153,.38); border-radius: 12px; font-size: 14px; box-shadow: 0 6px 16px rgba(2,11,19,.18); transition: outline-color .2s ease, transform .2s ease; }
 .player-tag img { width: 26px; height: 26px; border-radius: 50%; }
