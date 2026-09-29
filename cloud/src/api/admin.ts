@@ -4,7 +4,7 @@
  */
 import { currentUser } from "../auth.js";
 import { limited } from "./ratelimit.js";
-import { d1, getControls, getShabbatLockdown, getLoginStreak, sanitizeLoginStreak, nextStreakMilestone } from "../util.js";
+import { d1, getControls, getShabbatLockdown, getLoginStreak, sanitizeLoginStreak, nextStreakMilestone, streakRewardFor, israelDate, ilDateDiff } from "../util.js";
 import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
@@ -177,6 +177,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       wins: r.wins, idf_rank: rankPayload(Number(r.rank_points)), losses: r.losses,
       suspended: Boolean(r.suspended), banned_until: r.banned_until,
       created_at: r.created_at, last_login: r.last_login,
+      streak: r.streak ?? 0, broken_streak: r.broken_streak ?? null, broken_on: r.broken_on ?? null,
     })) });
   }
 
@@ -230,6 +231,30 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     const after: any = await db.prepare("SELECT coins FROM users WHERE id = ?").bind(uid).first();
     await audit(env, request, Number(u.id), "admin.coins", "user", uid, { delta, reason });
     return json({ ok: true, coins: after.coins });
+  }
+
+  // POST /api/admin/users/<uid>/streak-restore - free admin gesture: restore
+  // a player's parked broken streak as if repaired, no charge.
+  const streakRestoreMatch = path.match(/^\/api\/admin\/users\/(\d+)\/streak-restore$/);
+  if (streakRestoreMatch && method === "POST") {
+    const uid = Number(streakRestoreMatch[1]);
+    const target: any = await db.prepare("SELECT * FROM users WHERE id = ?").bind(uid).first();
+    if (!target) return json({ error: "not_found" }, 404);
+    if (!target.broken_on || !Number(target.broken_streak))
+      return json({ error: "no_broken_streak", error_he: "לשחקן אין רצף שבור שממתין לשחזור." }, 400);
+    const streakCfg = await getLoginStreak(env);
+    const todayIL = israelDate(0);
+    const restored = Number(target.broken_streak) + ilDateDiff(String(target.last_daily), todayIL);
+    const reward = streakCfg.enabled ? streakRewardFor(streakCfg, restored) : 0;
+    await db.prepare(
+      "UPDATE users SET streak = ?, last_daily = ?, repair_used_on = ?, repair_used_for = ?,"
+      + " broken_streak = NULL, broken_on = NULL WHERE id = ?")
+      .bind(restored, todayIL, todayIL, Number(target.broken_streak), uid).run();
+    if (reward > 0) await addCoins(d1(db), uid, reward, "login_streak", "admin restore day " + restored);
+    await db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
+      .bind(uid, "עדכון מהנהלת Brigagame", `הרצף שלך שוחזר ל-${restored} ימים במתנה מההנהלה 🔥`, nowIso()).run();
+    await audit(env, request, Number(u.id), "admin.streak_restore", "user", uid, { restored, reward });
+    return json({ ok: true, streak: restored, reward });
   }
 
   // POST /api/admin/broadcast
@@ -309,6 +334,10 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       base_amount: body.base_amount === undefined ? cur.base_amount : Math.trunc(Number(body.base_amount)),
       milestones: body.milestones === undefined ? cur.milestones : body.milestones,
       reset_policy: body.reset_policy === undefined ? cur.reset_policy : body.reset_policy,
+      repair: body.repair === undefined ? cur.repair : {
+        enabled: body.repair && body.repair.enabled === undefined ? cur.repair?.enabled : body.repair?.enabled === true,
+        price: body.repair && body.repair.price === undefined ? cur.repair?.price : Math.trunc(Number(body.repair?.price)),
+      },
     };
     const cfg = sanitizeLoginStreak(merged);
     await db.prepare(

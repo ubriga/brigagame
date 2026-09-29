@@ -10,7 +10,7 @@ import { CATALOG, DEFAULT_SKIN, COATING_ORDER, COATING_NAMES } from "../game/cat
 import { DAILY_BASE, DAILY_STREAK_STEP, DAILY_CAP, rankFor } from "../game/economy.js";
 import { rankPayload } from "../game/ranks.js";
 import { addCoins } from "../game/finalize.js";
-import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStreakMilestone } from "../util.js";
+import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStreakMilestone, ilDateDiff } from "../util.js";
 import { limited } from "./ratelimit.js";
 import { getGuestCfg, guestExpiresAt, guestExpired, sweepExpiredGuests } from "./guest.js";
 import type { Env } from "../do/MatchRoom";
@@ -181,20 +181,50 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
     // response carries the post-grant streak/coins.
     const streakCfg = await getLoginStreak(env);
     let loginReward: any = null;
+    let repairOffer: any = null;
+    let repairExpired: any = null;
     if (streakCfg.enabled && !u.is_guest) {
       const todayIL = israelDate(0);
-      if (u.last_daily !== todayIL) {
-        const continued = u.last_daily === israelDate(-1);
+      // A normal login day: advance/reset the streak, pay the day's reward,
+      // and clear any leftover repair state.
+      const grantLoginDay = async (continued: boolean) => {
         const newStreak = continued ? Number(u.streak) + 1
           : streakCfg.reset_policy === "keep" ? Math.max(1, Number(u.streak))
           : streakCfg.reset_policy === "to_zero" ? 0 : 1;
         const amount = newStreak >= 1 ? streakRewardFor(streakCfg, newStreak) : 0;
-        await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ? WHERE id = ?")
+        await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ?, broken_streak = NULL, broken_on = NULL WHERE id = ?")
           .bind(todayIL, newStreak, Number(u.id)).run();
         if (amount > 0) await addCoins(db, Number(u.id), amount, "login_streak");
         await audit(env, request, Number(u.id), "user.login_streak", "user", Number(u.id), { streak: newStreak, amount });
         loginReward = { streak: newStreak, amount };
-        u = { ...u, last_daily: todayIL, streak: newStreak, coins: Number(u.coins) + amount };
+        u = { ...u, last_daily: todayIL, streak: newStreak, coins: Number(u.coins) + amount, broken_streak: null, broken_on: null };
+      };
+      if (u.broken_on) {
+        if (String(u.broken_on) === todayIL && streakCfg.repair.enabled) {
+          // Repair offer parked on the return day: valid until IL midnight.
+          repairOffer = { lost_streak: Number(u.broken_streak), price: streakCfg.repair.price,
+            restored_streak: Number(u.broken_streak) + ilDateDiff(String(u.last_daily), todayIL) };
+        } else {
+          // Past IL midnight (or repair switched off while parked): the
+          // break is final - the reset policy applies like any skipped day.
+          repairExpired = { lost_streak: Number(u.broken_streak) };
+          await grantLoginDay(false);
+        }
+      } else if (u.last_daily !== todayIL) {
+        const continued = u.last_daily === israelDate(-1);
+        if (!continued && Number(u.streak) > 0 && streakCfg.repair.enabled && streakCfg.reset_policy !== "keep") {
+          // Streak breaks today: park the lost streak as a repair offer
+          // instead of resetting right away. Today's reward waits for the
+          // player's repair/decline decision.
+          await env.DB.prepare("UPDATE users SET broken_streak = ?, broken_on = ? WHERE id = ?")
+            .bind(Number(u.streak), todayIL, Number(u.id)).run();
+          await audit(env, request, Number(u.id), "user.streak_broken", "user", Number(u.id), { lost_streak: Number(u.streak) });
+          repairOffer = { lost_streak: Number(u.streak), price: streakCfg.repair.price,
+            restored_streak: Number(u.streak) + ilDateDiff(String(u.last_daily), todayIL) };
+          u = { ...u, broken_streak: u.streak, broken_on: todayIL };
+        } else {
+          await grantLoginDay(continued);
+        }
       }
     }
     // These reads are independent of each other: run them in parallel so the
@@ -216,6 +246,8 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       daily_available: streakCfg.enabled ? false : u.last_daily !== today(),
       streak: u.streak, server_date: today(),
       login_reward: loginReward,
+      repair_offer: repairOffer,
+      repair_expired: repairExpired,
       login_streak: {
         enabled: streakCfg.enabled,
         base_amount: streakCfg.base_amount,
@@ -672,6 +704,62 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       out.offer = { match_id: offer.match_id, expires_in: Math.max(1, Math.trunc(offer.expires_at - now)) };
     }
     return json(out);
+  }
+
+  // POST /api/streak/repair - pay the admin-set price to restore a broken
+  // streak as if no day was missed (offer valid the return day, IL clock).
+  if (path === "/api/streak/repair" && method === "POST") {
+    const u: any = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "הפעולה זמינה לשחקנים רשומים." }, 403);
+    const streakCfg = await getLoginStreak(env);
+    if (!streakCfg.enabled || !streakCfg.repair.enabled)
+      return json({ error: "repair_disabled", error_he: "שחזור הרצף אינו זמין כרגע." }, 400);
+    const todayIL = israelDate(0);
+    if (!u.broken_on || String(u.broken_on) !== todayIL || !Number(u.broken_streak))
+      return json({ error: "no_offer", error_he: "אין הצעת שחזור בתוקף." }, 400);
+    const price = streakCfg.repair.price;
+    const restored = Number(u.broken_streak) + ilDateDiff(String(u.last_daily), todayIL);
+    const reward = streakRewardFor(streakCfg, restored);
+    // One atomic statement: charges the price, pays today's reward by the
+    // restored streak, and clears the parked offer. The WHERE guards both
+    // the funds and a concurrent repair of the same offer.
+    const upd = await env.DB.prepare(
+      "UPDATE users SET coins = coins - ? + ?, streak = ?, last_daily = ?,"
+      + " repair_used_on = ?, repair_used_for = ?, broken_streak = NULL, broken_on = NULL"
+      + " WHERE id = ? AND broken_on = ? AND coins >= ?")
+      .bind(price, reward, restored, todayIL, todayIL, Number(u.broken_streak),
+        Number(u.id), todayIL, price).run();
+    if (Number(upd.meta?.changes ?? 0) !== 1)
+      return json({ error: "insufficient_funds", error_he: "אין מספיק מטבעות לשחזור הרצף." }, 400);
+    if (price > 0) await env.DB.prepare(
+      "INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)")
+      .bind(Number(u.id), -price, "streak_repair", "restored " + restored, nowIso()).run();
+    if (reward > 0) await env.DB.prepare(
+      "INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)")
+      .bind(Number(u.id), reward, "login_streak", "day " + restored, nowIso()).run();
+    await audit(env, request, Number(u.id), "user.streak_repair", "user", Number(u.id), { restored, price, reward });
+    const after: any = await env.DB.prepare("SELECT coins FROM users WHERE id = ?").bind(Number(u.id)).first();
+    return json({ ok: true, streak: restored, amount: reward, coins: Number(after.coins) });
+  }
+
+  // POST /api/streak/decline - give up the repair offer; the reset policy
+  // applies immediately as if the day were a normal skipped day.
+  if (path === "/api/streak/decline" && method === "POST") {
+    const u: any = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    const streakCfg = await getLoginStreak(env);
+    const todayIL = israelDate(0);
+    if (!streakCfg.enabled || u.is_guest || !u.broken_on || String(u.broken_on) !== todayIL)
+      return json({ error: "no_offer", error_he: "אין הצעת שחזור בתוקף." }, 400);
+    const newStreak = streakCfg.reset_policy === "to_zero" ? 0 : 1;
+    const amount = newStreak >= 1 ? streakRewardFor(streakCfg, newStreak) : 0;
+    await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ?, broken_streak = NULL, broken_on = NULL WHERE id = ?")
+      .bind(todayIL, newStreak, Number(u.id)).run();
+    if (amount > 0) await addCoins(db, Number(u.id), amount, "login_streak");
+    await audit(env, request, Number(u.id), "user.streak_decline_repair", "user", Number(u.id), { streak: newStreak, amount });
+    const after: any = await env.DB.prepare("SELECT coins FROM users WHERE id = ?").bind(Number(u.id)).first();
+    return json({ ok: true, streak: newStreak, amount, coins: Number(after.coins) });
   }
 
   // GET /api/leaderboard
