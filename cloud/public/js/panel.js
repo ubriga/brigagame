@@ -60,7 +60,7 @@ const PANEL_STRINGS = {
   "הגדרות המשחק נשמרו":"Game settings saved",
   "ערך לא תקין - לא נשמר":"Invalid value - not saved",
   "🎭 מצב אורח":"🎭 Guest mode","מצב אורח פעיל":"Guest mode enabled","שעות עד מחיקת חשבון אורח (מהכניסה הראשונה)":"Hours until guest account deletion (from first entry)","משחקים עד הצעת הרשמה":"Games until sign-up prompt","אורחים יכולים לשחק משחק מהיר מדורג (לא רק מול בוט)":"Guests can play ranked quick match (not only vs bot)",
-  "📮 פניות":"📮 Reports","📮 פניות שחקנים":"📮 Player reports","אין פניות עדיין.":"No reports yet.","שגיאה בטעינת הפניות.":"Could not load reports.","🛟 טופס יצירת קשר / דיווח תקלות":"🛟 Contact / bug-report form","טופס יצירת קשר פעיל":"Contact form enabled","כתובת מייל יעד לפניות":"Destination email for reports","מגבלת פניות לשחקן רשום בשעה":"Registered-player hourly report cap","מגבלת פניות לאורח בשעה (לפי IP)":"Guest hourly report cap (by IP)","אורך הודעה מרבי (תווים)":"Maximum message length (characters)","מבקר":"Visitor",
+  "📮 פניות":"📮 Reports","📮 פניות שחקנים":"📮 Player reports","אין פניות עדיין.":"No reports yet.","שגיאה בטעינת הפניות.":"Could not load reports.","🛟 טופס יצירת קשר / דיווח תקלות":"🛟 Contact / bug-report form","טופס יצירת קשר פעיל":"Contact form enabled","כתובת מייל יעד לפניות":"Destination email for reports","מגבלת פניות לשחקן רשום בשעה":"Registered-player hourly report cap","מגבלת פניות לאורח בשעה (לפי IP)":"Guest hourly report cap (by IP)","אורך הודעה מרבי (תווים)":"Maximum message length (characters)","מבקר":"Visitor","מנגנון תשובות לשחקנים פעיל (שליחת תשובה במייל מלשונית \"📮 פניות\")":"Player reply mechanism enabled (email reply from the Reports tab)","תשובה לשחקן - תישלח במייל":"Reply to player - sent by email","📧 שליחת תשובה במייל":"📧 Send reply by email","כתבו תשובה לפני השליחה":"Write a reply first","התשובה נשלחה למייל השחקן ✅":"Reply emailed to the player ✅","שליחת התשובה נכשלה":"Reply send failed",
   "פעילים היום":"Active today",
   "משחקים פעילים":"Active matches",
   "מטבעות הונפקו":"Coins issued",
@@ -188,7 +188,22 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         </div>
         <p style="white-space:pre-wrap;margin:8px 0 4px">${esc(r.message)}</p>
         <p class="sub" style="margin:0;font-size:12px">גרסה ${esc(r.context?.client_version || "?")} · מסך ${esc(r.context?.screen || "?")} · ${esc(String(r.context?.user_agent || "").slice(0, 90))}</p>
+        ${r.replied_at ? `<p style="margin:8px 0 0;color:var(--accent);font-weight:700">✅ נענתה ב-${esc(String(r.replied_at).slice(0, 16).replace("T", " "))}</p>
+          <p style="white-space:pre-wrap;margin:4px 0 0;font-size:13px" class="sub">${esc(r.reply_message || "")}</p>` : ""}
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+          <textarea rows="3" maxlength="4000" id="reply-${r.id}" placeholder="תשובה לשחקן - תישלח במייל ${r.user_id ? "לכתובת החשבון" : "לכתובת שהשאיר"}"></textarea>
+          <div><button class="btn" data-reply-to="${r.id}">📧 שליחת תשובה במייל</button></div>
+        </div>
       </div>`).join("")}`;
+    body.querySelectorAll("button[data-reply-to]").forEach(btn => btn.onclick = async () => {
+      const id = btn.dataset.replyTo;
+      const msg = (document.getElementById("reply-" + id)?.value ?? "").trim();
+      if (!msg) { toast("כתבו תשובה לפני השליחה"); return; }
+      btn.disabled = true;
+      const res = await API.post("/api/admin/contact-reply", { report_id: Number(id), message: msg });
+      if (res.status === 200 && res.data && res.data.ok) { toast("התשובה נשלחה למייל השחקן ✅"); vAdmin(App, view, "contact"); }
+      else { btn.disabled = false; toast(res.data?.error_he || "שליחת התשובה נכשלה"); }
+    });
   } else if (tab === "gameplay") {
     const { status, data } = await API.get("/api/admin/gameplay-controls");
     if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת השליטה במשחק.</p>"; return; }
@@ -220,6 +235,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="guest_mode.ranked_allowed" ${c.guest_mode && c.guest_mode.ranked_allowed ? "checked" : ""} style="width:auto">אורחים יכולים לשחק משחק מהיר מדורג (לא רק מול בוט)</label></div>
       <div class="card"><h2>🛟 טופס יצירת קשר / דיווח תקלות</h2><p class="sub">כפתור "דיווח על תקלה / צור קשר" בלובי ובתפריט פותח טופס עם סוג פנייה, טקסט חופשי ופרטים טכניים אוטומטיים (גרסה, דפדפן, מסך). שחקנים רשומים מזוהים אוטומטית; אורחים ומבקרים משאירים מייל לתשובה. כל פנייה נשלחת מיידית במייל לכתובת היעד ונשמרת גם בלשונית "📮 פניות". מגבלות = כמה פניות מותר לשחקן רשום / לאורח (לפי IP) בשעה, כולל הגנה מבוטים.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.enabled" ${c.contact_form && c.contact_form.enabled !== false ? "checked" : ""} style="width:auto">טופס יצירת קשר פעיל</label>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.reply_enabled" ${c.contact_form && c.contact_form.reply_enabled !== false ? "checked" : ""} style="width:auto">מנגנון תשובות לשחקנים פעיל (שליחת תשובה במייל מלשונית "📮 פניות")</label>
         <label>כתובת מייל יעד לפניות</label><input type="text" maxlength="300" dir="ltr" style="text-align:left" value="${esc(c.contact_form ? c.contact_form.destination_email : "brigagame2026@gmail.com")}" data-control="contact_form.destination_email">
         <label>מגבלת פניות לשחקן רשום בשעה</label><input type="number" min="1" max="50" step="1" value="${c.contact_form ? c.contact_form.user_max_per_hour : 5}" data-control="contact_form.user_max_per_hour">
         <label>מגבלת פניות לאורח בשעה (לפי IP)</label><input type="number" min="1" max="20" step="1" value="${c.contact_form ? c.contact_form.guest_max_per_hour : 2}" data-control="contact_form.guest_max_per_hour">

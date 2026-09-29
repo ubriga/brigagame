@@ -9,6 +9,7 @@ import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
 import { json } from "./routes.js";
+import { sendSmtpMail } from "./smtp.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
@@ -91,7 +92,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       games_until_register_prompt: [0, 50, "int"], ranked_allowed: [null, null, "bool"] },
     contact_form: { enabled: [null, null, "bool"], destination_email: [null, null, "str"],
       user_max_per_hour: [1, 50, "int"], guest_max_per_hour: [1, 20, "int"],
-      max_length: [100, 5000, "int"] },
+      max_length: [100, 5000, "int"], reply_enabled: [null, null, "bool"] },
     invite_system: { enabled: [null, null, "bool"], max_per_day: [1, 100, "int"],
       tag_name: [null, null, "str"], invite_text: [null, null, "str"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
@@ -370,11 +371,75 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   // GET /api/admin/contact-reports - latest player contact/bug submissions.
   if (path === "/api/admin/contact-reports" && method === "GET") {
     const rows = await db.prepare(
-      "SELECT id, user_id, reporter_name, reporter_email, rtype, message, context, created_at"
+      "SELECT id, user_id, reporter_name, reporter_email, rtype, message, context, replied_at, reply_message, created_at"
       + " FROM contact_reports ORDER BY id DESC LIMIT 200").all();
     return json({ reports: rows.results.map((r: any) => ({
       ...r, context: (() => { try { return JSON.parse(String(r.context ?? "{}")); } catch { return {}; } })(),
     })) });
+  }
+
+  // POST /api/admin/contact-reply - email a reply to the reporter of a contact
+  // report. Registered players get it at their current account email; guests and
+  // visitors at the reply email they left. Togglable via
+  // gameplay_controls.contact_form.reply_enabled.
+  if (path === "/api/admin/contact-reply" && method === "POST") {
+    const controls = await getControls(env);
+    const cf: any = (controls as any).contact_form ?? {};
+    if (cf.reply_enabled === false)
+      return json({ error: "reply_disabled", error_he: "מנגנון התשובות כבוי כרגע." }, 403);
+    const body: any = await request.json().catch(() => ({}));
+    const reportId = Math.trunc(Number(body.report_id ?? 0));
+    const replyMsg = String(body.message ?? "").trim().slice(0, 4000);
+    if (!reportId) return json({ error: "bad_report", error_he: "פנייה לא תקינה." }, 400);
+    if (!replyMsg) return json({ error: "empty_message", error_he: "כתבו תשובה לפני השליחה." }, 400);
+    const rep: any = await db.prepare("SELECT * FROM contact_reports WHERE id = ?").bind(reportId).first();
+    if (!rep) return json({ error: "not_found", error_he: "הפנייה לא נמצאה." }, 404);
+    let to = String(rep.reporter_email ?? "").trim();
+    if (rep.user_id) {
+      const urow: any = await db.prepare("SELECT email FROM users WHERE id = ?").bind(Number(rep.user_id)).first();
+      if (urow && urow.email) to = String(urow.email);
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to))
+      return json({ error: "no_recipient", error_he: "לפנייה הזו אין כתובת מייל לתשובה." }, 400);
+    const typeHe = rep.rtype === "bug" ? "דיווח על תקלה" : rep.rtype === "question" ? "שאלה" : "הצעה לשיפור";
+    const name = String(rep.reporter_name ?? "").trim() || "שחקן יקר";
+    const subject = `Brigagame 2.0 - תשובה לפנייתך (#${reportId})`;
+    const text = [
+      `שלום ${name},`,
+      "",
+      "תודה שפנית אלינו ב-Brigagame 2.0. זו התשובה לפנייתך:",
+      "",
+      replyMsg,
+      "",
+      "---",
+      `הפנייה המקורית שלך (${typeHe}, ${String(rep.created_at ?? "").slice(0, 16).replace("T", " ")}):`,
+      String(rep.message ?? ""),
+      "",
+      "ממשיכים לשחק,",
+      "צוות Brigagame 2.0",
+    ].join("\n");
+    const smtpUser = String((env as any).INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
+    const smtpPass = String((env as any).INBOXLV_PASS ?? "")
+      || String((controls as any).auth_flow?.inboxlv_pass ?? "");
+    let mailed = false;
+    if (smtpUser && smtpPass) {
+      const sent = await sendSmtpMail({
+        host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
+        from: smtpUser, to, subject, text,
+      });
+      mailed = sent.ok;
+      if (!sent.ok) console.error("contact_reply_mail_fail", sent.error);
+    } else {
+      console.error("contact_reply_mail_no_creds");
+    }
+    const now = nowIso();
+    await db.prepare("UPDATE contact_reports SET replied_at = ?, reply_message = ? WHERE id = ?")
+      .bind(now, replyMsg, reportId).run();
+    await audit(env, request, Number(u.id), "contact.reply", "contact_report", reportId,
+      { to: to.replace(/^(.{2}).*(@.*)$/, "$1***$2"), mailed });
+    if (!mailed)
+      return json({ error: "mail_failed", error_he: "שליחת המייל נכשלה - התשובה נשמרה אבל לא נשלחה. נסו שוב." }, 502);
+    return json({ ok: true, mailed, to });
   }
 
   // GET|POST /api/admin/gameplay-controls

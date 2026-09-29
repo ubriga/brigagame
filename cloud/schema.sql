@@ -203,6 +203,8 @@ CREATE TABLE IF NOT EXISTS contact_reports (
     context TEXT NOT NULL DEFAULT '{}',
     ip_hash TEXT NOT NULL DEFAULT '',
     user_agent TEXT NOT NULL DEFAULT '',
+    replied_at TEXT NOT NULL DEFAULT '',
+    reply_message TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_contact_reports_created ON contact_reports(created_at DESC);
