@@ -2,7 +2,7 @@
 // added later by game/store views, so one user choice covers every route.
 const Lang = {
   current: (() => {
-    const stored = localStorage.getItem("brigagame_lang");
+    const stored = (typeof Consent !== "undefined" ? Consent.getPref("brigagame_lang") : localStorage.getItem("brigagame_lang"));
     if (stored === "en" || stored === "he") return stored;
     const nav = String((navigator.languages && navigator.languages[0]) || navigator.language || "").toLowerCase();
     return (nav.startsWith("he") || nav.startsWith("iw")) ? "he" : "en";
@@ -145,7 +145,7 @@ const Lang = {
     nodes.forEach(n=>{ n.nodeValue=this.text(n.nodeValue); });
     root.querySelectorAll?.('[title],[aria-label],[placeholder]').forEach(el=>['title','aria-label','placeholder'].forEach(a=>{if(el.hasAttribute(a))el.setAttribute(a,this.text(el.getAttribute(a)))}));
   },
-  set(lang) { localStorage.setItem("brigagame_lang",lang); location.reload(); },
+  set(lang) { Consent.setPref("brigagame_lang",lang); location.reload(); },
   boot() {
     this.apply();
     new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.nodeType===1)this.apply(n);else if(n.nodeType===3&&!n.parentElement?.closest('[data-i18n-skip]'))n.nodeValue=this.text(n.nodeValue)}))).observe(document.body,{subtree:true,childList:true});
