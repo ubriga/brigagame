@@ -60,6 +60,7 @@ const PANEL_STRINGS = {
   "הגדרות המשחק נשמרו":"Game settings saved",
   "ערך לא תקין - לא נשמר":"Invalid value - not saved",
   "🎭 מצב אורח":"🎭 Guest mode","מצב אורח פעיל":"Guest mode enabled","שעות עד מחיקת חשבון אורח (מהכניסה הראשונה)":"Hours until guest account deletion (from first entry)","משחקים עד הצעת הרשמה":"Games until sign-up prompt","אורחים יכולים לשחק משחק מהיר מדורג (לא רק מול בוט)":"Guests can play ranked quick match (not only vs bot)",
+  "📮 פניות":"📮 Reports","📮 פניות שחקנים":"📮 Player reports","אין פניות עדיין.":"No reports yet.","שגיאה בטעינת הפניות.":"Could not load reports.","🛟 טופס יצירת קשר / דיווח תקלות":"🛟 Contact / bug-report form","טופס יצירת קשר פעיל":"Contact form enabled","כתובת מייל יעד לפניות":"Destination email for reports","מגבלת פניות לשחקן רשום בשעה":"Registered-player hourly report cap","מגבלת פניות לאורח בשעה (לפי IP)":"Guest hourly report cap (by IP)","אורך הודעה מרבי (תווים)":"Maximum message length (characters)","מבקר":"Visitor",
   "פעילים היום":"Active today",
   "משחקים פעילים":"Active matches",
   "מטבעות הונפקו":"Coins issued",
@@ -77,9 +78,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
   view.innerHTML = `
     <h1>🛠️ ניהול</h1>
     <div class="tabs">
-      ${["stats", "users", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
+      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-          stats: "סטטיסטיקות", users: "משתמשים", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
+          stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
           coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
@@ -170,6 +171,24 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     };
     document.getElementById("uq").oninput = () => load();
     load();
+  } else if (tab === "contact") {
+    const { status, data } = await API.get("/api/admin/contact-reports");
+    if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הפניות.</p>"; return; }
+    const typeHe = { bug: "תקלה", question: "שאלה", suggestion: "הצעה" };
+    const reports = data.reports || [];
+    body.innerHTML = `<div class="card"><h2>📮 פניות שחקנים (${reports.length})</h2>
+      <p class="sub">כל פנייה מטופס "דיווח על תקלה / צור קשר" נשמרת כאן וגם נשלחת מיידית למייל היעד שהוגדר בכרטיס "טופס יצירת קשר" בלשונית שליטת משחק.</p>
+      ${reports.length === 0 ? `<p class="sub">אין פניות עדיין.</p>` : ""}</div>
+      ${reports.map(r => `<div class="card">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">
+          <b>#${r.id} · ${esc(typeHe[r.rtype] || r.rtype)}</b>
+          <span>${esc(r.reporter_name || "מבקר")}${r.user_id ? ` (#${r.user_id})` : ""}</span>
+          <span class="sub" style="margin:0">${esc(r.reporter_email || "")}</span>
+          <span class="sub" style="margin:0">${esc(String(r.created_at).slice(0, 16).replace("T", " "))}</span>
+        </div>
+        <p style="white-space:pre-wrap;margin:8px 0 4px">${esc(r.message)}</p>
+        <p class="sub" style="margin:0;font-size:12px">גרסה ${esc(r.context?.client_version || "?")} · מסך ${esc(r.context?.screen || "?")} · ${esc(String(r.context?.user_agent || "").slice(0, 90))}</p>
+      </div>`).join("")}`;
   } else if (tab === "gameplay") {
     const { status, data } = await API.get("/api/admin/gameplay-controls");
     if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת השליטה במשחק.</p>"; return; }
@@ -199,6 +218,12 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>שעות עד מחיקת חשבון אורח (מהכניסה הראשונה)</label><input type="number" min="1" max="168" step="1" value="${c.guest_mode ? c.guest_mode.ttl_hours : 24}" data-control="guest_mode.ttl_hours">
         <label>משחקים עד הצעת הרשמה</label><input type="number" min="0" max="50" step="1" value="${c.guest_mode ? c.guest_mode.games_until_register_prompt : 3}" data-control="guest_mode.games_until_register_prompt">
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="guest_mode.ranked_allowed" ${c.guest_mode && c.guest_mode.ranked_allowed ? "checked" : ""} style="width:auto">אורחים יכולים לשחק משחק מהיר מדורג (לא רק מול בוט)</label></div>
+      <div class="card"><h2>🛟 טופס יצירת קשר / דיווח תקלות</h2><p class="sub">כפתור "דיווח על תקלה / צור קשר" בלובי ובתפריט פותח טופס עם סוג פנייה, טקסט חופשי ופרטים טכניים אוטומטיים (גרסה, דפדפן, מסך). שחקנים רשומים מזוהים אוטומטית; אורחים ומבקרים משאירים מייל לתשובה. כל פנייה נשלחת מיידית במייל לכתובת היעד ונשמרת גם בלשונית "📮 פניות". מגבלות = כמה פניות מותר לשחקן רשום / לאורח (לפי IP) בשעה, כולל הגנה מבוטים.</p>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.enabled" ${c.contact_form && c.contact_form.enabled !== false ? "checked" : ""} style="width:auto">טופס יצירת קשר פעיל</label>
+        <label>כתובת מייל יעד לפניות</label><input type="text" maxlength="300" dir="ltr" style="text-align:left" value="${esc(c.contact_form ? c.contact_form.destination_email : "ubriga@gmail.com")}" data-control="contact_form.destination_email">
+        <label>מגבלת פניות לשחקן רשום בשעה</label><input type="number" min="1" max="50" step="1" value="${c.contact_form ? c.contact_form.user_max_per_hour : 5}" data-control="contact_form.user_max_per_hour">
+        <label>מגבלת פניות לאורח בשעה (לפי IP)</label><input type="number" min="1" max="20" step="1" value="${c.contact_form ? c.contact_form.guest_max_per_hour : 2}" data-control="contact_form.guest_max_per_hour">
+        <label>אורך הודעה מרבי (תווים)</label><input type="number" min="100" max="5000" step="100" value="${c.contact_form ? c.contact_form.max_length : 2000}" data-control="contact_form.max_length"></div>
       <div class="card"><h2>🕯️ מסך שבת / חג (נעילת אתר מלאה)</h2><p class="sub">נעילה מלאה של האתר ברמת השרת: כל פנייה (התחברות, משחק, API) חסומה לכולם חוץ מהאדמין, וכל מי שנכנס רואה רק את המסך הזה. טקסט = כותרת וגוף חופשיים (שבת שלום, חג שמח...). חלון מתוזמן = הפעלה וכיבוי אוטומטיים לפי שעת ההתחלה והסיום. מתג ידני = נעילה מיידית עד כיבוי ידני. חזרה שבועית = אחרי שהחלון מסתיים, הוא נדלק שוב מעצמו כל שבוע באותן שעות (למשל שישי-שבת), בלי להגדיר מחדש; דורש שעת התחלה וסיום. שמירת טופס בלי סימון לא מפעילה נעילה. שים לב: שעת סיום היא חובה לכל הפעלה (מתג ידני או תזמון) - אין נעילה בלי כיבוי מתוכנן.</p>
         <div id="shabbat-status" class="sub" style="margin-bottom:8px">טוען מצב...</div>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="shabbat-enabled" style="width:auto">מתג ידני: נעילה מיידית (עד כיבוי ידני)</label>
