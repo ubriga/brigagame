@@ -352,6 +352,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   #topbar nav{grid-column:1/-1;grid-row:2;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
   #topbar nav::-webkit-scrollbar{display:none}
   #topbar nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 13px}
+  input,select,textarea{font-size:16px}
   .user-chip{justify-content:flex-end;min-width:0;gap:5px}
   .user-chip .rank{display:none}
   #install-btn,#lang-btn,#mute-btn,#logout-btn{min-height:44px;min-width:44px}

@@ -237,7 +237,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=8").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=9").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -334,6 +334,11 @@ const App = {
     const view = document.getElementById("view");
     view.setAttribute("aria-busy", "true");
     view.innerHTML = `<div class="route-loading" role="status">${Lang.current === "en" ? "Loading…" : "טוען…"}</div>`;
+    // Route changes must not inherit the previous screen's scroll position:
+    // on a phone, opening a short view (e.g. the contact form) from a long
+    // scrolled lobby left the viewport at the bottom of the page, so the new
+    // screen looked like "nothing happened".
+    window.scrollTo(0, 0);
     document.querySelectorAll("#topbar nav a").forEach(a =>
       a.classList.toggle("active", hash.startsWith("#/" + a.dataset.nav)));
     if (hash.startsWith("#/auth")) {
