@@ -476,3 +476,26 @@ body.guest-mode #topbar { margin-top: 40px; }
 #consent-banner .consent-text { max-width: 640px; }
 #consent-banner a { color: var(--accent, #38bdf8); }
 #consent-banner .consent-actions { display: flex; gap: 8px; }
+
+/* === Clockwork brass lobby (pack-gated: body.clockwork, stage 3) === */
+body.clockwork { --accent: #e0a94e; }
+body.clockwork .brand, body.clockwork h1, body.clockwork h2 { color: #ecc069; }
+body.clockwork .card {
+  border-color: rgba(202, 146, 60, .5);
+  box-shadow: 0 10px 26px rgba(2, 11, 19, .28), inset 0 1px rgba(255, 255, 255, .04), 0 0 0 1px rgba(120, 84, 32, .25);
+  background-image:
+    radial-gradient(circle 4px at 13px 13px, #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    radial-gradient(circle 4px at calc(100% - 13px) 13px, #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    radial-gradient(circle 4px at 13px calc(100% - 13px), #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    radial-gradient(circle 4px at calc(100% - 13px) calc(100% - 13px), #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    linear-gradient(145deg, rgba(24, 44, 56, .96), rgba(14, 32, 44, .96));
+  background-repeat: no-repeat;
+}
+body.clockwork button.btn:not(.secondary):not(.danger),
+body.clockwork a.btn:not(.secondary):not(.danger) {
+  background: linear-gradient(145deg, #e6b455, #a8742c);
+  color: #241503; border-color: #f0cd8a;
+  box-shadow: 0 5px 0 #6d4a1a, 0 9px 18px rgba(2, 11, 19, .22), inset 0 1px rgba(255, 255, 255, .3);
+}
+body.clockwork button.btn:active:not(.secondary):not(.danger) { box-shadow: 0 2px 0 #6d4a1a, 0 5px 10px rgba(2, 11, 19, .22); }
+body.clockwork input, body.clockwork select, body.clockwork textarea { border-color: #6d5326; }
