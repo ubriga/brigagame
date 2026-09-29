@@ -18,6 +18,7 @@ const Clockwork = {
     rivet: "rivet.png", gauge: "gauge.png", needle: "needle.png",
     bg_sky: "bg_sky.webp", bg_far: "bg_far.webp", bg_near: "bg_near.webp",
     airship: "airship.webp",
+    tower_sheet: "tower_sheet.webp", cannon: "cannon.webp",
   },
 
   cfg() {
@@ -131,20 +132,31 @@ const Clockwork = {
 
     // team metal strip on the outer edge
     const strip = I[p1 ? "strip_p1" : "strip_p2"];
-    if (strip) {
+    if (strip && !I.tower_sheet) {
       const sx = p1 ? towerX - 6 : towerX + w - 2;
       c.drawImage(strip, sx, towerY + 4, 8, h - 6);
     }
 
-    // blocks - brass plates, damage overlays, same grid as the server state
+    // blocks: when the mockup tower sheet is loaded, each alive block draws
+    // its own slice of the real 3D cylinder (p2 samples mirrored columns) so
+    // the tower reads as the mockup's riveted tower; destroyed blocks still
+    // open real holes. Falls back to brass plates without the sheet.
+    const sheet = I.tower_sheet;
     for (let r = 0; r < rows; r++) for (let col = 0; col < cols; col++) {
       const hp = tower[r][col];
       if (hp <= 0) continue;
       const x = towerX + col * B, y = g.GROUND - (rows - r) * B;
       const frac = Math.min(1, hp / blockMax);
-      const spr = variants[(r * 7 + col * 3) % 3];
-      c.save(); c.globalAlpha = .55 + .45 * frac;
-      if (spr) c.drawImage(spr, x, y, B, B);
+      c.save();
+      if (sheet) {
+        const sc = p1 ? col : (cols - 1 - col);
+        c.globalAlpha = .94 + .06 * frac;
+        c.drawImage(sheet, sc * 26, r * 26, 26, 26, x, y, B, B);
+      } else {
+        const spr = variants[(r * 7 + col * 3) % 3];
+        c.globalAlpha = .55 + .45 * frac;
+        if (spr) c.drawImage(spr, x, y, B, B);
+      }
       c.globalAlpha = 1;
       if (frac < .35 && I.dmg_heavy) c.drawImage(I.dmg_heavy, x, y, B, B);
       else if (frac < .72 && I.dmg_light) c.drawImage(I.dmg_light, x, y, B, B);
@@ -157,12 +169,16 @@ const Clockwork = {
       c.save(); c.translate(p.x, p.y); c.rotate((q > .5 ? q - .5 : 0) * (p1 ? .18 : -.18));
       const scale = q < .5 ? 1 : 1 - (q - .5) * .55; c.scale(scale, scale);
       c.globalAlpha = 1 - Math.max(0, q - .72) / .28;
-      if (I.block_a) c.drawImage(I.block_a, -B / 2 + 1, -B / 2 + 1, B - 2, B - 2);
+      if (sheet) {
+        const sc = p1 ? b.col : (cols - 1 - b.col);
+        c.drawImage(sheet, sc * 26, b.r * 26, 26, 26, -B / 2, -B / 2, B, B);
+      } else if (I.block_a) c.drawImage(I.block_a, -B / 2 + 1, -B / 2 + 1, B - 2, B - 2);
       if (I.dmg_heavy) c.drawImage(I.dmg_heavy, -B / 2 + 1, -B / 2 + 1, B - 2, B - 2);
       c.restore();
     }
 
-    // riveted doorway at the base
+    // riveted doorway at the base (classic blocks only - the sheet bakes the base)
+    if (I.tower_sheet) { /* sheet mode: mockup tower has no doorway */ } else {
     c.save();
     c.fillStyle = "rgba(24,13,6,.5)";
     c.beginPath(); c.roundRect(towerX + w / 2 - 12, g.GROUND - 28, 24, 28, [11, 11, 2, 2]); c.fill();
@@ -171,6 +187,7 @@ const Clockwork = {
     c.fillStyle = "rgba(244,201,93,.7)";
     c.beginPath(); c.arc(towerX + w / 2 + 5, g.GROUND - 14, 2, 0, Math.PI * 2); c.fill();
     c.restore();
+    }
 
     // gears mounted on deterministic anchor cells - they fall with their block
     const firing = (g.cannonRecoil && (g.cannonRecoil[side] || 0)) > 0;
@@ -188,7 +205,7 @@ const Clockwork = {
     gearAt(I.gear_m, 4, 3, 30, .7);
 
     // warm porthole windows with team enamel ring; flicker when hurt
-    const win = I[p1 ? "window_p1" : "window_p2"] || I.window;
+    const win = I.tower_sheet ? null : (I[p1 ? "window_p1" : "window_p2"] || I.window);
     const winAt = (r, col, seed) => {
       if (!win || !alive(r, col)) return;
       const x = towerX + col * B, y = g.GROUND - (rows - r) * B;
@@ -221,8 +238,8 @@ const Clockwork = {
     const m = g.muzzle(side);
     const f = p1 ? 1 : -1;
     const gx = m.x - f * 24, gy = m.y + 16;
-    if (I.gauge) c.drawImage(I.gauge, gx - 15, gy - 15, 30, 30);
-    if (I.needle) {
+    if (I.gauge && !I.tower_sheet) c.drawImage(I.gauge, gx - 15, gy - 15, 30, 30);
+    if (I.needle && !I.tower_sheet) {
       const rec = (g.cannonRecoil && (g.cannonRecoil[side] || 0));
       const base = .18 + .4 * (g.reloadFrac ? g.reloadFrac() : 1);
       const pressure = low ? .5 : Math.min(1, base + (rec > 0 ? rec / .34 * .8 : 0));

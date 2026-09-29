@@ -1371,6 +1371,16 @@ const GameView = {
     const rp = rt > 0 ? 1 - rt / .34 : 1;
     const kick = rp < .24 ? 7 * (rp / .24) : 7 * (1 - Math.pow((rp - .24) / .76, .55));
     c.save(); c.translate(m.x - f * Math.cos(ang) * kick, m.y + Math.sin(ang) * kick); c.rotate(-f * ang);
+    // Clockwork pack: the mockup's own riveted cannon (natural elevation
+    // ~53.7deg, pivot at the trunnion) rotates with the aim.
+    if (typeof Clockwork !== "undefined" && Clockwork.mode() && Clockwork._img.cannon) {
+      const rest = 53.7 * Math.PI / 180, dw = 56, dh = 58, pivX = 35, pivY = 40.5;
+      if (f < 0) c.scale(-1, 1);
+      c.rotate(rest);
+      c.drawImage(Clockwork._img.cannon, -pivX, -pivY, dw, dh);
+      c.restore();
+      return;
+    }
     // Tapered, banded barrel in the shared navy/brass art direction.
     const barrel = c.createLinearGradient(0, -7, 0, 7);
     barrel.addColorStop(0, "#8aa2ad"); barrel.addColorStop(.45, "#3c5967"); barrel.addColorStop(1, "#183543");
