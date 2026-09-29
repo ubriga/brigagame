@@ -97,6 +97,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       tag_name: [null, null, "str"], invite_text: [null, null, "str"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
     premium_skins: { enabled: [null, null, "bool"], asset_budget_kb: [10, 500, "int"] },
+    graphics_pack: { enabled: [null, null, "bool"], low_spec_default: [null, null, "bool"],
+      max_particles: [16, 96, "int"], airship_motion: [null, null, "bool"] },
     coatings: {
       enabled: [null, null, "bool"], max_level: [1, 3, "int"], build_minutes: [0.01, 10080, "float"],
       wood_price: [0, 100000, "int"], wood_minutes: [0.01, 10080, "float"], wood_hp: [1, 10000, "float"],

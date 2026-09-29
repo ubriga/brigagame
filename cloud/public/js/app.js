@@ -28,6 +28,22 @@ const App = {
       if (m.status === 200) App.setMe(m.data);
     };
     window.addEventListener("hashchange", () => this.route());
+    const gfxBtn = document.getElementById("gfx-btn");
+    if (gfxBtn) {
+      const gfxPaint = () => {
+        const low = (typeof Consent !== "undefined" ? Consent.getPref("bg_gfx_low") : null) === "1";
+        gfxBtn.textContent = low ? "🎡❄️" : "🎡";
+        gfxBtn.title = low ? "גרפיקה חסכונית: פעיל (לחיצה = זיהוי אוטומטי)" : "גרפיקה חסכונית למכשירים חלשים (לחיצה = הפעלה ידנית)";
+        gfxBtn.style.opacity = (window.App && App.graphics && App.graphics.enabled) ? "1" : ".35";
+      };
+      gfxBtn.onclick = () => {
+        const low = Consent.getPref("bg_gfx_low") === "1";
+        Consent.setPref("bg_gfx_low", low ? "0" : "1");
+        if (typeof Sfx !== "undefined") Sfx.play("click");
+        gfxPaint();
+      };
+      gfxPaint();
+    }
     document.getElementById("mute-btn").onclick = () => {
       const m = Sfx.toggleMute();
       document.getElementById("mute-btn").textContent = m ? "🔇" : "🔊";
@@ -210,6 +226,8 @@ const App = {
     window.__BG_LOCKED__ = false;
     this.me = data.user; this.inventory = data.inventory || {};
     this.ux = data.ux || {};
+    this.graphics = data.graphics || null;
+    if (this.graphics && this.graphics.enabled === true && typeof Clockwork !== "undefined") Clockwork.preload();
     this._guest = this.me && this.me.is_guest ? (data.guest || {}) : null;
     document.body.classList.toggle("guest-mode", !!this._guest);
     if (this._guest) this.showGuestBanner(); else this.hideGuestBanner();
@@ -249,7 +267,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=9").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=10").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },

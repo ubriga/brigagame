@@ -1,13 +1,26 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "56-zoom-idle";
+const RELEASE = "57-clockwork";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/style.css", "./js/config.js", "./js/consent.js", "./js/i18n.js", "./js/api.js",
-  "./js/audio.js", "./js/tower-skins.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
+  "./js/audio.js", "./js/tower-skins.js", "./js/clockwork.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
+  "./js/panel.js",
   "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3",
   "./assets/sfx/crumble.mp3", "./assets/sfx/click.mp3",
   "./assets/sfx/coin.mp3", "./assets/sfx/win.mp3", "./assets/sfx/lose.mp3",
+  "./assets/gfx/clockwork/bg_sky.webp", "./assets/gfx/clockwork/bg_far.webp",
+  "./assets/gfx/clockwork/bg_near.webp", "./assets/gfx/clockwork/airship.webp",
+  "./assets/gfx/clockwork/block_a.png", "./assets/gfx/clockwork/block_b.png",
+  "./assets/gfx/clockwork/block_vent.png", "./assets/gfx/clockwork/dmg_light.png",
+  "./assets/gfx/clockwork/dmg_heavy.png", "./assets/gfx/clockwork/gear_s.png",
+  "./assets/gfx/clockwork/gear_m.png", "./assets/gfx/clockwork/gear_l.png",
+  "./assets/gfx/clockwork/window.png", "./assets/gfx/clockwork/window_p1.png",
+  "./assets/gfx/clockwork/window_p2.png", "./assets/gfx/clockwork/chimney.png",
+  "./assets/gfx/clockwork/steam.png", "./assets/gfx/clockwork/shard.png",
+  "./assets/gfx/clockwork/strip_p1.png", "./assets/gfx/clockwork/strip_p2.png",
+  "./assets/gfx/clockwork/pennant_p1.png", "./assets/gfx/clockwork/pennant_p2.png",
+  "./assets/gfx/clockwork/rivet.png",
   "./icons/icon-192.png", "./icons/icon-512.png",
   "./icons/icon-maskable-512.png", "./icons/apple-touch-icon.png"
 ];

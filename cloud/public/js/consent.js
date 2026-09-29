@@ -20,7 +20,8 @@ const Consent = {
 
   // Convenience-preference keys gated behind the "all" choice.
   PREF_KEYS: ["brigagame_lang", "bg_muted", "brigagame.aiTier", "bg_tutorial_done",
-    "bg_install_dismissed", "brigagame_msg_seen", "bg_remember"],
+    "bg_install_dismissed", "brigagame_msg_seen", "bg_remember",
+    "bg_gfx_low"],
 
   // Read a convenience pref: persisted copy first, then this-tab-only copy.
   getPref(key) {

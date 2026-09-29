@@ -2110,6 +2110,12 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "enabled": false,
     "asset_budget_kb": 80
   },
+  "graphics_pack": {
+    "enabled": false,
+    "low_spec_default": false,
+    "max_particles": 96,
+    "airship_motion": true
+  },
   "coatings": {
     "enabled": true,
     "max_level": 3,
