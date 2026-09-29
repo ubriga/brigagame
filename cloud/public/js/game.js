@@ -885,6 +885,10 @@ const GameView = {
      * canvas beneath; the 2D canvas keeps HUD, aim, shots and particles. */
     const r3dOn = !!this._r3d;
     const c = this.ctx, now = performance.now();
+    /* The 3D canvas paints the world beneath; the 2D canvas becomes a
+     * transparent overlay (HUD/aim/shots/particles), so clear it every
+     * frame — the skipped 2D background was also the implicit clear. */
+    if (r3dOn) c.clearRect(0, 0, this.W, this.H);
     const dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
     if (this._hitStopUntil && now < this._hitStopUntil
