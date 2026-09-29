@@ -379,6 +379,119 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       return json({ ok: true });
     }
 
+    // ---- Contact / bug-report form: every report is stored in D1 and
+    // emailed instantly to the admin-configured destination. Open to
+    // registered players (auto-identified), guest players and logged-out
+    // visitors (both leave a reply email). Admin-tunable via
+    // gameplay_controls.contact_form; per-identity hourly caps are
+    // D1-backed so they hold across isolates. ----
+    if (path === "/api/contact" && request.method === "POST") {
+      const controls = await getControls(env);
+      const cf: any = (controls as any).contact_form ?? {};
+      if (cf.enabled === false)
+        return json({ error: "contact_disabled", error_he: "טופס יצירת הקשר כבוי כרגע. נסו שוב מאוחר יותר." }, 403);
+      const user = await currentUser(d1(env.DB), request);
+      const registered = user && !user.is_guest;
+      const body: any = await request.json().catch(() => ({}));
+      // Honeypot: bots that fill the hidden field get a silent success.
+      if (String(body.website ?? "").trim()) return json({ ok: true });
+      const ip = request.headers.get("CF-Connecting-IP") ?? "";
+      const identKind = registered ? "user" : "guest";
+      const ident = registered ? String(user.id)
+        : (ip ? await sha256Hex(ip) : "anon");
+      const hourlyCap = Math.max(1, Math.trunc(Number(
+        registered ? cf.user_max_per_hour ?? 5 : cf.guest_max_per_hour ?? 2)));
+      const rlKey = `contact:${identKind}:${ident}`;
+      const nowSec = Date.now() / 1000;
+      const rlRow: any = await env.DB.prepare("SELECT * FROM rate_limits WHERE key = ?").bind(rlKey).first();
+      if (!rlRow || nowSec - Number(rlRow.window_start) > 3600) {
+        await env.DB.prepare(
+          "INSERT INTO rate_limits (key, window_start, count) VALUES (?,?,1)"
+          + " ON CONFLICT(key) DO UPDATE SET window_start=?, count=1")
+          .bind(rlKey, nowSec, nowSec).run();
+      } else if (Number(rlRow.count) >= hourlyCap) {
+        return json({ error: "rate_limited",
+          error_he: "נשלחו כבר כמה פניות לאחרונה. נסו שוב בעוד כשעה." }, 429);
+      } else {
+        await env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
+      }
+      const rtype = ["bug", "question", "suggestion"].includes(String(body.type)) ? String(body.type) : "";
+      if (!rtype)
+        return json({ error: "bad_type", error_he: "יש לבחור סוג פנייה." }, 400);
+      const maxLen = Math.max(100, Math.trunc(Number(cf.max_length ?? 2000)));
+      const message = String(body.message ?? "").trim().slice(0, maxLen);
+      if (!message)
+        return json({ error: "empty_message", error_he: "יש לכתוב כמה מילים לפני השליחה." }, 400);
+      let replyEmail = registered ? String(user.email ?? "") : "";
+      if (!registered) {
+        replyEmail = String(body.email ?? "").trim().toLowerCase().slice(0, 200);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyEmail))
+          return json({ error: "bad_email", error_he: "כתובת המייל לא תקינה - צריך אותה כדי לענות לך." }, 400);
+      }
+      const ctxIn: any = body.context && typeof body.context === "object" ? body.context : {};
+      const context = {
+        client_version: String(ctxIn.client_version ?? "").slice(0, 20),
+        screen: String(ctxIn.screen ?? "").slice(0, 120),
+        lang: String(ctxIn.lang ?? "").slice(0, 8),
+        user_agent: (request.headers.get("User-Agent") ?? "").slice(0, 300),
+      };
+      const reporterName = user ? String(user.name ?? "") : "";
+      const ins = await env.DB.prepare(
+        "INSERT INTO contact_reports (user_id, reporter_name, reporter_email, rtype, message, context, ip_hash, user_agent, created_at)"
+        + " VALUES (?,?,?,?,?,?,?,?,?)")
+        .bind(user ? Number(user.id) : null, reporterName.slice(0, 120), replyEmail, rtype,
+          message, JSON.stringify(context), ip ? await sha256Hex(ip) : "",
+          context.user_agent, new Date().toISOString()).run();
+      const reportId = Number((ins as any).meta?.last_row_id ?? 0);
+      await env.DB.prepare(
+        "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, ip_hash, user_agent, created_at)"
+        + " VALUES (?, 'contact.report', 'contact_report', ?, ?, ?, ?, ?)")
+        .bind(user ? Number(user.id) : null, String(reportId),
+          JSON.stringify({ rtype, registered: Boolean(registered) }),
+          ip ? await sha256Hex(ip) : "", context.user_agent, new Date().toISOString())
+        .run().catch(() => {});
+      const typeHe = rtype === "bug" ? "דיווח על תקלה" : rtype === "question" ? "שאלה" : "הצעה לשיפור";
+      const subject = `[Brigagame 2.0] ${typeHe} - ${reporterName || replyEmail}`;
+      const text = [
+        `Report-ID: ${reportId}`,
+        `Type: ${rtype} (${typeHe})`,
+        `Player: ${reporterName || "-"}`,
+        `User-ID: ${user ? String(user.id) : "-"}`,
+        `Account: ${registered ? "registered" : user ? "guest" : "visitor"}`,
+        `Reply-Email: ${replyEmail || "-"}`,
+        `Screen: ${context.screen || "-"}`,
+        `Client-Version: ${context.client_version || "-"}`,
+        `Language: ${context.lang || "-"}`,
+        `User-Agent: ${context.user_agent || "-"}`,
+        `Time: ${new Date().toISOString()}`,
+        "",
+        "Message:",
+        message,
+      ].join("\n");
+      let mailed = false;
+      const dest = String(cf.destination_email ?? "").trim() || String(env.ADMIN_EMAIL ?? "");
+      const smtpUser = String((env as any).INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
+      const smtpPass = String((env as any).INBOXLV_PASS ?? "")
+        || String((controls as any).auth_flow?.inboxlv_pass ?? "");
+      if (smtpUser && smtpPass && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
+        const sent = await sendSmtpMail({
+          host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
+          from: smtpUser, to: dest, subject, text,
+        });
+        mailed = sent.ok;
+        if (!sent.ok) console.error("contact_mail_fail", sent.error);
+      } else {
+        console.error("contact_mail_no_creds_or_dest");
+      }
+      if (!mailed) {
+        await env.DB.prepare(
+          "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+          + " VALUES (NULL, 'contact.report_email_failed', 'contact_report', ?, '{}', ?)")
+          .bind(String(reportId), new Date().toISOString()).run().catch(() => {});
+      }
+      return json({ ok: true, report_id: reportId, mailed });
+    }
+
     if (path === "/api/auth/logout" && request.method === "POST") {
       const auth = request.headers.get("authorization") ?? "";
       if (auth.startsWith("Bearer ")) await destroySession(d1(env.DB), auth.slice(7).trim());

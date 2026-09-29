@@ -193,3 +193,16 @@ CREATE TABLE IF NOT EXISTS user_tags (
     source TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (user_id, tag)
 );
+CREATE TABLE IF NOT EXISTS contact_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reporter_name TEXT NOT NULL DEFAULT '',
+    reporter_email TEXT NOT NULL DEFAULT '',
+    rtype TEXT NOT NULL,
+    message TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '{}',
+    ip_hash TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_contact_reports_created ON contact_reports(created_at DESC);

@@ -89,6 +89,9 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     guest_mode: { enabled: [null, null, "bool"], ttl_hours: [1, 168, "int"],
       games_until_register_prompt: [0, 50, "int"], ranked_allowed: [null, null, "bool"] },
+    contact_form: { enabled: [null, null, "bool"], destination_email: [null, null, "str"],
+      user_max_per_hour: [1, 50, "int"], guest_max_per_hour: [1, 20, "int"],
+      max_length: [100, 5000, "int"] },
     invite_system: { enabled: [null, null, "bool"], max_per_day: [1, 100, "int"],
       tag_name: [null, null, "str"], invite_text: [null, null, "str"] },
     xp: { human_win: [0, 100, "float"], bot_win: [0, 100, "float"], per_damage: [0, 1, "float"] },
@@ -362,6 +365,16 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       .bind(JSON.stringify({ on, message })).run();
     await audit(env, request, Number(u.id), "admin.maintenance", "", "", { on, message });
     return json({ ok: true, maintenance: await getMaintenance(env) });
+  }
+
+  // GET /api/admin/contact-reports - latest player contact/bug submissions.
+  if (path === "/api/admin/contact-reports" && method === "GET") {
+    const rows = await db.prepare(
+      "SELECT id, user_id, reporter_name, reporter_email, rtype, message, context, created_at"
+      + " FROM contact_reports ORDER BY id DESC LIMIT 200").all();
+    return json({ reports: rows.results.map((r: any) => ({
+      ...r, context: (() => { try { return JSON.parse(String(r.context ?? "{}")); } catch { return {}; } })(),
+    })) });
   }
 
   // GET|POST /api/admin/gameplay-controls
