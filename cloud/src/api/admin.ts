@@ -371,8 +371,9 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   // GET /api/admin/contact-reports - latest player contact/bug submissions.
   if (path === "/api/admin/contact-reports" && method === "GET") {
     const rows = await db.prepare(
-      "SELECT id, user_id, reporter_name, reporter_email, rtype, message, context, replied_at, reply_message, created_at"
-      + " FROM contact_reports ORDER BY id DESC LIMIT 200").all();
+      "SELECT r.id, r.user_id, r.reporter_name, r.reporter_email, r.rtype, r.message, r.context,"
+      + " r.replied_at, r.reply_message, r.created_at, u.is_guest AS reporter_is_guest"
+      + " FROM contact_reports r LEFT JOIN users u ON u.id = r.user_id ORDER BY r.id DESC LIMIT 200").all();
     return json({ reports: rows.results.map((r: any) => ({
       ...r, context: (() => { try { return JSON.parse(String(r.context ?? "{}")); } catch { return {}; } })(),
     })) });
@@ -397,7 +398,10 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     let to = String(rep.reporter_email ?? "").trim();
     if (rep.user_id) {
       const urow: any = await db.prepare("SELECT email FROM users WHERE id = ?").bind(Number(rep.user_id)).first();
-      if (urow && urow.email) to = String(urow.email);
+      const accMail = urow && urow.email ? String(urow.email) : "";
+      // Guest accounts carry a synthetic guest-<uuid>@guest.local address that
+      // passes naive email checks; replies must go to the email the guest left.
+      if (accMail && !accMail.endsWith("@guest.local")) to = accMail;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to))
       return json({ error: "no_recipient", error_he: "לפנייה הזו אין כתובת מייל לתשובה." }, 400);
