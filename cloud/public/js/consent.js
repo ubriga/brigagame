@@ -18,6 +18,17 @@ const Consent = {
   has() { return !!this.get(); },
   allowsAll() { return this.get()?.choice === "all"; },
 
+  // Convenience-preference keys gated behind the "all" choice.
+  PREF_KEYS: ["brigagame_lang", "bg_muted", "brigagame.aiTier", "bg_tutorial_done",
+    "bg_install_dismissed", "brigagame_msg_seen", "bg_remember"],
+
+  // Read a convenience pref: persisted copy first, then this-tab-only copy.
+  getPref(key) {
+    const v = localStorage.getItem(key);
+    if (v !== null) return v;
+    try { return sessionStorage.getItem(key); } catch { return null; }
+  },
+
   // Gate for NON-essential preference persistence. Without consent the pref
   // still works for the current tab (sessionStorage) but is never persisted.
   setPref(key, value) {
@@ -25,6 +36,11 @@ const Consent = {
     try { sessionStorage.setItem(key, value); } catch {}
     localStorage.removeItem(key);
     return false;
+  },
+
+  // Withdrawing to "essential" also purges convenience prefs already persisted.
+  purgePrefs() {
+    for (const k of this.PREF_KEYS) { try { localStorage.removeItem(k); } catch {} }
   },
 
   record(choice) {
@@ -41,29 +57,44 @@ const Consent = {
 
   boot() {
     if (this.has()) return;
+    this.show();
+  },
+
+  // Show the banner. Called on first visit (no stored choice) and again any
+  // time the visitor opens "cookie settings" to change or withdraw consent.
+  show() {
+    if (document.getElementById("consent-banner")) return;
     const en = (typeof Lang !== "undefined" && Lang.current === "en");
     const wrap = document.createElement("div");
     wrap.id = "consent-banner";
     wrap.setAttribute("role", "dialog");
     wrap.setAttribute("aria-live", "polite");
     wrap.innerHTML = en ? `
-      <div class="consent-text">🍪 This game uses browser storage (cookies) to run - sign-in session and saved game - and, only with your consent, to remember convenience preferences (language, last bot level). No ads, no trackers.
+      <div class="consent-text">🍪 This game uses browser storage (cookies) to run - sign-in session and saved game - and, only with your consent, to remember convenience preferences (language, last bot level). No ads, no trackers. You can change this anytime via "Cookie settings" at the bottom of the page.
         <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></div>
       <div class="consent-actions">
         <button class="btn small" id="consent-all">Accept</button>
         <button class="btn small secondary" id="consent-essential">Essentials only</button>
       </div>` : `
-      <div class="consent-text">🍪 המשחק משתמש באחסון הדפדפן (עוגיות) כדי לפעול - סשן כניסה ומשחק שמור - ורק באישורך גם לשמירת העדפות נוחות (שפה, רמת הבוט האחרונה). בלי פרסומות ובלי עקיבה.
+      <div class="consent-text">🍪 המשחק משתמש באחסון הדפדפן (עוגיות) כדי לפעול - סשן כניסה ומשחק שמור - ורק באישורך גם לשמירת העדפות נוחות (שפה, רמת הבוט האחרונה). בלי פרסומות ובלי עקיבה. אפשר לשנות בכל עת דרך "הגדרות עוגיות" בתחתית העמוד.
         <a href="privacy.html" target="_blank" rel="noopener">מדיניות פרטיות</a></div>
       <div class="consent-actions">
         <button class="btn small" id="consent-all">מאשר</button>
         <button class="btn small secondary" id="consent-essential">הכרחי בלבד</button>
       </div>`;
     document.body.appendChild(wrap);
-    const done = (choice) => { this.record(choice); wrap.remove(); };
+    const done = (choice) => {
+      if (choice === "essential") this.purgePrefs();
+      this.record(choice);
+      wrap.remove();
+    };
     wrap.querySelector("#consent-all").onclick = () => done("all");
     wrap.querySelector("#consent-essential").onclick = () => done("essential");
   },
 };
 
-document.addEventListener("DOMContentLoaded", () => Consent.boot());
+document.addEventListener("DOMContentLoaded", () => {
+  Consent.boot();
+  const link = document.getElementById("cookie-settings");
+  if (link) link.onclick = (e) => { e.preventDefault(); Consent.show(); };
+});

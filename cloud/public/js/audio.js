@@ -5,7 +5,7 @@
 // policy never blocks us. Mute persists in localStorage.
 const Sfx = {
   ctx: null,
-  muted: localStorage.getItem("bg_muted") === "1",
+  muted: (typeof Consent !== "undefined" ? Consent.getPref("bg_muted") : localStorage.getItem("bg_muted")) === "1",
   musicOn: false,
   _musicTimer: null,
   _buffers: {},   // name -> AudioBuffer | "error"
@@ -68,7 +68,7 @@ const Sfx = {
 
   toggleMute() {
     this.muted = !this.muted;
-    localStorage.setItem("bg_muted", this.muted ? "1" : "0");
+    Consent.setPref("bg_muted", this.muted ? "1" : "0");
     if (this.muted) this.stopMusic(); else this.startMusic();
     return this.muted;
   },

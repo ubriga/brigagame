@@ -1408,7 +1408,7 @@ const App = {
     // Read-state is tracked locally ("סמן הכל כנקרא" button); the server keeps
     // its own auto-mark for the nav badge until the mark-all endpoint ships.
     let seen = [];
-    try { seen = JSON.parse(localStorage.getItem("brigagame_msg_seen") || "[]"); } catch (e) {}
+    try { seen = JSON.parse(Consent.getPref("brigagame_msg_seen") || "[]"); } catch (e) {}
     const msgs = data.messages || [];
     const isNew = (m) => !seen.includes(m.id);
     const unreadCount = msgs.filter(isNew).length;
@@ -1452,7 +1452,7 @@ const App = {
     view.innerHTML = html;
     const markBtn = document.getElementById("msg-mark-all");
     if (markBtn) markBtn.onclick = () => {
-      try { localStorage.setItem("brigagame_msg_seen", JSON.stringify(msgs.map((m) => m.id))); } catch (e) {}
+      try { Consent.setPref("brigagame_msg_seen", JSON.stringify(msgs.map((m) => m.id))); } catch (e) {}
       this.vMessages(view, seq);
     };
     this.setUnread(0);
