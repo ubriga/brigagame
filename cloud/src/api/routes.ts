@@ -243,6 +243,12 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       maintenance, inventory: inv,
       invite_enabled: controls.invite_system?.enabled === true,
       ux: controls.ux_onboarding ?? {},
+      graphics: (() => { const gp = controls.graphics_pack ?? {}; return {
+        enabled: gp.enabled === true,
+        low_spec_default: gp.low_spec_default === true,
+        max_particles: Number(gp.max_particles ?? 96),
+        airship_motion: gp.airship_motion !== false,
+      }; })(),
       daily_available: streakCfg.enabled ? false : u.last_daily !== today(),
       streak: u.streak, server_date: today(),
       login_reward: loginReward,

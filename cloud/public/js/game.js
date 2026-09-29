@@ -40,6 +40,7 @@ const GameView = {
     this.displayAngles = { p1: 45, p2: 45 };
     this.cannonRecoil = { p1: 0, p2: 0 };
     this.blockTransitions = []; this.idleClock = 0; this.lastActionAt = performance.now();
+    if (typeof Clockwork !== "undefined") Clockwork.resetMatch();
     this.cloudOffsets = [0, 410];
     this.reconnectFailures = 0;
     Sfx.startMusic();
@@ -877,6 +878,13 @@ const GameView = {
     if (this.shake > 0.3)
       c.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
 
+    // Clockwork pack: fully separated visual layer. Off = classic renderer.
+    const cwMode = (typeof Clockwork !== "undefined") ? Clockwork.mode() : null;
+    if (cwMode) {
+      Clockwork.tick(dt, cwMode);
+      this.MAX_PARTICLES = Clockwork.maxParticles(cwMode);
+      Clockwork.background(this, now / 1000, cwMode);
+    } else {
     // Layered illustrated battlefield. Each layer drifts at a different
     // speed, creating parallax without affecting any server-owned geometry.
     const map = (this.snap && this.snap.map) || "valley";
@@ -935,6 +943,7 @@ const GameView = {
     c.fillStyle = "rgba(244,201,93,.20)";
     for (let x = 8; x < this.W; x += 34) c.fillRect(x, this.GROUND + 8 + (x % 3) * 3, 19, 2);
 
+    } // end classic background (Clockwork pack off)
     const ob = this.obstacleNow();
     if (ob) {
       c.save();
@@ -1012,6 +1021,7 @@ const GameView = {
   },
 
   drawShot(a) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.shot(this, a); return; }
     const c = this.ctx;
     // muzzle flash at launch
     if (a.t < 0.08 && a.side) {
@@ -1049,6 +1059,7 @@ const GameView = {
   },
 
   drawExplosion(a) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.explosion(this, a); return; }
     const c = this.ctx, t = a.t;
     if (a.cosmetic) {
       // small dust puff where a shell left the world
@@ -1092,6 +1103,8 @@ const GameView = {
         c.beginPath(); c.moveTo(p.x, p.y);
         c.lineTo(p.x - p.vx * 0.026, p.y - p.vy * 0.026); c.stroke();
       } else {
+        if (p.type === "smoke" && (typeof Clockwork !== "undefined") && Clockwork.mode()
+            && Clockwork.steamParticle(c, p, q)) continue;
         c.globalAlpha = 0.3 * q;
         c.fillStyle = "#94a3b8";
         c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
@@ -1120,6 +1133,7 @@ const GameView = {
   },
 
   drawDebris(a) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.debris(this, a); return; }
     const c = this.ctx;
     c.save();
     c.globalAlpha = Math.max(0, 1 - a.t * a.t);
@@ -1187,6 +1201,7 @@ const GameView = {
   },
 
   drawIdleLife(side, t) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) return;
     const c = this.ctx, m = this.muzzle(side), f = side === "p1" ? 1 : -1;
     // Two tiny smoke puffs are computed, not allocated, so idle cost is fixed.
     for (let i = 0; i < 2; i++) {
@@ -1210,6 +1225,8 @@ const GameView = {
   },
 
   drawTower(side) {
+    const cwMode = (typeof Clockwork !== "undefined") ? Clockwork.mode() : null;
+    if (cwMode) { Clockwork.tower(this, side, cwMode); return; }
     const c = this.ctx, tower = (this.displayTowers || this.snap.towers)[side];
     const rawSkin = this.snap.skins[side] || {};
     const style = Array.isArray(rawSkin)
