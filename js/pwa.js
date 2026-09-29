@@ -15,7 +15,7 @@ const PWAInstall = {
       if (window.__BG_LOCKED__) return; // Shabbat/holiday lock screen: no install prompt
       this.prompt = event;
       button.classList.remove("hidden");
-      if (localStorage.getItem("bg_install_dismissed") !== "1")
+      if (Consent.getPref("bg_install_dismissed") !== "1")
         card.classList.remove("hidden");
     });
 
@@ -33,7 +33,7 @@ const PWAInstall = {
     confirm.addEventListener("click", install);
     dismiss.addEventListener("click", () => {
       card.classList.add("hidden");
-      localStorage.setItem("bg_install_dismissed", "1");
+      Consent.setPref("bg_install_dismissed", "1");
     });
     window.addEventListener("appinstalled", () => {
       this.prompt = null;

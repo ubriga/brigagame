@@ -431,7 +431,7 @@ const GameView = {
       this._tutorialChecked = true;
       const uxOn = !window.App || (App.ux || {}).tutorial_first_match !== false;
       const isNew = window.App && App.me && Number(App.me.matches_played || 0) === 0;
-      if (uxOn && isNew && localStorage.getItem("bg_tutorial_done") !== "1") {
+      if (uxOn && isNew && Consent.getPref("bg_tutorial_done") !== "1") {
         const ov = document.getElementById("tutorial-ov");
         if (ov) {
           ov.innerHTML = `<div class="tutorial-box">
@@ -443,7 +443,7 @@ const GameView = {
             <button class="btn small" id="tutorial-ok">הבנתי!</button>
           </div>`;
           ov.classList.remove("hidden");
-          const done = () => { ov.classList.add("hidden"); localStorage.setItem("bg_tutorial_done", "1"); };
+          const done = () => { ov.classList.add("hidden"); Consent.setPref("bg_tutorial_done", "1"); };
           document.getElementById("tutorial-ok").onclick = (e) => { e.stopPropagation(); Sfx.play("click"); done(); };
           ov.onclick = done;
           this._tutorialDoneFn = done;
@@ -1460,7 +1460,7 @@ const GameView = {
       const btn = e.target;
       btn.disabled = true; btn.textContent = "יוצר משחק...";
       const difficulty = document.getElementById("rematch-diff").value;
-      localStorage.setItem("brigagame.aiTier", difficulty);
+      Consent.setPref("brigagame.aiTier", difficulty);
       const { status, data } = await API.post("/api/matches/ai", { difficulty });
       if (status === 200 && data.match_id) location.hash = "#/game/" + data.match_id;
       else {
