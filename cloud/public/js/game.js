@@ -81,6 +81,8 @@ const GameView = {
       document.getElementById("game-stage")?.scrollIntoView({ block: "start", inline: "center" });
     });
     this.ctx = this.canvas.getContext("2d");
+    this._r3dTryInit();
+    try { window.__game = this; } catch (e) {}   // QA introspection
     // Exit control: one tap reveals the confirmation strip; only the
     // explicit "יציאה מהמשחק" button actually leaves (active match = loss,
     // enforced server-side; waiting room = match deleted).
@@ -140,7 +142,20 @@ const GameView = {
     loop();
   },
 
+  /* Stage-1 WebGL: opt-in via admin config; every failure path silently
+   * keeps the 2D renderer. See render3d.js. */
+  async _r3dTryInit() {
+    try {
+      const g = (window.App && App.graphics) || {};
+      if (!g.webgl3d || g.webgl3d.enabled !== true) return;
+      if (typeof Render3D === "undefined" || !Render3D.capable()) return;
+      if (typeof Clockwork !== "undefined" && Clockwork.mode && Clockwork.mode() === "low") return;
+      this._r3d = await Render3D.init(this);
+    } catch (e) { this._r3d = false; }
+  },
+
   destroy() {
+    if (this._r3d) { try { Render3D.dispose(); } catch (e) {} this._r3d = false; }
     this.stopPoll();
     this.closeSocket();
     cancelAnimationFrame(this.raf);
@@ -857,6 +872,18 @@ const GameView = {
   // ---------------- drawing ----------------
   draw() {
     if (!this.ctx || !this.snap || !this.snap.towers) return;
+    if (this._r3d) {
+      let keep = true;
+      try { keep = Render3D.draw(this) !== false; }
+      catch (e) { keep = false; }
+      if (!keep) {                           // permanent fallback this match
+        this._r3d = false;
+        try { Render3D.dispose(); } catch (e) {}
+      }
+    }
+    /* When 3D is live it paints the world (towers/cannons/ground) on the
+     * canvas beneath; the 2D canvas keeps HUD, aim, shots and particles. */
+    const r3dOn = !!this._r3d;
     const c = this.ctx, now = performance.now();
     const dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
@@ -888,8 +915,8 @@ const GameView = {
     if (cwMode) {
       Clockwork.tick(dt, cwMode);
       this.MAX_PARTICLES = Clockwork.maxParticles(cwMode);
-      Clockwork.background(this, now / 1000, cwMode);
-    } else {
+      if (!r3dOn) Clockwork.background(this, now / 1000, cwMode);
+    } else if (!r3dOn) {
     // Layered illustrated battlefield. Each layer drifts at a different
     // speed, creating parallax without affecting any server-owned geometry.
     const map = (this.snap && this.snap.map) || "valley";
@@ -966,13 +993,15 @@ const GameView = {
     }
     // towers + HP bars and capped, deterministic idle life.
     for (const side of ["p1", "p2"]) {
-      this.drawIdleLife(side, now / 1000);
-      this.drawTower(side); this.drawCoating(side); this.drawHpBar(side); this.drawRankBadge(side);
+      if (!r3dOn) { this.drawIdleLife(side, now / 1000); this.drawTower(side); this.drawCoating(side); }
+      this.drawHpBar(side); this.drawRankBadge(side);
     }
-    // A struck tower flashes as a whole, independently of the blast glow.
-    for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
-    // cannons
-    for (const side of ["p1", "p2"]) this.drawCannon(side);
+    if (!r3dOn) {
+      // A struck tower flashes as a whole, independently of the blast glow.
+      for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
+      // cannons
+      for (const side of ["p1", "p2"]) this.drawCannon(side);
+    }
     // aim arrow
     if ((this.aiming || performance.now() < (this.showAimUntil || 0))
         && this.canFire()) this.drawAim();

@@ -1,10 +1,10 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "59-clockwork-twr";
+const RELEASE = "62-webgl3d-s1c";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/style.css", "./js/config.js", "./js/consent.js", "./js/i18n.js", "./js/api.js",
-  "./js/audio.js", "./js/tower-skins.js", "./js/clockwork.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
+  "./js/audio.js", "./js/tower-skins.js", "./js/clockwork.js", "./js/render3d.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
   "./js/panel.js",
   "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3", "./assets/sfx/steam.mp3", "./assets/sfx/clank.mp3",
   "./assets/sfx/crumble.mp3", "./assets/sfx/click.mp3",

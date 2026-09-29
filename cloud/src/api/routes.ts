@@ -248,6 +248,11 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
         low_spec_default: gp.low_spec_default === true,
         max_particles: Number(gp.max_particles ?? 96),
         airship_motion: gp.airship_motion !== false,
+        webgl3d: {
+          enabled: gp.webgl3d_enabled === true,
+          adaptive: gp.webgl3d_adaptive !== false,
+          min_fps: Number(gp.webgl3d_min_fps ?? 45),
+        },
       }; })(),
       daily_available: streakCfg.enabled ? false : u.last_daily !== today(),
       streak: u.streak, server_date: today(),
