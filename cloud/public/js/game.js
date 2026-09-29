@@ -584,7 +584,7 @@ const GameView = {
     this.firing = true;
     this.startRecoil(this.mySide());
     this.lastActionAt = performance.now();
-    Sfx.play("shot");
+    Sfx.play((typeof Clockwork !== "undefined" && Clockwork.mode()) ? "steam" : "shot");
     // Optimistic launch: mirror the server's ballistics locally so the shell
     // leaves the barrel the instant the finger/mouse releases instead of
     // waiting for the network round trip. The authoritative server events
@@ -806,7 +806,10 @@ const GameView = {
       if (a.kind === "sound" && prev < 0 && a.t >= 0) Sfx.play(a.name);
       if (a.kind === "recoil" && prev < 0 && a.t >= 0) this.startRecoil(a.side);
       if (a.kind === "explosion" && prev < 0.02 && a.t >= 0.02) {
-        if (!a.cosmetic) Sfx.play("explosion");
+        if (!a.cosmetic) Sfx.play((typeof Clockwork !== "undefined" && Clockwork.mode()) ? "clank" : "explosion");
+        if (a.kind === "explosion" && !a.cosmetic && prev < 0 && a.t >= 0
+            && typeof Clockwork !== "undefined" && Clockwork.mode() === "full")
+          this._hitStopUntil = performance.now() + 75;
         if (!a.particlesStarted) {
           a.particlesStarted = true;
           this.spawnImpactParticles(a.x, a.y, a.cosmetic);
@@ -857,6 +860,8 @@ const GameView = {
     const c = this.ctx, now = performance.now();
     const dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
+    if (this._hitStopUntil && now < this._hitStopUntil
+        && typeof Clockwork !== "undefined" && Clockwork.mode() === "full") dt = 0;
     this.stepAnims(dt);
     this.renderTimer();
 

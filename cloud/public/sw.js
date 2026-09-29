@@ -1,12 +1,12 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "57-clockwork";
+const RELEASE = "58-clockwork-s2";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/style.css", "./js/config.js", "./js/consent.js", "./js/i18n.js", "./js/api.js",
   "./js/audio.js", "./js/tower-skins.js", "./js/clockwork.js", "./js/game.js", "./js/app.js", "./js/pwa.js",
   "./js/panel.js",
-  "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3",
+  "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3", "./assets/sfx/steam.mp3", "./assets/sfx/clank.mp3",
   "./assets/sfx/crumble.mp3", "./assets/sfx/click.mp3",
   "./assets/sfx/coin.mp3", "./assets/sfx/win.mp3", "./assets/sfx/lose.mp3",
   "./assets/gfx/clockwork/bg_sky.webp", "./assets/gfx/clockwork/bg_far.webp",
@@ -20,7 +20,8 @@ const SHELL = [
   "./assets/gfx/clockwork/steam.png", "./assets/gfx/clockwork/shard.png",
   "./assets/gfx/clockwork/strip_p1.png", "./assets/gfx/clockwork/strip_p2.png",
   "./assets/gfx/clockwork/pennant_p1.png", "./assets/gfx/clockwork/pennant_p2.png",
-  "./assets/gfx/clockwork/rivet.png",
+  "./assets/gfx/clockwork/rivet.png", "./assets/gfx/clockwork/gauge.png",
+  "./assets/gfx/clockwork/needle.png",
   "./icons/icon-192.png", "./icons/icon-512.png",
   "./icons/icon-maskable-512.png", "./icons/apple-touch-icon.png"
 ];

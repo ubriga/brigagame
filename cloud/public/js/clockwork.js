@@ -15,7 +15,7 @@ const Clockwork = {
     chimney: "chimney.png", steam: "steam.png", shard: "shard.png",
     strip_p1: "strip_p1.png", strip_p2: "strip_p2.png",
     pennant_p1: "pennant_p1.png", pennant_p2: "pennant_p2.png",
-    rivet: "rivet.png",
+    rivet: "rivet.png", gauge: "gauge.png", needle: "needle.png",
     bg_sky: "bg_sky.webp", bg_far: "bg_far.webp", bg_near: "bg_near.webp",
     airship: "airship.webp",
   },
@@ -214,6 +214,40 @@ const Clockwork = {
           c.drawImage(I.steam, cx - s / 2 + Math.sin(t + i) * 3, cy - 34 - phase * 30 - s / 2, s, s);
           c.restore();
         }
+      }
+    }
+
+    // pressure gauge by the cannon hub: needle rides reload, spikes on fire
+    const m = g.muzzle(side);
+    const f = p1 ? 1 : -1;
+    const gx = m.x - f * 24, gy = m.y + 16;
+    if (I.gauge) c.drawImage(I.gauge, gx - 15, gy - 15, 30, 30);
+    if (I.needle) {
+      const rec = (g.cannonRecoil && (g.cannonRecoil[side] || 0));
+      const base = .18 + .4 * (g.reloadFrac ? g.reloadFrac() : 1);
+      const pressure = low ? .5 : Math.min(1, base + (rec > 0 ? rec / .34 * .8 : 0));
+      const ang = (-120 + 180 * pressure) * Math.PI / 180;
+      c.save(); c.translate(gx, gy); c.rotate(ang);
+      c.drawImage(I.needle, -15, -15, 30, 30);
+      c.restore();
+    }
+
+    // end-of-match character: winner vents celebratory steam, loser sputters
+    if (g.ended && g.snap && g.snap.winner_side && I.steam && !low) {
+      const won = g.snap.winner_side === side;
+      for (let i = 0; i < (won ? 3 : 2); i++) {
+        const phase = (t * (won ? .3 : .5) + i * .37 + (p1 ? 0 : .19)) % 1;
+        const sp = won ? 16 + phase * 30 : 10 + phase * 16;
+        c.save();
+        c.globalAlpha = (won ? .55 : .4) * (1 - phase);
+        if (!won) c.filter = "brightness(.55)";
+        const sx = towerX + w * (won ? (.25 + i * .25) : (.35 + i * .3));
+        c.drawImage(I.steam, sx - sp / 2, towerY - 14 - phase * (won ? 56 : 26) - sp / 2, sp, sp);
+        c.restore();
+      }
+      if (won) { // victory gear spin
+        const p = g.blockCenter(side, Math.min(2, rows - 1), 0);
+        if (I.gear_s) { c.save(); c.translate(p.x + w * .3, p.y - 10); c.rotate(t * 9); c.drawImage(I.gear_s, -12, -12, 24, 24); c.restore(); }
       }
     }
 
