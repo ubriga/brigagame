@@ -2072,6 +2072,13 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "games_until_register_prompt": 3,
     "ranked_allowed": false
   },
+  "contact_form": {
+    "enabled": true,
+    "destination_email": "brigagame2026@gmail.com",
+    "user_max_per_hour": 5,
+    "guest_max_per_hour": 2,
+    "max_length": 2000
+  },
   "invite_system": {
     "enabled": true,
     "max_per_day": 5,
