@@ -863,7 +863,10 @@ const App = {
   showLoginReward(r) {
     if (this._lrBox) this._lrBox.remove();
     const cfg = this._loginStreak || {};
-    const next = cfg.next;
+    // cfg.next comes from the /api/me snapshot; after a streak repair the
+    // streak is higher than when next was computed, so drop a stale
+    // milestone instead of rendering "in -1 days".
+    const next = cfg.next && Number(cfg.next.day) > Number(r.streak) ? cfg.next : null;
     const box = document.createElement("div");
     box.className = "match-offer";
     box.innerHTML = `<div class="card match-offer-card">
