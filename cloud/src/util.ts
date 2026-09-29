@@ -132,6 +132,8 @@ export interface LoginStreakCfg {
   /** What a skipped day does to the streak: reset to 1 (default), reset to 0,
    * or keep counting as if no day was skipped. */
   reset_policy: "to_one" | "to_zero" | "keep";
+  /** One-time repair offer when a streak breaks (admin-controlled). */
+  repair: { enabled: boolean; price: number };
 }
 
 export const DEFAULT_LOGIN_STREAK: LoginStreakCfg = {
@@ -139,6 +141,7 @@ export const DEFAULT_LOGIN_STREAK: LoginStreakCfg = {
   base_amount: 5,
   milestones: { "3": 10, "7": 25, "30": 100 },
   reset_policy: "to_one",
+  repair: { enabled: true, price: 100 },
 };
 
 // Short per-isolate cache: /api/me reads this on every app load, and each read
@@ -177,12 +180,25 @@ export function sanitizeLoginStreak(d: any): LoginStreakCfg {
     Object.assign(milestones, DEFAULT_LOGIN_STREAK.milestones);
   }
   const policy = d?.reset_policy;
+  const rep = (d && typeof d.repair === "object" && d.repair) ? d.repair as any : {} as any;
   return {
     enabled: d?.enabled === undefined ? DEFAULT_LOGIN_STREAK.enabled : d.enabled === true,
     base_amount: clampAmt(d?.base_amount, DEFAULT_LOGIN_STREAK.base_amount),
     milestones,
     reset_policy: policy === "to_zero" || policy === "keep" ? policy : "to_one",
+    repair: {
+      enabled: rep.enabled === undefined ? DEFAULT_LOGIN_STREAK.repair.enabled : rep.enabled === true,
+      price: clampAmt(rep.price, DEFAULT_LOGIN_STREAK.repair.price),
+    },
   };
+}
+
+/** Whole days between two YYYY-MM-DD dates (to minus from), at least 1. */
+export function ilDateDiff(from: string, to: string): number {
+  const a = Date.parse(from + "T00:00:00Z");
+  const b = Date.parse(to + "T00:00:00Z");
+  if (isNaN(a) || isNaN(b)) return 1;
+  return Math.max(1, Math.round((b - a) / 86400000));
 }
 
 /** Coins for landing on the given streak day. */

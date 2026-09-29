@@ -15,6 +15,13 @@ const App = {
 
   async boot() {
     Lang.boot();
+    // App-level session refresh: updates the coin/streak chips from /api/me.
+    // Used to be defined only inside the game screen, so shop purchases made
+    // before entering a game never refreshed the top-bar balance (bug fix).
+    window.refreshMe = async () => {
+      const m = await API.get("/api/me");
+      if (m.status === 200) App.setMe(m.data);
+    };
     window.addEventListener("hashchange", () => this.route());
     document.getElementById("mute-btn").onclick = () => {
       const m = Sfx.toggleMute();
@@ -203,9 +210,20 @@ const App = {
       streakChip.textContent = "🔥 " + (data.streak || 0);
       streakChip.classList.remove("hidden");
     } else streakChip.classList.add("hidden");
+    if (data.login_reward) this._loginRewardData = data.login_reward;
     if (data.login_reward && !this._loginRewardShown) {
       this._loginRewardShown = true;
-      setTimeout(() => this.showLoginReward(data.login_reward), 400);
+      // When a repair window just expired, that message comes first and the
+      // day-1 reward popup is chained after its confirmation.
+      if (!data.repair_expired) setTimeout(() => this.showLoginReward(data.login_reward), 400);
+    }
+    if (data.repair_offer && !this._repairOfferShown) {
+      this._repairOfferShown = true;
+      setTimeout(() => this.showRepairOffer(data.repair_offer), 400);
+    }
+    if (data.repair_expired && !this._repairExpiredShown) {
+      this._repairExpiredShown = true;
+      setTimeout(() => this.showRepairExpired(data.repair_expired, data.login_reward || null), 400);
     }
     document.getElementById("topbar").classList.remove("hidden");
     document.getElementById("seo-intro")?.classList.add("hidden");
@@ -681,6 +699,7 @@ const App = {
     view.innerHTML = `
       <h1>שלום, ${esc(u.name)} 👋</h1>
       <p class="sub">הפל את מגדל היריב לפני שהוא מפיל את שלך.</p>
+      ${this._loginRewardData ? `<div class="card ux-welcome"><b>🔥 יום ${this._loginRewardData.streak} ברצף!</b> ${this._loginRewardData.amount > 0 ? `קיבלת היום 🪙 ${this._loginRewardData.amount} מטבעות על הרצף` : "הרצף נמשך!"}</div>` : ""}
       ${(this.ux.lobby_labels !== false && Number(u.matches_played || 0) === 0) ? `<div class="card ux-welcome"><b>🎓 משחק ראשון?</b> מומלץ להתחיל מול בוט קל - משחק תרגול בלי דירוג ובלי לחץ. אפשר גם לפתוח את "איך משחקים?" למטה.</div>` : ""}
       <div class="grid cols2">
         <div class="card">
@@ -860,6 +879,70 @@ const App = {
     this._lrBox = box;
     Sfx.play("coin");
     document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
+  },
+
+  // Streak repair offer: parked on the return day, valid until IL midnight.
+  showRepairOffer(o) {
+    if (this._lrBox) this._lrBox.remove();
+    const box = document.createElement("div");
+    box.className = "match-offer";
+    box.innerHTML = `<div class="card match-offer-card">
+      <div class="match-offer-icon">💔</div>
+      <h2>הרצף של ${Number(o.lost_streak)} ימים נשבר</h2>
+      <p>שחזר ב-🪙 ${Number(o.price)} מטבעות וקבל את פרס היום לפי רצף ${Number(o.restored_streak)} - כאילו לא פספסת יום!</p>
+      <p class="sub">ההצעה בתוקף עד חצות היום בלבד</p>
+      <div class="match-offer-actions">
+        <button class="btn" id="rp-yes">🪙 שחזר עכשיו</button>
+        <button class="btn secondary" id="rp-no">מוותר על הרצף</button>
+      </div>
+    </div>`;
+    document.body.appendChild(box);
+    this._lrBox = box;
+    const close = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
+    document.getElementById("rp-yes").onclick = async () => {
+      const { status, data } = await API.post("/api/streak/repair", {});
+      close();
+      if (status === 200) {
+        this._loginRewardData = { streak: data.streak, amount: data.amount };
+        this.showLoginReward(this._loginRewardData);
+      } else {
+        toast(data.error_he || "השחזור נכשל");
+      }
+      window.refreshMe?.();
+    };
+    document.getElementById("rp-no").onclick = async () => {
+      const { status, data } = await API.post("/api/streak/decline", {});
+      close();
+      if (status === 200) {
+        toast("הרצף אופס");
+        if (data.streak > 0) {
+          this._loginRewardData = { streak: data.streak, amount: data.amount };
+          this.showLoginReward(this._loginRewardData);
+        }
+      }
+      window.refreshMe?.();
+    };
+  },
+
+  // The repair window closed at IL midnight: the streak is gone for good.
+  showRepairExpired(e, chainedReward) {
+    if (this._lrBox) this._lrBox.remove();
+    const box = document.createElement("div");
+    box.className = "match-offer";
+    box.innerHTML = `<div class="card match-offer-card">
+      <div class="match-offer-icon">🕛</div>
+      <h2>חלון השחזור פג</h2>
+      <p>הרצף של ${Number(e.lost_streak)} ימים אבד בחצות. מתחילים רצף חדש - אתה יכול!</p>
+      <div class="match-offer-actions">
+        <button class="btn" id="rx-ok">הבנתי</button>
+      </div>
+    </div>`;
+    document.body.appendChild(box);
+    this._lrBox = box;
+    document.getElementById("rx-ok").onclick = () => {
+      box.remove(); if (this._lrBox === box) this._lrBox = null;
+      if (chainedReward) this.showLoginReward(chainedReward);
+    };
   },
 
   // Streak ladder: the daily button opens this when streak mode is on (the
