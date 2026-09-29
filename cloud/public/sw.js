@@ -1,5 +1,5 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "58-clockwork-s3";
+const RELEASE = "59-clockwork-twr";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
@@ -22,6 +22,7 @@ const SHELL = [
   "./assets/gfx/clockwork/pennant_p1.png", "./assets/gfx/clockwork/pennant_p2.png",
   "./assets/gfx/clockwork/rivet.png", "./assets/gfx/clockwork/gauge.png",
   "./assets/gfx/clockwork/needle.png",
+  "./assets/gfx/clockwork/tower_sheet.webp", "./assets/gfx/clockwork/cannon.webp",
   "./icons/icon-192.png", "./icons/icon-512.png",
   "./icons/icon-maskable-512.png", "./icons/apple-touch-icon.png"
 ];

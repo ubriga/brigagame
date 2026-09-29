@@ -8,7 +8,7 @@ Usage: python3 gfx_clockwork.py [path-to-mockup.png]
 Output: cloud/public/assets/gfx/clockwork/.
 """
 import math, os, random, sys
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "public", "assets", "gfx", "clockwork")
 os.makedirs(OUT, exist_ok=True)
@@ -397,6 +397,47 @@ def gauge_needle():
     d.ellipse([cx-2,cy-2,cx+2,cy+2], fill=COPPER)
     return img
 
+
+def tower_sheet(scene):
+    """The mockup's own 3D riveted cylinder, alpha-carved and sized to the
+    4x6 block grid (104x156). Sliced per-block at draw time so destroyed
+    blocks still open real holes in the hull."""
+    body = scene.crop((190, 345, 345, 620)).convert("RGB")
+    w, h = body.size
+    mask = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(mask)
+    d.rounded_rectangle([1, 1, w - 2, h - 2], radius=26, fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(1.6))
+    out = body.convert("RGBA"); out.putalpha(mask)
+    return out.resize((104, 156), Image.LANCZOS)
+
+def cannon_sprite(scene):
+    """Right tower's riveted brass cannon (mirrored to aim up-right),
+    warm-keyed off the sky, largest component only. Natural elevation ~43
+    deg; runtime rotates around the trunnion for aim."""
+    import numpy as np
+    from collections import deque
+    can = ImageOps.mirror(scene.crop((1120, 300, 1205, 368)).convert("RGB"))
+    a = np.asarray(can).astype(int)
+    m = (a[..., 0] > a[..., 2] + 8).astype(np.uint8)
+    lab = np.zeros_like(m, dtype=int); cur = 0; sizes = {}
+    for y0 in range(m.shape[0]):
+        for x0 in range(m.shape[1]):
+            if m[y0, x0] and not lab[y0, x0]:
+                cur += 1; q = deque([(y0, x0)]); lab[y0, x0] = cur; sizes[cur] = 0
+                while q:
+                    y, x = q.popleft(); sizes[cur] += 1
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < m.shape[0] and 0 <= nx < m.shape[1] and m[ny, nx] and not lab[ny, nx]:
+                            lab[ny, nx] = cur; q.append((ny, nx))
+    keep = (lab == max(sizes, key=sizes.get)).astype(np.uint8) * 255
+    km = Image.fromarray(keep, "L").filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(1.0))
+    out = can.convert("RGBA"); out.putalpha(km)
+    bb = out.getbbox()
+    print("cannon pre-crop 85x68 pivot (42,50); bbox", bb)
+    return out.crop(bb)
+
 def save(img, name, **kw):
     img.save(os.path.join(OUT, name), **kw)
     print(name, img.size, os.path.getsize(os.path.join(OUT, name)), "bytes")
@@ -429,5 +470,7 @@ save(strip_v(P2), "strip_p2.png", optimize=True)
 save(rivet_projectile(), "rivet.png", optimize=True)
 save(gauge_face(), "gauge.png", optimize=True)
 save(gauge_needle(), "needle.png", optimize=True)
+save(tower_sheet(scene), "tower_sheet.webp", quality=90, method=6)
+save(cannon_sprite(scene), "cannon.webp", quality=90, method=6)
 total = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
 print("TOTAL", total, "=", round(total/1024, 1), "KB")
