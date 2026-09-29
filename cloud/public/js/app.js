@@ -10,6 +10,11 @@ function apiError(result, fallback = "שגיאה") {
 // Router + views (login, lobby, store, leaderboard, messages).
 const App = {
   me: null, inventory: {}, _routeSeq: 0,
+  // Last user activity (route change or tap). The version-handshake reload is
+  // allowed only when the app sits idle at the lobby: a reload racing a tap
+  // used to nuke the in-flight navigation and leave a several-second black
+  // screen (real-device bug report: tap "צור קשר" -> black -> tiny form).
+  _lastActiveAt: 0,
 
   routeCurrent(seq) { return seq === this._routeSeq; },
 
@@ -38,6 +43,8 @@ const App = {
     const unlockAudio = () => { Sfx.unlock(); };
     ["pointerdown", "touchstart", "keydown"].forEach((ev) =>
       window.addEventListener(ev, unlockAudio, { passive: true, capture: true }));
+    ["pointerdown", "keydown"].forEach((ev) =>
+      window.addEventListener(ev, () => { this._lastActiveAt = Date.now(); }, { passive: true, capture: true }));
     Sfx.preload();
     // Shabbat/holiday lockdown: the server is authoritative and refuses every
     // non-admin API call while active; this check only picks the first screen.
@@ -108,7 +115,12 @@ const App = {
       // deployed release cannot cause a reload loop.
       if (data.server_version && data.server_version !== CONFIG.CLIENT_VERSION) {
         const h = location.hash || "#/lobby";
-        if (h === "#/lobby" || h === "#/") {
+        // Never reload right after a route change or a tap: the reload wipes
+        // the in-flight screen behind several seconds of black, and on a slow
+        // connection the user starts poking the dark page (pinch zoom) which
+        // then renders the next view tiny. Wait for a genuinely idle lobby.
+        const idleFor = Date.now() - (this._lastActiveAt || 0);
+        if ((h === "#/lobby" || h === "#/") && idleFor > 10000) {
           const key = "bg_reloaded_for_" + data.server_version;
           if (!sessionStorage.getItem(key)) {
             sessionStorage.setItem(key, "1");
@@ -305,7 +317,21 @@ const App = {
       </div>`;
   },
 
+  // Phones: a stray pinch-zoom (e.g. applied on a slow black reload screen)
+  // persists across hash routes and renders short views tiny and offset.
+  // Momentarily clamping maximum-scale forces the visual scale back to 1;
+  // the clamp is lifted right after so pinch zoom keeps working.
+  resetZoom() {
+    const vp = document.querySelector('meta[name="viewport"]');
+    if (!vp || this._zoomResetPending) return;
+    this._zoomResetPending = true;
+    const base = vp.content;
+    if (!/maximum-scale/.test(base)) vp.content = base + ", maximum-scale=1.0";
+    setTimeout(() => { vp.content = base; this._zoomResetPending = false; }, 60);
+  },
+
   route() {
+    this._lastActiveAt = Date.now();
     if (GameView.canvas) GameView.destroy();
     const seq = ++this._routeSeq;
     const hash = location.hash || "#/lobby";
@@ -339,6 +365,7 @@ const App = {
     // scrolled lobby left the viewport at the bottom of the page, so the new
     // screen looked like "nothing happened".
     window.scrollTo(0, 0);
+    this.resetZoom();
     document.querySelectorAll("#topbar nav a").forEach(a =>
       a.classList.toggle("active", hash.startsWith("#/" + a.dataset.nav)));
     if (hash.startsWith("#/auth")) {
