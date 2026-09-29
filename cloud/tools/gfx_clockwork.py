@@ -320,3 +320,37 @@ def rivet():
 save(rivet(), "rivet.png", optimize=True)
 total = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
 print("TOTAL", total, "bytes =", round(total / 1024, 1), "KB")
+
+# --- stage 2: pressure gauge (face + needle) ---
+def gauge_face():
+    n = 64
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
+    d.ellipse([2, 2, n - 2, n - 2], fill=BRASS_MID, outline=BRASS_DARK, width=3)
+    d.ellipse([8, 8, n - 8, n - 8], fill=(240, 230, 205, 255), outline=BRASS_DARK, width=1)
+    # red zone
+    d.arc([10, 10, n - 10, n - 10], -60, 20, fill=(180, 60, 40, 255), width=4)
+    for adeg in range(-120, 61, 30):
+        a = math.radians(adeg - 90)
+        x0 = n / 2 + math.cos(a) * (n / 2 - 13); y0 = n / 2 + math.sin(a) * (n / 2 - 13)
+        x1 = n / 2 + math.cos(a) * (n / 2 - 8); y1 = n / 2 + math.sin(a) * (n / 2 - 8)
+        d.line([(x0, y0), (x1, y1)], fill=(60, 45, 25, 255), width=2)
+    for a in range(4):
+        x = n / 2 + math.cos(a * math.pi / 2 + math.pi / 4) * (n / 2 - 5)
+        y = n / 2 + math.sin(a * math.pi / 2 + math.pi / 4) * (n / 2 - 5)
+        d.ellipse([x - 2, y - 2, x + 2, y + 2], fill=BRASS_LO, outline=BRASS_DARK)
+    return img
+
+def gauge_needle():
+    w, h = 64, 64
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
+    cx, cy = w / 2, h / 2
+    d.polygon([(cx - 2, cy + 4), (cx + 2, cy + 4), (cx + .8, cy - 22), (cx - .8, cy - 22)],
+              fill=(180, 50, 35, 255), outline=(60, 20, 15, 255))
+    d.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=BRASS_DARK)
+    d.ellipse([cx - 2, cy - 2, cx + 2, cy + 2], fill=COPPER)
+    return img
+
+save(gauge_face(), "gauge.png", optimize=True)
+save(gauge_needle(), "needle.png", optimize=True)
+total = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
+print("TOTAL", total, "=", round(total / 1024, 1), "KB")
