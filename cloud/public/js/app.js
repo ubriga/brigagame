@@ -228,6 +228,7 @@ const App = {
     this.ux = data.ux || {};
     this.graphics = data.graphics || null;
     if (this.graphics && this.graphics.enabled === true && typeof Clockwork !== "undefined") Clockwork.preload();
+    document.body.classList.toggle("clockwork", !!(this.graphics && this.graphics.enabled === true));
     this._guest = this.me && this.me.is_guest ? (data.guest || {}) : null;
     document.body.classList.toggle("guest-mode", !!this._guest);
     if (this._guest) this.showGuestBanner(); else this.hideGuestBanner();
