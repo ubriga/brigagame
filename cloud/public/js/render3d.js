@@ -22,6 +22,21 @@ const Render3D = {
     if (Render3D._ready) return true;
     const T = await import("../vendor/three.module.min.js");
     Render3D._T = T;
+    /* Stage 2: real mockup-inspired models. Any load failure keeps the
+     * stage-1 placeholder path below (fallback intact). */
+    let models = null;
+    try {
+      const { GLTFLoader } = await import("../vendor/GLTFLoader.min.js");
+      const loader = new GLTFLoader();
+      const load = (u) => new Promise((res, rej) => loader.load(u, res, undefined, rej));
+      models = {
+        brass: await load("../assets/gfx3d/block_brass.glb"),
+        window: await load("../assets/gfx3d/block_window.glb"),
+        vent: await load("../assets/gfx3d/block_vent.glb"),
+        cannon: await load("../assets/gfx3d/cannon.glb"),
+      };
+    } catch (e) { models = null; }
+    Render3D._models = models;
     /* The 2D canvas already owns a 2D context, so WebGL gets its own canvas
      * stacked UNDER it in #game-stage. The 2D canvas keeps drawing HUD,
      * aim, shots and particles on top; world painting moves to WebGL. */
@@ -58,7 +73,7 @@ const Render3D = {
     cam.lookAt(game.W / 2, 230, 0);
 
     // Lighting: cool moon key + warm points at the tower tops (stage-1 base).
-    scene.add(new T.HemisphereLight(0x9db8d6, 0x1a1208, 0.75));
+    scene.add(new T.HemisphereLight(0x9db8d6, 0x2a1f10, 1.05));
     const moon = new T.DirectionalLight(0xd8e6ff, 1.0);
     moon.position.set(650, 900, 500);
     scene.add(moon);
@@ -83,12 +98,20 @@ const Render3D = {
       cannon: new T.MeshStandardMaterial({ color: 0x5c4a33, roughness: 0.45, metalness: 0.7 }),
     };
     const blockGeo = new T.BoxGeometry(game.BLOCK - 2, game.BLOCK - 2, game.BLOCK - 2);
+    /* Deterministic variant map: mostly brass plates, a window band near the
+     * middle rows, vents lower down — mirrors the 2D mockup sheet. */
+    const blockProto = (side, r, c) => {
+      if (!models) return new T.Mesh(blockGeo, Render3D._mats[side]);
+      const pick = (r * 5 + c * 3 + (side === "p2" ? 1 : 0)) % 9;
+      const src = pick === 0 ? models.window : (pick === 1 || pick === 5) ? models.vent : models.brass;
+      return src.scene.clone(true);
+    };
     for (const side of ["p1", "p2"]) {
       const group = [];
       for (let r = 0; r < 12; r++) {                 // pool covers tower_expansion
         const row = [];
         for (let c = 0; c < game.TCOLS; c++) {
-          const m = new T.Mesh(blockGeo, Render3D._mats[side]);
+          const m = blockProto(side, r, c);
           m.position.set(
             game.tx(side) + c * game.BLOCK + game.BLOCK / 2,
             (r + 1) * game.BLOCK - game.BLOCK / 2,
@@ -104,13 +127,19 @@ const Render3D = {
       const pivot = new T.Group();
       const topY = game.TROWS * game.BLOCK;
       pivot.position.set(game.tx(side) + game.TCOLS * game.BLOCK / 2, topY + 10, 0);
-      const base = new T.Mesh(new T.BoxGeometry(30, 14, 24), Render3D._mats.cannon);
-      base.position.y = -4;
-      pivot.add(base);
-      const barrel = new T.Mesh(new T.CylinderGeometry(5, 6.5, 46, 12), Render3D._mats.cannon);
-      barrel.rotation.z = -Math.PI / 2;               // barrel along +x, rotates with aim
-      barrel.position.x = 20;
-      pivot.add(barrel);
+      if (models) {
+        const cm = models.cannon.scene.clone(true);   // barrel along +x, rotates with aim
+        cm.position.y = -2;
+        pivot.add(cm);
+      } else {
+        const base = new T.Mesh(new T.BoxGeometry(30, 14, 24), Render3D._mats.cannon);
+        base.position.y = -4;
+        pivot.add(base);
+        const barrel = new T.Mesh(new T.CylinderGeometry(5, 6.5, 46, 12), Render3D._mats.cannon);
+        barrel.rotation.z = -Math.PI / 2;             // barrel along +x, rotates with aim
+        barrel.position.x = 20;
+        pivot.add(barrel);
+      }
       scene.add(pivot);
       Render3D._cannons[side] = pivot;
     }
@@ -149,18 +178,22 @@ const Render3D = {
     }
     Render3D._r.render(Render3D._scene, Render3D._cam);
 
-    // Adaptive pixel ratio + fallback request (spec: 45fps floor, 3s window).
-    const dt = performance.now() - t0;
-    const f = Render3D._frame; f.n++; f.t += dt;
-    if (f.t >= 3000) {
-      const avg = f.n / (f.t / 1000);
-      f.n = 0; f.t = 0;
-      if (avg < 45) {
-        if (Render3D._pr > 0.5) {
-          Render3D._pr = Math.max(0.5, Render3D._pr - 0.25);
-          Render3D._r.setPixelRatio(Render3D._pr);
-        } else if (++Render3D._lowStreak >= 2) return false; // give up → 2D
-      } else Render3D._lowStreak = 0;
+    // Adaptive pixel ratio + fallback request (admin-tunable floor, 3s window).
+    const cfg = (window.App && App.graphics && App.graphics.webgl3d) || {};
+    if (cfg.adaptive !== false) {
+      const dt = performance.now() - t0;
+      const f = Render3D._frame; f.n++; f.t += dt;
+      if (f.t >= 3000) {
+        const avg = f.n / (f.t / 1000);
+        f.n = 0; f.t = 0;
+        const floor = Number(cfg.min_fps) || 45;
+        if (avg < floor) {
+          if (Render3D._pr > 0.5) {
+            Render3D._pr = Math.max(0.5, Render3D._pr - 0.25);
+            Render3D._r.setPixelRatio(Render3D._pr);
+          } else if (++Render3D._lowStreak >= 2) return false; // give up → 2D
+        } else Render3D._lowStreak = 0;
+      }
     }
     return true;
   },
@@ -173,6 +206,7 @@ const Render3D = {
       if (Render3D._host) Render3D._host.classList.remove("gl3d");
     } catch (e) {}
     Render3D._gl = null; Render3D._host = null; Render3D._syncBox = null;
+    Render3D._models = null;
     Render3D._r = null; Render3D._scene = null; Render3D._cam = null;
     Render3D._blocks = { p1: [], p2: [] }; Render3D._cannons = {};
     Render3D._ready = false;
