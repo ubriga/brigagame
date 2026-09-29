@@ -2077,7 +2077,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "destination_email": "ubriga@gmail.com",
     "user_max_per_hour": 5,
     "guest_max_per_hour": 2,
-    "max_length": 2000
+    "max_length": 2000,
+    "reply_enabled": true
   },
   "invite_system": {
     "enabled": true,
