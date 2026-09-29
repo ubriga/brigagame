@@ -395,6 +395,19 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       const body: any = await request.json().catch(() => ({}));
       // Honeypot: bots that fill the hidden field get a silent success.
       if (String(body.website ?? "").trim()) return json({ ok: true });
+      const rtype = ["bug", "question", "suggestion"].includes(String(body.type)) ? String(body.type) : "";
+      if (!rtype)
+        return json({ error: "bad_type", error_he: "יש לבחור סוג פנייה." }, 400);
+      const maxLen = Math.max(100, Math.trunc(Number(cf.max_length ?? 2000)));
+      const message = String(body.message ?? "").trim().slice(0, maxLen);
+      if (!message)
+        return json({ error: "empty_message", error_he: "יש לכתוב כמה מילים לפני השליחה." }, 400);
+      let replyEmail = registered ? String(user.email ?? "") : "";
+      if (!registered) {
+        replyEmail = String(body.email ?? "").trim().toLowerCase().slice(0, 200);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyEmail))
+          return json({ error: "bad_email", error_he: "כתובת המייל לא תקינה - צריך אותה כדי לענות לך." }, 400);
+      }
       const ip = request.headers.get("CF-Connecting-IP") ?? "";
       const identKind = registered ? "user" : "guest";
       const ident = registered ? String(user.id)
@@ -414,19 +427,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
           error_he: "נשלחו כבר כמה פניות לאחרונה. נסו שוב בעוד כשעה." }, 429);
       } else {
         await env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
-      }
-      const rtype = ["bug", "question", "suggestion"].includes(String(body.type)) ? String(body.type) : "";
-      if (!rtype)
-        return json({ error: "bad_type", error_he: "יש לבחור סוג פנייה." }, 400);
-      const maxLen = Math.max(100, Math.trunc(Number(cf.max_length ?? 2000)));
-      const message = String(body.message ?? "").trim().slice(0, maxLen);
-      if (!message)
-        return json({ error: "empty_message", error_he: "יש לכתוב כמה מילים לפני השליחה." }, 400);
-      let replyEmail = registered ? String(user.email ?? "") : "";
-      if (!registered) {
-        replyEmail = String(body.email ?? "").trim().toLowerCase().slice(0, 200);
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyEmail))
-          return json({ error: "bad_email", error_he: "כתובת המייל לא תקינה - צריך אותה כדי לענות לך." }, 400);
       }
       const ctxIn: any = body.context && typeof body.context === "object" ? body.context : {};
       const context = {
