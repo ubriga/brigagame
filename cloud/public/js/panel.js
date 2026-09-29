@@ -191,7 +191,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         ${r.replied_at ? `<p style="margin:8px 0 0;color:var(--accent);font-weight:700">✅ נענתה ב-${esc(String(r.replied_at).slice(0, 16).replace("T", " "))}</p>
           <p style="white-space:pre-wrap;margin:4px 0 0;font-size:13px" class="sub">${esc(r.reply_message || "")}</p>` : ""}
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
-          <textarea rows="3" maxlength="4000" id="reply-${r.id}" placeholder="תשובה לשחקן - תישלח במייל ${r.user_id ? "לכתובת החשבון" : "לכתובת שהשאיר"}"></textarea>
+          <textarea rows="3" maxlength="4000" id="reply-${r.id}" placeholder="תשובה לשחקן - תישלח במייל ${r.user_id && !r.reporter_is_guest ? "לכתובת החשבון" : "לכתובת שהשאיר"}"></textarea>
           <div><button class="btn" data-reply-to="${r.id}">📧 שליחת תשובה במייל</button></div>
         </div>
       </div>`).join("")}`;
