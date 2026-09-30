@@ -35,6 +35,16 @@ const Render3D = {
         vent: await load("../assets/gfx3d/block_vent.glb"),
         cannon: await load("../assets/gfx3d/cannon.glb"),
       };
+      // Stage 3 background set: each asset optional; a miss never kills the scene.
+      const opt = (u) => new Promise((res) => loader.load(u, res, undefined, () => res(null)));
+      models.bg = {
+        mountains: await opt("../assets/gfx3d/bg_mountains.glb"),
+        airship: await opt("../assets/gfx3d/bg_airship.glb"),
+        moon: await opt("../assets/gfx3d/bg_moon.glb"),
+        gear: await opt("../assets/gfx3d/bg_gear.glb"),
+        cloud: await opt("../assets/gfx3d/bg_cloud.glb"),
+        plate: await opt("../assets/gfx3d/ground_plate.glb"),
+      };
     } catch (e) { models = null; }
     Render3D._models = models;
     /* The 2D canvas already owns a 2D context, so WebGL gets its own canvas
@@ -69,7 +79,7 @@ const Render3D = {
 
     const scene = new T.Scene();
     scene.background = new T.Color(0x0c1f30);
-    scene.fog = new T.Fog(0x0c1f30, 800, 1700);
+    scene.fog = new T.Fog(0x0c1f30, 900, 2400);
 
     const cam = new T.PerspectiveCamera(38, game.W / game.H, 1, 4000);
     cam.position.set(game.W / 2, 380, 780);
@@ -93,6 +103,67 @@ const Render3D = {
       new T.MeshStandardMaterial({ color: 0x2a2438, roughness: 0.85, metalness: 0.3 }));
     ground.position.set(game.W / 2, -22, 0);
     scene.add(ground);
+
+    /* Stage 3: background / ground detail / atmosphere. Everything is static
+     * or near-static; per-frame cost is a few position/rotation writes. */
+    Render3D._bgMotion = []; Render3D._bgT = 0;
+    const bg = models && models.bg;
+    if (bg) {
+      if (bg.mountains) {
+        const mt = bg.mountains.scene.clone(true);
+        mt.position.set(game.W / 2, -10, -520);
+        scene.add(mt);
+      }
+      if (bg.moon) {
+        const mn = bg.moon.scene.clone(true);
+        mn.position.set(game.W * 0.76, 470, -430);
+        scene.add(mn);
+      }
+      if (bg.airship) {
+        const ship = bg.airship.scene.clone(true);
+        ship.position.set(game.W * 0.2, 520, -420);
+        scene.add(ship);
+        Render3D._bgMotion.push({ obj: ship, kind: "drift", speed: 9, min: -180, max: game.W + 180 });
+      }
+      if (bg.cloud) {
+        for (const [fx, fy, fz, sc, sp] of [[0.15, 560, -480, 1.6, 5.0], [0.55, 615, -540, 2.1, 3.0], [0.85, 500, -400, 1.2, 6.5]]) {
+          const cl = bg.cloud.scene.clone(true);
+          cl.scale.setScalar(sc);
+          cl.position.set(game.W * fx, fy, fz);
+          scene.add(cl);
+          Render3D._bgMotion.push({ obj: cl, kind: "drift", speed: sp, min: -220, max: game.W + 220 });
+        }
+      }
+      if (bg.gear) {
+        for (const [fx, rot] of [[0.32, 0.06], [0.68, -0.045]]) {
+          const gr = bg.gear.scene.clone(true);
+          gr.position.set(game.W * fx, 24, -260);
+          scene.add(gr);
+          Render3D._bgMotion.push({ obj: gr, kind: "spin", speed: rot });
+        }
+      }
+      if (bg.plate) {
+        for (let px = 0; px * 120 < game.W + 120; px++) {
+          const plate = bg.plate.scene.clone(true);
+          plate.position.set(px * 120 + 60, -1.5, 0);
+          scene.add(plate);
+        }
+      }
+    }
+    // Stars: one Points draw call, fully static, fog-free.
+    {
+      const N = 170, pos = new Float32Array(N * 3);
+      let seed = 7;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < N; i++) {
+        pos[i * 3] = rnd() * (game.W + 800) - 400;
+        pos[i * 3 + 1] = 320 + rnd() * 520;
+        pos[i * 3 + 2] = -300 - rnd() * 400;
+      }
+      const sg = new T.BufferGeometry();
+      sg.setAttribute("position", new T.BufferAttribute(pos, 3));
+      scene.add(new T.Points(sg, new T.PointsMaterial({ color: 0xf5e9c8, size: 2.2, sizeAttenuation: false, fog: false })));
+    }
 
     // Placeholder block materials (stage 1 cubes; GLB models arrive in stage 2).
     Render3D._mats = {
@@ -179,6 +250,20 @@ const Render3D = {
       const d = { rows: tw.length || game.TROWS };
       pivot.position.y = d.rows * game.BLOCK + 10;
     }
+    // Stage-3 atmosphere motion: wall-clock dt, a few writes per frame.
+    const bm = Render3D._bgMotion;
+    if (bm && bm.length) {
+      const nwb = performance.now();
+      const dtb = Math.min(0.25, Render3D._bgT ? (nwb - Render3D._bgT) / 1000 : 0.016);
+      Render3D._bgT = nwb;
+      for (const mo of bm) {
+        if (mo.kind === "spin") mo.obj.rotation.z += mo.speed * dtb * 6;
+        else {
+          mo.obj.position.x += mo.speed * dtb;
+          if (mo.obj.position.x > mo.max) mo.obj.position.x = mo.min;
+        }
+      }
+    }
     Render3D._r.render(Render3D._scene, Render3D._cam);
 
     // Adaptive pixel ratio + fallback request (admin-tunable floor).
@@ -215,7 +300,7 @@ const Render3D = {
       if (Render3D._host) Render3D._host.classList.remove("gl3d");
     } catch (e) {}
     Render3D._gl = null; Render3D._host = null; Render3D._syncBox = null;
-    Render3D._models = null;
+    Render3D._models = null; Render3D._bgMotion = null; Render3D._bgT = 0;
     Render3D._r = null; Render3D._scene = null; Render3D._cam = null;
     Render3D._blocks = { p1: [], p2: [] }; Render3D._cannons = {};
     Render3D._ready = false;
