@@ -44,6 +44,10 @@ const Render3D = {
         gear: await opt("../assets/gfx3d/bg_gear.glb"),
         cloud: await opt("../assets/gfx3d/bg_cloud.glb"),
         plate: await opt("../assets/gfx3d/ground_plate.glb"),
+        lantern: await opt("../assets/gfx3d/prop_lantern.glb"),
+        viaduct: await opt("../assets/gfx3d/bg_viaduct.glb"),
+        village: await opt("../assets/gfx3d/bg_village.glb"),
+        mountainsFar: await opt("../assets/gfx3d/bg_mountains_far.glb"),
       };
     } catch (e) { models = null; }
     Render3D._models = models;
@@ -107,6 +111,24 @@ const Render3D = {
     /* Stage 3: background / ground detail / atmosphere. Everything is static
      * or near-static; per-frame cost is a few position/rotation writes. */
     Render3D._bgMotion = []; Render3D._bgT = 0;
+    const glowTex = (() => {
+      const cv = document.createElement("canvas"); cv.width = cv.height = 128;
+      const g2d = cv.getContext("2d");
+      const gr = g2d.createRadialGradient(64, 64, 0, 64, 64, 64);
+      gr.addColorStop(0, "rgba(255,255,255,1)");
+      gr.addColorStop(0.35, "rgba(255,255,255,.42)");
+      gr.addColorStop(1, "rgba(255,255,255,0)");
+      g2d.fillStyle = gr; g2d.fillRect(0, 0, 128, 128);
+      return new T.CanvasTexture(cv);
+    })();
+    Render3D._glowTex = glowTex;
+    const glowSprite = (color, sx, sy, opacity) => {
+      const sp = new T.Sprite(new T.SpriteMaterial({
+        map: glowTex, color, transparent: true, opacity,
+        blending: T.AdditiveBlending, depthWrite: false, fog: false }));
+      sp.scale.set(sx, sy, 1);
+      return sp;
+    };
     const bg = models && models.bg;
     if (bg) {
       if (bg.mountains) {
@@ -114,14 +136,26 @@ const Render3D = {
         mt.position.set(game.W / 2, -10, -520);
         scene.add(mt);
       }
+      if (bg.mountainsFar) {
+        const mf = bg.mountainsFar.scene.clone(true);
+        mf.position.set(game.W / 2, -6, -720);
+        scene.add(mf);
+      }
       if (bg.moon) {
         const mn = bg.moon.scene.clone(true);
-        mn.position.set(game.W * 0.76, 470, -430);
+        mn.scale.setScalar(1.5);
+        mn.position.set(game.W * 0.74, 520, -480);
         scene.add(mn);
+        const halo = glowSprite(0xffe9b8, 380, 380, 0.42);
+        halo.position.copy(mn.position); halo.position.z -= 12;
+        scene.add(halo);
       }
       if (bg.airship) {
         const ship = bg.airship.scene.clone(true);
-        ship.position.set(game.W * 0.2, 520, -420);
+        ship.scale.setScalar(1.3);
+        ship.position.set(game.W * 0.2, 500, -360);
+        ship.add(glowSprite(0xffd9a0, 34, 34, 0.55));   // nose light
+        ship.children[ship.children.length - 1].position.set(56, 0, 0);
         scene.add(ship);
         Render3D._bgMotion.push({ obj: ship, kind: "drift", speed: 9, min: -180, max: game.W + 180 });
       }
@@ -149,20 +183,93 @@ const Render3D = {
           scene.add(plate);
         }
       }
+      if (bg.viaduct) {
+        const vd = bg.viaduct.scene.clone(true);
+        vd.position.set(game.W / 2 - 277, 118, -360);
+        scene.add(vd);
+      }
+      if (bg.village) {
+        for (const vx of [-190, game.W + 40]) {
+          const vg = bg.village.scene.clone(true);
+          vg.position.set(vx, -4, -300);
+          scene.add(vg);
+        }
+      }
+      if (bg.lantern) {
+        for (const [fx, withLight] of [[0.30, false], [0.42, true], [0.58, true], [0.70, false]]) {
+          const lp = bg.lantern.scene.clone(true);
+          const lx = game.W * fx;
+          lp.position.set(lx, 0, 88);
+          scene.add(lp);
+          const halo = glowSprite(0xffa54d, 60, 60, 0.5);
+          halo.position.set(lx, 37, 88);
+          scene.add(halo);
+          if (withLight) {
+            const pl2 = new T.PointLight(0xffa54d, 14000, 300, 2);
+            pl2.position.set(lx, 42, 92);
+            scene.add(pl2);
+          }
+        }
+      }
     }
-    // Stars: one Points draw call, fully static, fog-free.
+    // Water strip in front of the platform: dark teal, tight specular sheen.
     {
-      const N = 170, pos = new Float32Array(N * 3);
+      const water = new T.Mesh(new T.PlaneGeometry(game.W + 700, 230),
+        new T.MeshStandardMaterial({ color: 0x10303f, roughness: 0.16, metalness: 0.6 }));
+      water.rotation.x = -Math.PI / 2;
+      water.position.set(game.W / 2, -20.5, 200);
+      scene.add(water);
+    }
+    // Mist banks rolling over the platform edge: big soft drifting sprites.
+    for (const [fx, fy, fz, sx, sy, op, sp] of [
+        [0.2, 14, 120, 380, 95, 0.13, 7], [0.6, 24, 70, 320, 80, 0.10, 5],
+        [0.85, 10, 150, 420, 100, 0.12, 9], [0.4, 30, 30, 260, 70, 0.08, 4]]) {
+      const mist = glowSprite(0x9fc4d8, sx, sy, op);
+      mist.position.set(game.W * fx, fy, fz);
+      scene.add(mist);
+      Render3D._bgMotion.push({ obj: mist, kind: "drift", speed: sp, min: -320, max: game.W + 320 });
+    }
+    // Cool rim from behind so tower edges read against the sky.
+    {
+      const rim = new T.DirectionalLight(0x86b4e8, 0.35);
+      rim.position.set(game.W / 2, 620, -700);
+      rim.target.position.set(game.W / 2, 120, 0);
+      scene.add(rim); scene.add(rim.target);
+    }
+
+    // Sky dome: vertical gradient teal→deep blue (procedural 2px texture).
+    {
+      const cv = document.createElement("canvas"); cv.width = 2; cv.height = 256;
+      const g2d = cv.getContext("2d");
+      const gr = g2d.createLinearGradient(0, 0, 0, 256);
+      gr.addColorStop(0, "#02060e"); gr.addColorStop(0.6, "#081a2c"); gr.addColorStop(1, "#123243");
+      g2d.fillStyle = gr; g2d.fillRect(0, 0, 2, 256);
+      const tex = new T.CanvasTexture(cv);
+      const dome = new T.Mesh(new T.SphereGeometry(2300, 20, 14),
+        new T.MeshBasicMaterial({ map: tex, side: T.BackSide, fog: false, depthWrite: false }));
+      dome.position.set(game.W / 2, 200, 0);
+      dome.renderOrder = -10;
+      scene.add(dome);
+      scene.background = null;
+    }
+
+    // Stars: two size layers, additive, subtle.
+    {
       let seed = 7;
       const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-      for (let i = 0; i < N; i++) {
-        pos[i * 3] = rnd() * (game.W + 800) - 400;
-        pos[i * 3 + 1] = 320 + rnd() * 520;
-        pos[i * 3 + 2] = -300 - rnd() * 400;
+      for (const [n, size, op] of [[150, 1.7, 0.75], [26, 3.4, 0.95]]) {
+        const pos = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+          pos[i * 3] = rnd() * (game.W + 900) - 450;
+          pos[i * 3 + 1] = 300 + rnd() * 560;
+          pos[i * 3 + 2] = -300 - rnd() * 420;
+        }
+        const sg = new T.BufferGeometry();
+        sg.setAttribute("position", new T.BufferAttribute(pos, 3));
+        scene.add(new T.Points(sg, new T.PointsMaterial({
+          color: 0xf5e9c8, size, sizeAttenuation: false, fog: false,
+          transparent: true, opacity: op, blending: T.AdditiveBlending, depthWrite: false })));
       }
-      const sg = new T.BufferGeometry();
-      sg.setAttribute("position", new T.BufferAttribute(pos, 3));
-      scene.add(new T.Points(sg, new T.PointsMaterial({ color: 0xf5e9c8, size: 2.2, sizeAttenuation: false, fog: false })));
     }
 
     // Placeholder block materials (stage 1 cubes; GLB models arrive in stage 2).
