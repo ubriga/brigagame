@@ -383,14 +383,23 @@ const Render3D = {
      * Optional: any load failure keeps the plain render path. */
     let composer = null;
     try {
-      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }, { ShaderPass }] = await Promise.all([
         import("../vendor/postprocessing/EffectComposer.js"),
         import("../vendor/postprocessing/RenderPass.js"),
         import("../vendor/postprocessing/UnrealBloomPass.js"),
         import("../vendor/postprocessing/OutputPass.js"),
+        import("../vendor/postprocessing/ShaderPass.js"),
       ]);
       composer = new EffectComposer(r);
       composer.addPass(new RenderPass(scene, cam));
+      /* NaN/Inf guard: a single bad HDR texel (rare specular/driver artifact)
+       * gets smeared by bloom's blur chain into a giant black block. Clamp it
+       * before the bright pass so the frame can degrade gracefully. */
+      composer.addPass(new ShaderPass({
+        uniforms: { tDiffuse: { value: null } },
+        vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+        fragmentShader: "uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec4 col = texture2D(tDiffuse, vUv); vec3 v = col.rgb; if (!(v.r == v.r) || abs(v.r) > 1.0e6) v.r = 0.0; if (!(v.g == v.g) || abs(v.g) > 1.0e6) v.g = 0.0; if (!(v.b == v.b) || abs(v.b) > 1.0e6) v.b = 0.0; gl_FragColor = vec4(v, col.a); }"
+      }));
       const bloom = new UnrealBloomPass(new T.Vector2(game.W, game.H), 0.5, 0.65, 0.8);
       composer.addPass(bloom);
       composer.addPass(new OutputPass());
@@ -439,16 +448,19 @@ const Render3D = {
           grid[r][c].position.y = (tw.length - r) * game.BLOCK - game.BLOCK / 2;
       }
       // Rubble stubs crown torn columns once the tower is damaged (step 2).
+      // A column counts as torn when the snap's top row is gone there; a fully
+      // destroyed column keeps a ground-level stub instead of vanishing.
       const rbs = Render3D._rubble && Render3D._rubble[side];
       if (rbs && rbs.length) {
         const hp = (game.displayHp && game.displayHp[side]) || (game.snap && game.snap.tower_hp && game.snap.tower_hp[side]);
         const damaged = hp && hp.hp < hp.max - 0.5;
         for (let c = 0; c < rbs.length; c++) {
+          const torn = !!(tw && (!(tw[0] && tw[0][c]) || !tw.length));
           let topY = -1;
           for (let r = 0; r < grid.length; r++)
             if (grid[r] && grid[r][c] && grid[r][c].visible) topY = Math.max(topY, grid[r][c].position.y);
-          rbs[c].visible = !!(damaged && topY > 0);
-          if (rbs[c].visible) rbs[c].position.y = topY + game.BLOCK / 2 + 1;
+          rbs[c].visible = !!(damaged && torn);
+          if (rbs[c].visible) rbs[c].position.y = topY > 0 ? topY + game.BLOCK / 2 + 1 : game.BLOCK / 2 - 4;
         }
       }
       // Cannon aim: my side follows the live aim, the other rests at 45°.

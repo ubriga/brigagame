@@ -393,3 +393,16 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Applied: (1) composition - moon 1.15x/halo 0.30, villages out to -340/W+200, one gear (was 2), viaduct z-440 + 0.75 dim; (2) lighting - hemisphere 1.15, new cool rim dir 0.6 from behind-top, warm front fill 0.5 - tower bodies no longer near-black; (3) tower identity - body blocks now cool painted 'plate' (0.292,0.352,0.408 + slight emissive) with brass top rims, NEW block_corner.glb (brass spine, mirrored outward on right edge), NEW block_belt.glb (brass band rows r%4==2), bigger windows (14px pane), cannon 1.28x + belt mount platform; (4) material family plate/plateDark added. Grid/width/destruction/hitboxes untouched - pure visual variants on same 24 cube.
 - QA: fresh match 2afafce3d3ac frozen at start, BOTH TOWERS INTACT (432/432, 259/259). Frames: /downloads/cloud-browser-20260930-053615.png (wide towers + press center) + 054106.png (press raised center-left, lamp). Press verified live (moving-obstacle match; at one moment it slides behind right tower - QA framing only, not a bug).
 - sw 82 test only; prod untouched; token shredded; steps 2-4 NOT started (await his verdict on frame).
+
+## 2026-09-30 ~09:09 IDT - gfx 3.0 step 2 (finished tower) - sw 85 on test
+- render3d.js v15: rubble destruction states (torn cols crowned via snap top-row test; fully-destroyed
+  cols keep a ground stub), col pool uses real snap width (cap 8) - expansion cols render now,
+  corner spine mirrored per real width.
+- BUG FOUND+FIXED in QA: intermittent half-screen blackout = NaN/Inf HDR texel smeared by bloom's
+  blur chain (proven by Float32 readback: NaN in composer buffer, direct render clean; bisect:
+  moon DirectionalLight x one block group). Added NaN-guard ShaderPass before bloom (clamps bad
+  texels). Verified: 4 passes, finite readback, full-frame renders in 2 matches + phone viewport.
+- QA (frozen guest bot matches, real game scale): intact 060609, near-destroyed 060742 (rubble
+  stubs visible, visCount [4,0,0,0] + rub y 105/9/9/9), phone 390px 060808.
+- block_rubble.glb 6,632 bytes. Deploys sw 83->84->85 all to test env only.
+- Guest-prompt feature STILL PARKED (parent 08:50: re-pop interval admin-configurable 5/10/20 min).
