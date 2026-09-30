@@ -12,6 +12,7 @@ import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
 import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
+import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
 export { MatchRoom };
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -111,6 +112,7 @@ async function handleRequest(request, env, ctx) {
             // Installed-PWA logins: the Google redirect leaves the app storage, so
             // the client emphasizes the email-code path unless the admin disables it.
             pwa_email_hint: af.pwa_email_hint !== false,
+            guest_enabled: !lockNow.active && controls.guest_mode?.enabled !== false,
         });
     }
     // ---- Server-side OAuth redirect flow (no popup; works in webviews) ----
@@ -267,6 +269,15 @@ async function handleRequest(request, env, ctx) {
         if (!ok)
             return json({ error: "bad_code", error_he: "הקוד שגוי. נסה שוב." }, 401);
         await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
+        // Registration attaches to the guest session: same row, same token,
+        // all progress carries over (only when the email is not taken).
+        const up = await upgradeGuestIfPresent(env, request, email, email.split("@")[0], "");
+        if (up) {
+            await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+                + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
+                .bind(Number(up.user.id), String(up.user.id), JSON.stringify({ via: "email_code" }), new Date().toISOString()).run().catch(() => { });
+            return json({ token: up.token, user: up.user, upgraded: true });
+        }
         const user = await getOrCreateUser(d1(env.DB), email, email.split("@")[0], "");
         const token = await createSession(d1(env.DB), Number(user.id));
         return json({ token, user });
@@ -289,6 +300,14 @@ async function handleRequest(request, env, ctx) {
                     await audit("lockdown_denied");
                     return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.effective_end }, 503);
                 }
+                const up = await upgradeGuestIfPresent(env, request, id.email, id.name, id.picture);
+                if (up) {
+                    await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+                        + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
+                        .bind(Number(up.user.id), String(up.user.id), JSON.stringify({ via: "google_popup" }), new Date().toISOString()).run().catch(() => { });
+                    await audit("ok");
+                    return json({ token: up.token, user: up.user, upgraded: true });
+                }
                 const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
                 const token = await createSession(d1(env.DB), Number(user.id));
                 await audit("ok");
@@ -309,6 +328,144 @@ async function handleRequest(request, env, ctx) {
             return json({ error: "auth_unavailable",
                 error_he: "שירות ההתחברות לא זמין כרגע. נסה שוב בעוד רגע." }, 503);
         }
+    }
+    // ---- Guest mode: instant anonymous play ("שחק כאורח") ----
+    if (path === "/api/guest" && request.method === "POST") {
+        const rlG = await limited(env, request, "auth", null);
+        if (rlG)
+            return rlG;
+        const cfg = await getGuestCfg(env);
+        if (!cfg.enabled)
+            return json({ error: "guest_disabled", error_he: "כניסת אורחים כבויה כרגע." }, 403);
+        ctx.waitUntil(sweepExpiredGuests(env).catch((e) => console.error("SWEEP_FAIL", e && e.message ? e.message : String(e))));
+        const { token, user, expires_at } = await createGuest(env);
+        await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+            + " VALUES (?, 'guest.create', 'user', ?, '{}', ?)")
+            .bind(Number(user.id), String(user.id), new Date().toISOString()).run().catch(() => { });
+        return json({ token, user, guest_expires_at: expires_at });
+    }
+    // ---- Cookie-consent evidence: the client records the visitor's choice.
+    // No auth; the IP is stored hashed like every audit row. ----
+    if (path === "/api/legal/consent" && request.method === "POST") {
+        const rlC = await limited(env, request, "auth", null);
+        if (rlC)
+            return rlC;
+        const body = await request.json().catch(() => ({}));
+        const choice = body.choice === "all" ? "all" : "essential";
+        const { sha256Hex: sh } = await import("./auth.js");
+        const ip = request.headers.get("CF-Connecting-IP") ?? "";
+        await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, ip_hash, user_agent, created_at)"
+            + " VALUES (NULL, 'consent.choice', 'legal', '', ?, ?, ?, ?)")
+            .bind(JSON.stringify({ choice, lang: String(body.lang ?? "").slice(0, 8) }), ip ? await sh(ip) : "", (request.headers.get("User-Agent") ?? "").slice(0, 300), new Date().toISOString()).run().catch(() => { });
+        return json({ ok: true });
+    }
+    // ---- Contact / bug-report form: every report is stored in D1 and
+    // emailed instantly to the admin-configured destination. Open to
+    // registered players (auto-identified), guest players and logged-out
+    // visitors (both leave a reply email). Admin-tunable via
+    // gameplay_controls.contact_form; per-identity hourly caps are
+    // D1-backed so they hold across isolates. ----
+    if (path === "/api/contact" && request.method === "POST") {
+        const controls = await getControls(env);
+        const cf = controls.contact_form ?? {};
+        if (cf.enabled === false)
+            return json({ error: "contact_disabled", error_he: "טופס יצירת הקשר כבוי כרגע. נסו שוב מאוחר יותר." }, 403);
+        const user = await currentUser(d1(env.DB), request);
+        const registered = user && !user.is_guest;
+        const body = await request.json().catch(() => ({}));
+        // Honeypot: bots that fill the hidden field get a silent success.
+        if (String(body.website ?? "").trim())
+            return json({ ok: true });
+        const rtype = ["bug", "question", "suggestion"].includes(String(body.type)) ? String(body.type) : "";
+        if (!rtype)
+            return json({ error: "bad_type", error_he: "יש לבחור סוג פנייה." }, 400);
+        const maxLen = Math.max(100, Math.trunc(Number(cf.max_length ?? 2000)));
+        const message = String(body.message ?? "").trim().slice(0, maxLen);
+        if (!message)
+            return json({ error: "empty_message", error_he: "יש לכתוב כמה מילים לפני השליחה." }, 400);
+        let replyEmail = registered ? String(user.email ?? "") : "";
+        if (!registered) {
+            replyEmail = String(body.email ?? "").trim().toLowerCase().slice(0, 200);
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyEmail))
+                return json({ error: "bad_email", error_he: "כתובת המייל לא תקינה - צריך אותה כדי לענות לך." }, 400);
+        }
+        const ip = request.headers.get("CF-Connecting-IP") ?? "";
+        const identKind = registered ? "user" : "guest";
+        const ident = registered ? String(user.id)
+            : (ip ? await sha256Hex(ip) : "anon");
+        const hourlyCap = Math.max(1, Math.trunc(Number(registered ? cf.user_max_per_hour ?? 5 : cf.guest_max_per_hour ?? 2)));
+        const rlKey = `contact:${identKind}:${ident}`;
+        const nowSec = Date.now() / 1000;
+        const rlRow = await env.DB.prepare("SELECT * FROM rate_limits WHERE key = ?").bind(rlKey).first();
+        if (!rlRow || nowSec - Number(rlRow.window_start) > 3600) {
+            await env.DB.prepare("INSERT INTO rate_limits (key, window_start, count) VALUES (?,?,1)"
+                + " ON CONFLICT(key) DO UPDATE SET window_start=?, count=1")
+                .bind(rlKey, nowSec, nowSec).run();
+        }
+        else if (Number(rlRow.count) >= hourlyCap) {
+            return json({ error: "rate_limited",
+                error_he: "נשלחו כבר כמה פניות לאחרונה. נסו שוב בעוד כשעה." }, 429);
+        }
+        else {
+            await env.DB.prepare("UPDATE rate_limits SET count = count + 1 WHERE key = ?").bind(rlKey).run();
+        }
+        const ctxIn = body.context && typeof body.context === "object" ? body.context : {};
+        const context = {
+            client_version: String(ctxIn.client_version ?? "").slice(0, 20),
+            screen: String(ctxIn.screen ?? "").slice(0, 120),
+            lang: String(ctxIn.lang ?? "").slice(0, 8),
+            user_agent: (request.headers.get("User-Agent") ?? "").slice(0, 300),
+        };
+        const reporterName = user ? String(user.name ?? "") : "";
+        const ins = await env.DB.prepare("INSERT INTO contact_reports (user_id, reporter_name, reporter_email, rtype, message, context, ip_hash, user_agent, created_at)"
+            + " VALUES (?,?,?,?,?,?,?,?,?)")
+            .bind(user ? Number(user.id) : null, reporterName.slice(0, 120), replyEmail, rtype, message, JSON.stringify(context), ip ? await sha256Hex(ip) : "", context.user_agent, new Date().toISOString()).run();
+        const reportId = Number(ins.meta?.last_row_id ?? 0);
+        await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, ip_hash, user_agent, created_at)"
+            + " VALUES (?, 'contact.report', 'contact_report', ?, ?, ?, ?, ?)")
+            .bind(user ? Number(user.id) : null, String(reportId), JSON.stringify({ rtype, registered: Boolean(registered) }), ip ? await sha256Hex(ip) : "", context.user_agent, new Date().toISOString())
+            .run().catch(() => { });
+        const typeHe = rtype === "bug" ? "דיווח על תקלה" : rtype === "question" ? "שאלה" : "הצעה לשיפור";
+        const subject = `[Brigagame 2.0] ${typeHe} - ${reporterName || replyEmail}`;
+        const text = [
+            `Report-ID: ${reportId}`,
+            `Type: ${rtype} (${typeHe})`,
+            `Player: ${reporterName || "-"}`,
+            `User-ID: ${user ? String(user.id) : "-"}`,
+            `Account: ${registered ? "registered" : user ? "guest" : "visitor"}`,
+            `Reply-Email: ${replyEmail || "-"}`,
+            `Screen: ${context.screen || "-"}`,
+            `Client-Version: ${context.client_version || "-"}`,
+            `Language: ${context.lang || "-"}`,
+            `User-Agent: ${context.user_agent || "-"}`,
+            `Time: ${new Date().toISOString()}`,
+            "",
+            "Message:",
+            message,
+        ].join("\n");
+        let mailed = false;
+        const dest = String(cf.destination_email ?? "").trim() || String(env.ADMIN_EMAIL ?? "");
+        const smtpUser = String(env.INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
+        const smtpPass = String(env.INBOXLV_PASS ?? "")
+            || String(controls.auth_flow?.inboxlv_pass ?? "");
+        if (smtpUser && smtpPass && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
+            const sent = await sendSmtpMail({
+                host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
+                from: smtpUser, to: dest, subject, text,
+            });
+            mailed = sent.ok;
+            if (!sent.ok)
+                console.error("contact_mail_fail", sent.error);
+        }
+        else {
+            console.error("contact_mail_no_creds_or_dest");
+        }
+        if (!mailed) {
+            await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+                + " VALUES (NULL, 'contact.report_email_failed', 'contact_report', ?, '{}', ?)")
+                .bind(String(reportId), new Date().toISOString()).run().catch(() => { });
+        }
+        return json({ ok: true, report_id: reportId, mailed });
     }
     if (path === "/api/auth/logout" && request.method === "POST") {
         const auth = request.headers.get("authorization") ?? "";
@@ -348,7 +505,7 @@ async function handleRequest(request, env, ctx) {
     const matchHandled = await handleMatchApi(env, request, path);
     if (matchHandled)
         return matchHandled;
-    const handled = await handleApi(env, request, path);
+    const handled = await handleApi(env, request, path, ctx);
     if (handled)
         return handled;
     // Everything else: static assets (PWA).

@@ -10,8 +10,9 @@ import { CATALOG, COATING_ORDER, COATING_NAMES } from "../game/catalog.js";
 import { DAILY_BASE, DAILY_STREAK_STEP, DAILY_CAP, rankFor } from "../game/economy.js";
 import { rankPayload } from "../game/ranks.js";
 import { addCoins } from "../game/finalize.js";
-import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStreakMilestone } from "../util.js";
+import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStreakMilestone, ilDateDiff } from "../util.js";
 import { limited } from "./ratelimit.js";
+import { getGuestCfg, guestExpiresAt, guestExpired, sweepExpiredGuests } from "./guest.js";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 export function json(body, status = 200) {
     return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
@@ -46,6 +47,7 @@ function publicUser(u, env) {
         idf_rank: rankPayload(Number(u.rank_points ?? 0)),
         wins: u.wins, losses: u.losses, matches_played: u.matches_played,
         is_admin: String(u.email).toLowerCase() === String(env.ADMIN_EMAIL).toLowerCase(),
+        is_guest: Boolean(u.is_guest),
     };
 }
 async function inventoryOf(env, uid) {
@@ -133,7 +135,7 @@ async function expansionPayload(env, uid) {
         jobs: jobs.results, server_time: Date.now() / 1000 };
 }
 // ---------------------------------------------------------------- router
-export async function handleApi(env, request, path) {
+export async function handleApi(env, request, path, ctx) {
     const method = request.method;
     const db = d1(env.DB);
     const needAuth = async () => {
@@ -145,27 +147,64 @@ export async function handleApi(env, request, path) {
         let u = await needAuth();
         if (!u)
             return json({ error: "unauthorized" }, 401);
+        const guestCfg = await getGuestCfg(env);
+        if (u.is_guest && guestExpired(u, guestCfg)) {
+            return json({ error: "guest_expired", error_he: "חשבון האורח פג תוקף. נכנסים מחדש כאורח או נרשמים." }, 401);
+        }
         // Login streak: the first app load of the Israel calendar day increments
         // the streak and pays the day's reward automatically. A skipped day
         // applies the admin's reset policy. Runs before the parallel reads so the
         // response carries the post-grant streak/coins.
         const streakCfg = await getLoginStreak(env);
         let loginReward = null;
-        if (streakCfg.enabled) {
+        let repairOffer = null;
+        let repairExpired = null;
+        if (streakCfg.enabled && !u.is_guest) {
             const todayIL = israelDate(0);
-            if (u.last_daily !== todayIL) {
-                const continued = u.last_daily === israelDate(-1);
+            // A normal login day: advance/reset the streak, pay the day's reward,
+            // and clear any leftover repair state.
+            const grantLoginDay = async (continued) => {
                 const newStreak = continued ? Number(u.streak) + 1
                     : streakCfg.reset_policy === "keep" ? Math.max(1, Number(u.streak))
                         : streakCfg.reset_policy === "to_zero" ? 0 : 1;
                 const amount = newStreak >= 1 ? streakRewardFor(streakCfg, newStreak) : 0;
-                await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ? WHERE id = ?")
+                await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ?, broken_streak = NULL, broken_on = NULL WHERE id = ?")
                     .bind(todayIL, newStreak, Number(u.id)).run();
                 if (amount > 0)
                     await addCoins(db, Number(u.id), amount, "login_streak");
                 await audit(env, request, Number(u.id), "user.login_streak", "user", Number(u.id), { streak: newStreak, amount });
                 loginReward = { streak: newStreak, amount };
-                u = { ...u, last_daily: todayIL, streak: newStreak, coins: Number(u.coins) + amount };
+                u = { ...u, last_daily: todayIL, streak: newStreak, coins: Number(u.coins) + amount, broken_streak: null, broken_on: null };
+            };
+            if (u.broken_on) {
+                if (String(u.broken_on) === todayIL && streakCfg.repair.enabled) {
+                    // Repair offer parked on the return day: valid until IL midnight.
+                    repairOffer = { lost_streak: Number(u.broken_streak), price: streakCfg.repair.price,
+                        restored_streak: Number(u.broken_streak) + ilDateDiff(String(u.last_daily), todayIL) };
+                }
+                else {
+                    // Past IL midnight (or repair switched off while parked): the
+                    // break is final - the reset policy applies like any skipped day.
+                    repairExpired = { lost_streak: Number(u.broken_streak) };
+                    await grantLoginDay(false);
+                }
+            }
+            else if (u.last_daily !== todayIL) {
+                const continued = u.last_daily === israelDate(-1);
+                if (!continued && Number(u.streak) > 0 && streakCfg.repair.enabled && streakCfg.reset_policy !== "keep") {
+                    // Streak breaks today: park the lost streak as a repair offer
+                    // instead of resetting right away. Today's reward waits for the
+                    // player's repair/decline decision.
+                    await env.DB.prepare("UPDATE users SET broken_streak = ?, broken_on = ? WHERE id = ?")
+                        .bind(Number(u.streak), todayIL, Number(u.id)).run();
+                    await audit(env, request, Number(u.id), "user.streak_broken", "user", Number(u.id), { lost_streak: Number(u.streak) });
+                    repairOffer = { lost_streak: Number(u.streak), price: streakCfg.repair.price,
+                        restored_streak: Number(u.streak) + ilDateDiff(String(u.last_daily), todayIL) };
+                    u = { ...u, broken_streak: u.streak, broken_on: todayIL };
+                }
+                else {
+                    await grantLoginDay(continued);
+                }
             }
         }
         // These reads are independent of each other: run them in parallel so the
@@ -183,9 +222,26 @@ export async function handleApi(env, request, path) {
             bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
             maintenance, inventory: inv,
             invite_enabled: controls.invite_system?.enabled === true,
+            ux: controls.ux_onboarding ?? {},
+            graphics: (() => {
+                const gp = controls.graphics_pack ?? {};
+                return {
+                    enabled: gp.enabled === true,
+                    low_spec_default: gp.low_spec_default === true,
+                    max_particles: Number(gp.max_particles ?? 96),
+                    airship_motion: gp.airship_motion !== false,
+                    webgl3d: {
+                        enabled: gp.webgl3d_enabled === true,
+                        adaptive: gp.webgl3d_adaptive !== false,
+                        min_fps: Number(gp.webgl3d_min_fps ?? 45),
+                    },
+                };
+            })(),
             daily_available: streakCfg.enabled ? false : u.last_daily !== today(),
             streak: u.streak, server_date: today(),
             login_reward: loginReward,
+            repair_offer: repairOffer,
+            repair_expired: repairExpired,
             login_streak: {
                 enabled: streakCfg.enabled,
                 base_amount: streakCfg.base_amount,
@@ -194,6 +250,11 @@ export async function handleApi(env, request, path) {
                 next: nextStreakMilestone(streakCfg, Number(u.streak)),
             },
             coating, expansion,
+            guest: u.is_guest ? {
+                expires_at: guestExpiresAt(u, guestCfg),
+                games_until_register_prompt: guestCfg.games_until_register_prompt,
+                ranked_allowed: guestCfg.ranked_allowed,
+            } : null,
         });
     }
     // GET /api/invite/<code> - public landing peek (no auth)
@@ -225,6 +286,9 @@ export async function handleApi(env, request, path) {
         if (ctl.enabled !== true)
             return json({ error: "invite_disabled", error_he: "מערכת ההזמנות כבויה כרגע." }, 403);
         const maxPerDay = Math.max(1, Number(ctl.max_per_day ?? 5));
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         const cnt = await env.DB.prepare("SELECT COUNT(*) AS c FROM invites WHERE inviter_id = ?"
             + " AND created_at > datetime('now', '-1 day')").bind(Number(u.id)).first();
         if (Number(cnt?.c ?? 0) >= maxPerDay)
@@ -254,6 +318,9 @@ export async function handleApi(env, request, path) {
         const code = String(body.code ?? "").trim().toUpperCase();
         if (!code)
             return json({ error: "bad_code" }, 400);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         const inv = await env.DB.prepare("SELECT i.*, u.name AS inviter_name FROM invites i"
             + " JOIN users u ON u.id = i.inviter_id WHERE i.code = ?").bind(code).first();
         if (!inv)
@@ -283,6 +350,8 @@ export async function handleApi(env, request, path) {
         const u = await needAuth();
         if (!u)
             return json({ error: "unauthorized" }, 401);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden", error_he: "תגים זמינים לשחקנים רשומים." }, 403);
         const rows = await env.DB.prepare("SELECT tag, granted_at, source FROM user_tags WHERE user_id = ? ORDER BY granted_at DESC")
             .bind(Number(u.id)).all();
         return json({ tags: rows.results });
@@ -315,6 +384,9 @@ export async function handleApi(env, request, path) {
         const body = await request.json().catch(() => ({}));
         const itemId = String(body.item_id ?? "");
         const catalog = await effectiveCatalog(env);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         const item = catalog[itemId];
         if (!item)
             return json({ error: "unknown_item" }, 400);
@@ -371,6 +443,9 @@ export async function handleApi(env, request, path) {
         const itemId = String(body.item_id ?? "");
         const uid = Number(u.id);
         if (itemId === "skin_default") {
+            if (u.is_guest)
+                return json({ error: "guest_forbidden",
+                    error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
             await env.DB.prepare("UPDATE user_items SET equipped = 0 WHERE user_id = ? AND item_id LIKE 'skin_%'").bind(uid).run();
             return json({ ok: true });
         }
@@ -403,6 +478,9 @@ export async function handleApi(env, request, path) {
         const payload = await expansionPayload(env, uid);
         if (!payload.enabled)
             return json({ error: "disabled", error_he: "ההרחבה אינה זמינה כרגע." }, 400);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         const queued = payload.jobs.map((j) => Number(j.cube_number));
         const nextCube = Math.max(payload.extra_cubes, ...(queued.length ? queued : [0])) + 1;
         if (nextCube > payload.max_extra_cubes) {
@@ -444,6 +522,9 @@ export async function handleApi(env, request, path) {
         const payload = await coatingPayload(env, uid);
         if (!payload.enabled)
             return json({ error: "disabled", error_he: "הבנייה אינה זמינה כרגע." }, 400);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         const body = await request.json().catch(() => ({}));
         const material = String(body.material ?? "");
         const catalog = payload.catalog;
@@ -490,6 +571,9 @@ export async function handleApi(env, request, path) {
         if (u.last_daily === today()) {
             return json({ error: "already_claimed", error_he: "כבר אספת היום. חזור מחר!" }, 400);
         }
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
         const streak = u.last_daily === yesterday ? Number(u.streak) + 1 : 1;
         const amount = Math.min(DAILY_BASE + (streak - 1) * DAILY_STREAK_STEP, DAILY_CAP);
@@ -513,6 +597,9 @@ export async function handleApi(env, request, path) {
             return json({ error: "missing_code" }, 400);
         const uid = Number(u.id);
         const c = await env.DB.prepare("SELECT * FROM coupons WHERE code = ?").bind(code).first();
+        if (u.is_guest)
+            return json({ error: "guest_forbidden",
+                error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
         if (!c)
             return json({ error: "invalid_code", error_he: "קופון לא תקין." }, 400);
         if (c.expires_at && String(c.expires_at) < nowIso()) {
@@ -551,6 +638,8 @@ export async function handleApi(env, request, path) {
         const u = await needAuth();
         if (!u)
             return json({ error: "unauthorized" }, 401);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden", error_he: "הודעות זמינות לשחקנים רשומים." }, 403);
         const uid = Number(u.id);
         const rows = await env.DB.prepare("SELECT m.*, r.read_at FROM messages m LEFT JOIN message_reads r"
             + " ON r.message_id = m.id AND r.user_id = ?"
@@ -580,17 +669,30 @@ export async function handleApi(env, request, path) {
             return rl_state;
         const uid = Number(u.id);
         const now = Date.now() / 1000;
+        ctx.waitUntil(sweepExpiredGuests(env).catch((e) => console.error("SWEEP_FAIL", e && e.message ? e.message : String(e))));
+        // Write-reduction (27.9): last_seen persists at most once per 20s per
+        // user, enforced globally by reading the stored value first - D1 reads
+        // do not count against the rows_written quota, so the SELECT is free
+        // quota-wise and works across isolates (a per-isolate memory throttle
+        // let concurrent isolates each write). Presence consumers stay correct:
+        // matchmaking treats last_seen within 25s as online and admin-online
+        // uses 45s, so a <=20s throttle never hides an active player. Pings
+        // arrive every ~8s, cutting last_seen writes by ~60%.
         // Independent of each other: one parallel round instead of four serial
         // D1 roundtrips.
-        const [, offer, unread, maintenance] = await Promise.all([
-            env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run(),
+        const [offer, unread, maintenance, lsRow] = await Promise.all([
             env.DB.prepare("SELECT match_id, expires_at FROM match_offers WHERE invited_user_id = ? AND expires_at > ?"
                 + " ORDER BY expires_at DESC LIMIT 1").bind(uid, now).first(),
             env.DB.prepare("SELECT COUNT(*) c FROM messages m LEFT JOIN message_reads r"
                 + " ON r.message_id = m.id AND r.user_id = ?"
                 + " WHERE (m.user_id IS NULL OR m.user_id = ?) AND r.read_at IS NULL").bind(uid, uid).first(),
             getMaintenance(env),
+            env.DB.prepare("SELECT last_seen FROM users WHERE id = ?").bind(uid).first(),
         ]);
+        const lsStored = lsRow?.last_seen ? Date.parse(lsRow.last_seen) / 1000 : 0;
+        if (now - lsStored > 20) {
+            await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
+        }
         const out = { ok: true, offer: null, unread_messages: unread?.c ?? 0,
             server_version: env.SERVER_VERSION, maintenance };
         if (offer) {
@@ -598,13 +700,71 @@ export async function handleApi(env, request, path) {
         }
         return json(out);
     }
+    // POST /api/streak/repair - pay the admin-set price to restore a broken
+    // streak as if no day was missed (offer valid the return day, IL clock).
+    if (path === "/api/streak/repair" && method === "POST") {
+        const u = await needAuth();
+        if (!u)
+            return json({ error: "unauthorized" }, 401);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden", error_he: "הפעולה זמינה לשחקנים רשומים." }, 403);
+        const streakCfg = await getLoginStreak(env);
+        if (!streakCfg.enabled || !streakCfg.repair.enabled)
+            return json({ error: "repair_disabled", error_he: "שחזור הרצף אינו זמין כרגע." }, 400);
+        const todayIL = israelDate(0);
+        if (!u.broken_on || String(u.broken_on) !== todayIL || !Number(u.broken_streak))
+            return json({ error: "no_offer", error_he: "אין הצעת שחזור בתוקף." }, 400);
+        const price = streakCfg.repair.price;
+        const restored = Number(u.broken_streak) + ilDateDiff(String(u.last_daily), todayIL);
+        const reward = streakRewardFor(streakCfg, restored);
+        // One atomic statement: charges the price, pays today's reward by the
+        // restored streak, and clears the parked offer. The WHERE guards both
+        // the funds and a concurrent repair of the same offer.
+        const upd = await env.DB.prepare("UPDATE users SET coins = coins - ? + ?, streak = ?, last_daily = ?,"
+            + " repair_used_on = ?, repair_used_for = ?, broken_streak = NULL, broken_on = NULL"
+            + " WHERE id = ? AND broken_on = ? AND coins >= ?")
+            .bind(price, reward, restored, todayIL, todayIL, Number(u.broken_streak), Number(u.id), todayIL, price).run();
+        if (Number(upd.meta?.changes ?? 0) !== 1)
+            return json({ error: "insufficient_funds", error_he: "אין מספיק מטבעות לשחזור הרצף." }, 400);
+        if (price > 0)
+            await env.DB.prepare("INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)")
+                .bind(Number(u.id), -price, "streak_repair", "restored " + restored, nowIso()).run();
+        if (reward > 0)
+            await env.DB.prepare("INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)")
+                .bind(Number(u.id), reward, "login_streak", "day " + restored, nowIso()).run();
+        await audit(env, request, Number(u.id), "user.streak_repair", "user", Number(u.id), { restored, price, reward });
+        const after = await env.DB.prepare("SELECT coins FROM users WHERE id = ?").bind(Number(u.id)).first();
+        return json({ ok: true, streak: restored, amount: reward, coins: Number(after.coins) });
+    }
+    // POST /api/streak/decline - give up the repair offer; the reset policy
+    // applies immediately as if the day were a normal skipped day.
+    if (path === "/api/streak/decline" && method === "POST") {
+        const u = await needAuth();
+        if (!u)
+            return json({ error: "unauthorized" }, 401);
+        const streakCfg = await getLoginStreak(env);
+        const todayIL = israelDate(0);
+        if (!streakCfg.enabled || u.is_guest || !u.broken_on || String(u.broken_on) !== todayIL)
+            return json({ error: "no_offer", error_he: "אין הצעת שחזור בתוקף." }, 400);
+        const newStreak = streakCfg.reset_policy === "to_zero" ? 0 : 1;
+        const amount = newStreak >= 1 ? streakRewardFor(streakCfg, newStreak) : 0;
+        await env.DB.prepare("UPDATE users SET last_daily = ?, streak = ?, broken_streak = NULL, broken_on = NULL WHERE id = ?")
+            .bind(todayIL, newStreak, Number(u.id)).run();
+        if (amount > 0)
+            await addCoins(db, Number(u.id), amount, "login_streak");
+        await audit(env, request, Number(u.id), "user.streak_decline_repair", "user", Number(u.id), { streak: newStreak, amount });
+        const after = await env.DB.prepare("SELECT coins FROM users WHERE id = ?").bind(Number(u.id)).first();
+        return json({ ok: true, streak: newStreak, amount, coins: Number(after.coins) });
+    }
     // GET /api/leaderboard
     if (path === "/api/leaderboard" && method === "GET") {
         const u = await needAuth();
         if (!u)
             return json({ error: "unauthorized" }, 401);
+        if (u.is_guest)
+            return json({ error: "guest_forbidden", error_he: "הטבלה זמינה לשחקנים רשומים." }, 403);
         const rows = await env.DB.prepare("SELECT id, name, picture, rating, wins, losses, rank_points FROM users"
-            + " WHERE matches_played > 0"
+            + " WHERE matches_played > 0 AND is_guest = 0"
             + " ORDER BY rank_points DESC, wins DESC, rating DESC, id ASC LIMIT 100").all();
         return json({
             leaderboard: rows.results.map((r) => ({

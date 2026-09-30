@@ -2060,6 +2060,20 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "email_provider": "resend",
         "inboxlv_pass": ""
     },
+    "guest_mode": {
+        "enabled": true,
+        "ttl_hours": 24,
+        "games_until_register_prompt": 3,
+        "ranked_allowed": false
+    },
+    "contact_form": {
+        "enabled": true,
+        "destination_email": "ubriga@gmail.com",
+        "user_max_per_hour": 5,
+        "guest_max_per_hour": 2,
+        "max_length": 2000,
+        "reply_enabled": true
+    },
     "invite_system": {
         "enabled": true,
         "max_per_day": 5,
@@ -2071,6 +2085,16 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "wait_seconds": 30,
         "difficulty": "medium"
     },
+    "ux_onboarding": {
+        "tutorial_first_match": true,
+        "newbie_easy_matches": 3,
+        "how_to_play_button": true,
+        "lobby_labels": true,
+        "turn_banner": true,
+        "control_tooltips": true,
+        "friend_share_button": true,
+        "bot_first_shot_countdown": 3
+    },
     "xp": {
         "human_win": 2.0,
         "bot_win": 1.0,
@@ -2079,6 +2103,15 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "premium_skins": {
         "enabled": false,
         "asset_budget_kb": 80
+    },
+    "graphics_pack": {
+        "enabled": false,
+        "low_spec_default": false,
+        "max_particles": 96,
+        "airship_motion": true,
+        "webgl3d_enabled": false,
+        "webgl3d_adaptive": true,
+        "webgl3d_min_fps": 45
     },
     "coatings": {
         "enabled": true,
@@ -2104,7 +2137,11 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "dynamic_obstacle": {
         "enabled": true,
         "speed": 20,
-        "warning_seconds": 1.5
+        "warning_seconds": 1.5,
+        "v_enabled": false,
+        "v_speed": 14,
+        "v_min_lift": 0,
+        "v_max_lift": 90
     },
     "bot_system": {
         "enabled": true,

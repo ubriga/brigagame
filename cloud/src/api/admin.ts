@@ -113,6 +113,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     dynamic_obstacle: {
       enabled: [null, null, "bool"], speed: [1, 200, "float"], warning_seconds: [0, 10, "float"],
+      v_enabled: [null, null, "bool"], v_speed: [1, 120, "float"],
+      v_min_lift: [0, 160, "float"], v_max_lift: [0, 200, "float"],
     },
     bot_system: {
       enabled: [null, null, "bool"], special_weapons: [null, null, "bool"],

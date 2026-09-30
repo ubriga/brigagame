@@ -565,8 +565,10 @@ const Render3D = {
           rail.position.set((ob0.motion.min_x + ob0.motion.max_x) / 2 + ob0.w / 2, 2.5, 0);
           sc.add(rail);
         }
-        Render3D._press = { frame, piston, lamp, puffs, rail, top: 118, bot: 2,
+        Render3D._press = { frame, piston, lamp, puffs, rail, top: 89, bot: 2,
           period: 3600, t0: performance.now(), prevPhase: 0, offs: [-34, 0, 34] };
+        // top: piston cycle is capped so the piston never rises past the 184-tall
+        // collision silhouette (89 + 95 model height = 184).
       }
     } catch (e) { Render3D._pressErr = String(e); }
     const pr = Render3D._press;
@@ -574,8 +576,15 @@ const Render3D = {
       const obL = (game.obstacleNow ? game.obstacleNow() : null) || (game.snap && game.snap.obstacle);
       if (obL) {   // the press rides the server-owned hitbox (static or moving lane)
         const cx = obL.x + obL.w / 2;
-        pr.frame.position.x = cx; pr.piston.position.x = cx; pr.lamp.position.x = cx;
-        for (let i = 0; i < pr.puffs.length; i++) pr.puffs[i].sp.position.x = cx + pr.offs[i];
+        const lift = obL.lift || 0;   // server vertical raise/lower (0 = on ground)
+        pr.frame.position.x = cx; pr.frame.position.y = lift;
+        pr.piston.position.x = cx; pr.lamp.position.x = cx;
+        pr.lamp.position.y = 190 + lift;
+        for (let i = 0; i < pr.puffs.length; i++) {
+          pr.puffs[i].sp.position.x = cx + pr.offs[i];
+          pr.puffs[i].baseY = 178 + lift;
+        }
+        pr._lift = lift;
       }
       const nowMs = performance.now();
       const phase = ((nowMs - pr.t0) % pr.period) / pr.period;
@@ -588,12 +597,12 @@ const Render3D = {
       } else if (phase < 0.63) {    // fast slam, accelerating
         const k = (phase - 0.55) / 0.08; y = pr.top - span * k * k;
       }                             // else rest at bottom
-      pr.piston.position.y = y;
+      pr.piston.position.y = y + (pr._lift || 0);
       const holding = phase >= 0.35 && phase < 0.55;
       const warn = obL && obL.warning;
       pr.lamp.material.opacity = (holding || warn) ? 0.55 + 0.35 * Math.sin(nowMs / 85) : 0.22;
       if (pr.prevPhase < 0.63 && phase >= 0.63)   // slam landed → steam burst
-        for (const p of pr.puffs) { p.life = 1; p.sp.position.y = 178; }
+        for (const p of pr.puffs) { p.life = 1; p.sp.position.y = p.baseY ?? 178; }
       pr.prevPhase = phase;
       const dt2 = Math.min(0.25, Render3D._bgT2 ? (nowMs - Render3D._bgT2) / 1000 : 0.016);
       for (const p of pr.puffs) {
