@@ -531,3 +531,6 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 ### Leftovers on prod
 - users id 67 (QA44, ubriga+qa44@gmail.com, rating 1000, 0 games - NOT on leaderboard), contact_reports #11 (+reply), 2 QA mails in his inbox. Sessions for 67 and the QA admin session deleted. Await his call on deleting user 67 + report 11.
 - state.md commits pending push (no live PAT); push at next deploy.
+
+### 2026-09-30 16:25 ILT - QA44 cleanup complete
+Parent requested removal of temporary QA user 67 and contact report 11. Verified live identity ubriga+qa44@gmail.com / QA44 and zero matches, then deleted report and dependent user rows in production D1 6e304f1a-295a-4ac0-83c8-9af6145e18e5. Primary readback: user/report/session counts all zero; foreign_key_check empty. Health v44 OK. Two QA mails left untouched for owner to remove. No deploy or PAT needed.
