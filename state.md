@@ -534,3 +534,6 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 
 ### 2026-09-30 16:25 ILT - QA44 cleanup complete
 Parent requested removal of temporary QA user 67 and contact report 11. Verified live identity ubriga+qa44@gmail.com / QA44 and zero matches, then deleted report and dependent user rows in production D1 6e304f1a-295a-4ac0-83c8-9af6145e18e5. Primary readback: user/report/session counts all zero; foreign_key_check empty. Health v44 OK. Two QA mails left untouched for owner to remove. No deploy or PAT needed.
+
+### 2026-09-30 19:28 ILT - exposure prep only
+Prepared and transferred 18s silent H264 production guest-vs-easy-bot clip, two clean cropped screenshots, itch replacement copy/classification notes, and Hebrew ISRAELITE request draft. Nothing published or sent externally, itch unchanged. Verified actual pixels. Video source capture only ~1fps despite 24fps encoding: not a smooth final trailer, short collapse animation poorly captured; parent explicitly told. Clip ends in real loss-to-bot result. Temporary guests 68/69 plus bot matches 7bcdc64ba313/292bb7a05c1e and dependent rows deleted; primary readback zero and foreign_key_check empty. Browser lease released.
