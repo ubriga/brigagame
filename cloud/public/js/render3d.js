@@ -48,6 +48,8 @@ const Render3D = {
         viaduct: await opt("../assets/gfx3d/bg_viaduct.glb"),
         village: await opt("../assets/gfx3d/bg_village.glb"),
         mountainsFar: await opt("../assets/gfx3d/bg_mountains_far.glb"),
+        blockCorner: await opt("../assets/gfx3d/block_corner.glb"),
+        blockBelt: await opt("../assets/gfx3d/block_belt.glb"),
         pressFrame: await opt("../assets/gfx3d/press_frame.glb"),
         pressPiston: await opt("../assets/gfx3d/press_piston.glb"),
       };
@@ -96,10 +98,17 @@ const Render3D = {
     cam.lookAt(game.W / 2, 230, 0);
 
     // Lighting: cool moon key + warm points at the tower tops (stage-1 base).
-    scene.add(new T.HemisphereLight(0x9db8d6, 0x2a1f10, 1.05));
+    scene.add(new T.HemisphereLight(0x9db8d6, 0x2a1f10, 1.15));
     const moon = new T.DirectionalLight(0xd8e6ff, 1.0);
     moon.position.set(650, 900, 500);
     scene.add(moon);
+    // Reference frame: rim separates silhouettes, warm fill lifts tower bodies.
+    const rim = new T.DirectionalLight(0x9db8ff, 0.6);
+    rim.position.set(game.W / 2, 700, -700);
+    scene.add(rim);
+    const fill = new T.DirectionalLight(0xffd9a8, 0.5);
+    fill.position.set(game.W / 2, 350, 900);
+    scene.add(fill);
     for (const side of ["p1", "p2"]) {
       const pl = new T.PointLight(0xffb35c, 26000, 420, 2);
       const tx = game.tx(side) + game.TCOLS * game.BLOCK / 2;
@@ -149,10 +158,10 @@ const Render3D = {
       }
       if (bg.moon) {
         const mn = bg.moon.scene.clone(true);
-        mn.scale.setScalar(1.5);
+        mn.scale.setScalar(1.15);
         mn.position.set(game.W * 0.74, 520, -480);
         scene.add(mn);
-        const halo = glowSprite(0xffe9b8, 380, 380, 0.42);
+        const halo = glowSprite(0xffe9b8, 320, 320, 0.30);
         halo.position.copy(mn.position); halo.position.z -= 12;
         scene.add(halo);
       }
@@ -175,7 +184,7 @@ const Render3D = {
         }
       }
       if (bg.gear) {
-        for (const [fx, rot] of [[0.32, 0.06], [0.68, -0.045]]) {
+        for (const [fx, rot] of [[0.32, 0.06]]) {
           const gr = bg.gear.scene.clone(true);
           gr.position.set(game.W * fx, 24, -260);
           scene.add(gr);
@@ -191,11 +200,12 @@ const Render3D = {
       }
       if (bg.viaduct) {
         const vd = bg.viaduct.scene.clone(true);
-        vd.position.set(game.W / 2 - 277, 118, -360);
+        vd.position.set(game.W / 2 - 277, 118, -440);
+        vd.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.75); } });
         scene.add(vd);
       }
       if (bg.village) {
-        for (const vx of [-190, game.W + 40]) {
+        for (const vx of [-340, game.W + 200]) {
           const vg = bg.village.scene.clone(true);
           vg.position.set(vx, -4, -300);
           scene.add(vg);
@@ -289,9 +299,17 @@ const Render3D = {
      * middle rows, vents lower down — mirrors the 2D mockup sheet. */
     const blockProto = (side, r, c) => {
       if (!models) return new T.Mesh(blockGeo, Render3D._mats[side]);
+      const edge = (c === 0 || c === game.TCOLS - 1);
       const pick = (r * 5 + c * 3 + (side === "p2" ? 1 : 0)) % 9;
-      const src = pick === 0 ? models.window : (pick === 1 || pick === 5) ? models.vent : models.brass;
+      const src = (edge && models.bg.blockCorner) ? models.bg.blockCorner
+        : (r % 4 === 2 && models.bg.blockBelt) ? models.bg.blockBelt
+        : pick === 0 ? models.window : (pick === 1 || pick === 5) ? models.vent : models.brass;
       const cl = src.scene.clone(true);
+      if (edge && c === game.TCOLS - 1) {   // mirror the corner spine outward
+        cl.scale.x = -1;
+        cl.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+        cl.traverse((o) => { if (o.isMesh) o.material.side = T.DoubleSide; });
+      }
       /* Value structure: tower base ~20% darker than its top (baked-AO
        * reading). Emissive windows stay bright — the contrast is the point. */
       const dim = 0.80 + 0.20 * Math.max(0, Math.min(1, (7 - r) / 6));
@@ -323,8 +341,16 @@ const Render3D = {
       pivot.position.set(game.tx(side) + game.TCOLS * game.BLOCK / 2, topY + 10, 0);
       if (models) {
         const cm = models.cannon.scene.clone(true);   // barrel along +x, rotates with aim
+        cm.scale.setScalar(1.28);                        // reference frame: bigger cannon read
         cm.position.y = -2;
         pivot.add(cm);
+        // cannon mount platform (identity head; rides tower top, grid untouched)
+        if (models.bg.blockBelt) {
+          const mount = models.bg.blockBelt.scene.clone(true);
+          mount.scale.set(1.15, 0.6, 1.15);
+          mount.position.y = -14;
+          pivot.add(mount);
+        }
       } else {
         const base = new T.Mesh(new T.BoxGeometry(30, 14, 24), Render3D._mats.cannon);
         base.position.y = -4;

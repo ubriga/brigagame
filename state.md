@@ -381,3 +381,9 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Direction chevrons (‹ ›) from old 2D box are gone in 3D mode (lamp covers warning) - noted for follow-up.
 - Budget: +25KB GLBs (press_frame 16.6KB + press_piston 8.3KB), total models ~223KB - under caps.
 - sw 79 test only; prod untouched; token shredded after deploy.
+
+## 2026-09-30 ~07:33 — press v2 (mass + dark materials), test only, sw 80
+- User rejected v1 ("נראה מוזר ולא כמו מכשול" - reads as wooden gantry, relayed via parent 07:26 with redesign direction: mass first, darker, brass accents only, keep cycle/lamp/steam).
+- v2: posts 26-wide dark iron, solid steel back wall 116x176 (solid silhouette in every cycle state), heavy 120-wide riveted base, piston plate 70x46 occupying passage, dark steel/iron palette (0.16-0.20) with brass only on caps/trim/hazard plate/rivets/pipes. Lamp/steam raised to match taller frame (190/178).
+- QA (live match b5ec5bcd6b0d; rejoined old match had render loop stopped after server-side end - fresh match required for motion QA): raised shot /downloads/cloud-browser-20260930-043257.png (y=118 hold), slammed/rest /downloads/cloud-browser-20260930-042814.png. Both read as solid obstacle in stills.
+- sw 80 test only; prod untouched; token shredded.
