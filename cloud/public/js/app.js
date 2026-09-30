@@ -28,6 +28,9 @@ const App = {
       if (m.status === 200) App.setMe(m.data);
     };
     window.addEventListener("hashchange", () => this.route());
+    document.querySelector('a[data-nav="contact"]')?.addEventListener("click", (e) => {
+      if (this.me) { e.preventDefault(); Sfx.play("click"); this.showContactOverlay(); }
+    });
     const gfxBtn = document.getElementById("gfx-btn");
     if (gfxBtn) {
       const gfxPaint = () => {
@@ -809,13 +812,12 @@ const App = {
 
 
   // ---------------- contact / bug report ----------------
-  vContact(view, seq) {
-    if (!this.routeCurrent(seq)) return;
-    const u = this.me ?? {};
-    const identified = Boolean(u.id) && !u.is_guest;
-    const from = (this._lastHash && !this._lastHash.startsWith("#/contact")) ? this._lastHash : "#/lobby";
-    view.removeAttribute("aria-busy");
-    view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto">
+  // Shared form bits: the lobby button and nav link open the form INLINE
+  // (overlay on the current page); the #/contact route stays for direct
+  // links. Both use the same markup and submit logic.
+  _contactMarkup(u) {
+    const identified = Boolean(u && u.id) && !u.is_guest;
+    return `
       <h1>🛟 דיווח על תקלה / צור קשר</h1>
       <p class="sub">נתקלתם בתקלה, יש שאלה או רעיון לשיפור? הפנייה נשלחת ישירות למפתח במייל, ומצורפים אליה אוטומטית פרטים טכניים (גרסה, דפדפן, מסך) שעוזרים לאתר תקלות.</p>
       <label>סוג הפנייה</label>
@@ -828,40 +830,78 @@ const App = {
       <textarea id="contact-message" rows="6" maxlength="2000" placeholder="מה קרה, באיזה מסך, ומה ציפיתם שיקרה?"></textarea>
       ${identified ? `<p class="sub">הפנייה משויכת אוטומטית לחשבון שלך (${esc(u.name)}) והתשובה תגיע למייל של החשבון.</p>`
         : `<label>מייל לתשובה</label><input id="contact-email" type="email" maxlength="200" placeholder="you@example.com" dir="ltr" style="text-align:left">`}
-      <input id="contact-website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn" id="contact-send">שליחה</button>
-        <button class="btn secondary" id="contact-back">חזרה ללובי</button>
-      </div></div>`;
-    document.getElementById("contact-back").onclick = () => { Sfx.play("click"); location.hash = "#/lobby"; };
-    const sendBtn = document.getElementById("contact-send");
+      <input id="contact-website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">`;
+  },
+
+  _contactWireSend(root, u, screen, onSuccess) {
+    const identified = Boolean(u && u.id) && !u.is_guest;
+    const sendBtn = root.querySelector("#contact-send");
     sendBtn.onclick = async () => {
-      const type = document.getElementById("contact-type").value;
-      const message = document.getElementById("contact-message").value;
+      const type = root.querySelector("#contact-type").value;
+      const message = root.querySelector("#contact-message").value;
       if (!message.trim()) { toast("כתבו כמה מילים לפני השליחה"); return; }
-      const email = identified ? "" : (document.getElementById("contact-email")?.value ?? "");
+      const email = identified ? "" : (root.querySelector("#contact-email")?.value ?? "");
       if (!identified && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast("כתובת המייל לא תקינה"); return; }
       sendBtn.disabled = true;
       Sfx.play("click");
       const result = await API.post("/api/contact", {
         type, message, email: email.trim(),
-        website: document.getElementById("contact-website").value,
+        website: root.querySelector("#contact-website").value,
         context: {
           client_version: (typeof CONFIG !== "undefined" && CONFIG.CLIENT_VERSION) || "",
-          screen: from, lang: Lang.current, user_agent: navigator.userAgent,
+          screen, lang: Lang.current, user_agent: navigator.userAgent,
         },
       });
-      if (result.status === 200 && result.data && result.data.ok) {
-        view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto;text-align:center">
-          <h1>✅ הפנייה נשלחה</h1>
-          <p class="sub">תודה! הדיווח הגיע אלינו ואנחנו חוזרים למייל בהקדם.</p>
-          <button class="btn" id="contact-done" style="margin-top:10px">חזרה ללובי</button></div>`;
-        document.getElementById("contact-done").onclick = () => { location.hash = "#/lobby"; };
-      } else {
-        sendBtn.disabled = false;
-        toast(apiError(result, "השליחה נכשלה - נסו שוב"));
-      }
+      if (result.status === 200 && result.data && result.data.ok) onSuccess();
+      else { sendBtn.disabled = false; toast(apiError(result, "השליחה נכשלה - נסו שוב")); }
     };
+  },
+
+  showContactOverlay() {
+    document.getElementById("contact-overlay")?.remove();
+    const u = this.me ?? {};
+    const ov = document.createElement("div");
+    ov.id = "contact-overlay";
+    ov.className = "guest-prompt-overlay";
+    ov.innerHTML = `<div class="card" style="max-width:560px;width:min(560px,92vw);max-height:88vh;overflow-y:auto;overflow-x:hidden;position:relative">
+      <button id="contact-close" aria-label="סגור" style="position:absolute;top:8px;left:8px;background:none;border:none;font-size:18px;cursor:pointer;color:inherit;opacity:.7">✕</button>
+      ${this._contactMarkup(u)}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="contact-send">שליחה</button>
+        <button class="btn secondary" id="contact-cancel">ביטול</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.querySelector("#contact-close").onclick = close;
+    ov.querySelector("#contact-cancel").onclick = () => { Sfx.play("click"); close(); };
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    this._contactWireSend(ov, u, location.hash || "#/lobby", () => {
+      ov.querySelector(".card").innerHTML = `<div style="text-align:center">
+        <h1>✅ הפנייה נשלחה</h1>
+        <p class="sub">תודה! הדיווח הגיע אלינו ואנחנו חוזרים למייל בהקדם.</p>
+        <button class="btn" id="contact-done" style="margin-top:10px">סגור</button></div>`;
+      ov.querySelector("#contact-done").onclick = close;
+    });
+  },
+
+  vContact(view, seq) {
+    if (!this.routeCurrent(seq)) return;
+    const u = this.me ?? {};
+    const from = (this._lastHash && !this._lastHash.startsWith("#/contact")) ? this._lastHash : "#/lobby";
+    view.removeAttribute("aria-busy");
+    view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto">${this._contactMarkup(u)}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="contact-send">שליחה</button>
+        <button class="btn secondary" id="contact-back">חזרה ללובי</button>
+      </div></div>`;
+    document.getElementById("contact-back").onclick = () => { Sfx.play("click"); location.hash = "#/lobby"; };
+    this._contactWireSend(view, u, from, () => {
+      view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto;text-align:center">
+        <h1>✅ הפנייה נשלחה</h1>
+        <p class="sub">תודה! הדיווח הגיע אלינו ואנחנו חוזרים למייל בהקדם.</p>
+        <button class="btn" id="contact-done" style="margin-top:10px">חזרה ללובי</button></div>`;
+      document.getElementById("contact-done").onclick = () => { location.hash = "#/lobby"; };
+    });
   },
 
   async vLobby(view, seq = this._routeSeq) {
@@ -960,7 +1000,7 @@ const App = {
     };
     const howtoBtn = document.getElementById("howto-btn");
     if (howtoBtn) howtoBtn.onclick = () => { Sfx.play("click"); this.showHowTo(); };
-    document.getElementById("contact-btn").onclick = () => { Sfx.play("click"); location.hash = "#/contact"; };
+    document.getElementById("contact-btn").onclick = () => { Sfx.play("click"); this.showContactOverlay(); };
     const friendBtn = document.getElementById("friend-btn");
     if (friendBtn) friendBtn.onclick = async () => {
       Sfx.play("click");

@@ -76,6 +76,24 @@ const Render3D = {
     syncBox();
     window.addEventListener("resize", syncBox);
     Render3D._gl = gl; Render3D._host = host; Render3D._syncBox = syncBox;
+    /* GPU context loss (phone GPU reset, driver hiccup, OS reclaim) throws
+     * no exception - the canvas just paints black. Catch it and drop to the
+     * 2D view immediately; if the browser restores the context, re-init 3D. */
+    gl.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      if (game._r3d) {
+        game._r3d = false;
+        try { Render3D.dispose(); } catch (e2) {}
+        if (typeof toast === "function") {
+          const en = (typeof Lang !== "undefined" && Lang.current === "en");
+          toast(en ? "Advanced graphics paused - switched to the simple view"
+                   : "הגרפיקה המתקדמת נעצרה זמנית - עוברים לתצוגה הפשוטה");
+        }
+      }
+    });
+    gl.addEventListener("webglcontextrestored", () => {
+      try { game._r3dTryInit(); } catch (e) {}
+    });
     /* High-density phones (DPR>2) skip MSAA and start at 1.5x: at that
      * pixel density AA is invisible but costs real fill-rate. */
     const dpr = window.devicePixelRatio || 1;

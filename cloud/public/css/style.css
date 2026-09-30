@@ -67,7 +67,7 @@ button.btn.secondary { background: linear-gradient(145deg, #234e63, #17394d); co
 button.btn.danger { background: linear-gradient(145deg, #ef7b70, #c94f49); color: #240b0a; border-color: #f49c92; box-shadow: 0 5px 0 #7f302d, 0 9px 18px rgba(2,11,19,.2); }
 button.btn.small { padding: 6px 12px; font-size: 13px; border-radius: 9px; }
 
-input, select {
+input, select, textarea {
   background: var(--panel2); border: 1px solid #475569; color: var(--text);
   border-radius: 10px; padding: 10px 12px; font-size: 15px; width: 100%;
 }
@@ -253,7 +253,8 @@ footer { line-height: 1.8; }
 }
 
 /* Unified illustrated interface details */
-input, select { box-shadow: inset 0 2px 5px rgba(2,11,19,.22); border-color: var(--line); }
+input, select, textarea { box-shadow: inset 0 2px 5px rgba(2,11,19,.22); border-color: var(--line); }
+textarea { resize: vertical; box-sizing: border-box; }
 .tabs button { border: 1px solid rgba(78,132,153,.35); background: linear-gradient(145deg, #1b465b, #123447); color: var(--muted); box-shadow: 0 3px 0 #082334; }
 .tabs button.active { background: linear-gradient(145deg, #55d5c3, #2da99e); color: #062027; border-color: #73e0d0; }
 .swatch { border: 1px solid rgba(255,255,255,.12); box-shadow: inset 0 0 14px rgba(2,11,19,.2); }
