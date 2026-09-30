@@ -40,6 +40,7 @@ const GameView = {
     this.displayAngles = { p1: 45, p2: 45 };
     this.cannonRecoil = { p1: 0, p2: 0 };
     this.blockTransitions = []; this.idleClock = 0; this.lastActionAt = performance.now();
+    if (typeof Clockwork !== "undefined") Clockwork.resetMatch();
     this.cloudOffsets = [0, 410];
     this.reconnectFailures = 0;
     Sfx.startMusic();
@@ -80,25 +81,34 @@ const GameView = {
       document.getElementById("game-stage")?.scrollIntoView({ block: "start", inline: "center" });
     });
     this.ctx = this.canvas.getContext("2d");
+    this._r3dTryInit();
+    try { window.__game = this; } catch (e) {}   // QA introspection
     // Exit control: one tap reveals the confirmation strip; only the
     // explicit "יציאה מהמשחק" button actually leaves (active match = loss,
     // enforced server-side; waiting room = match deleted).
     const exitBtn = document.getElementById("exit-match-btn");
     const confirmBar = document.getElementById("exit-confirm");
+    // Exit stays visible while the confirmation strip is open (a second tap
+    // collapses it) - mid-game there is always a visible exit control.
     exitBtn.onclick = () => {
       Sfx.play("click");
+      if (!confirmBar.classList.contains("hidden")) {
+        confirmBar.classList.add("hidden");
+        exitBtn.classList.remove("armed");
+        return;
+      }
       const note = confirmBar.querySelector(".exit-note");
       if (note) note.textContent = this.snap?.practice
         ? "יציאה ממשחק תרגול לא תשפיע על הדירוג"
         : "יציאה ממשחק פעיל תיספר כהפסד בדירוג";
-      exitBtn.classList.add("hidden");
       confirmBar.classList.remove("hidden");
+      exitBtn.classList.add("armed");
       Lang.apply(confirmBar);
     };
     document.getElementById("exit-match-no").onclick = () => {
       Sfx.play("click");
       confirmBar.classList.add("hidden");
-      exitBtn.classList.remove("hidden");
+      exitBtn.classList.remove("armed");
     };
     document.getElementById("exit-match-yes").onclick = async (e) => {
       Sfx.play("click");
@@ -139,7 +149,20 @@ const GameView = {
     loop();
   },
 
+  /* Stage-1 WebGL: opt-in via admin config; every failure path silently
+   * keeps the 2D renderer. See render3d.js. */
+  async _r3dTryInit() {
+    try {
+      const g = (window.App && App.graphics) || {};
+      if (!g.webgl3d || g.webgl3d.enabled !== true) return;
+      if (typeof Render3D === "undefined" || !Render3D.capable()) return;
+      if (typeof Clockwork !== "undefined" && Clockwork.mode && Clockwork.mode() === "low") return;
+      this._r3d = await Render3D.init(this);
+    } catch (e) { this._r3d = false; }
+  },
+
   destroy() {
+    if (this._r3d) { try { Render3D.dispose(); } catch (e) {} this._r3d = false; }
     this.stopPoll();
     this.closeSocket();
     cancelAnimationFrame(this.raf);
@@ -238,14 +261,28 @@ const GameView = {
   },
   obstacleNow() {
     const ob=this.snap?.obstacle; if(!ob?.motion?.enabled) return ob;
-    const m=ob.motion, dist=Math.max(0,m.max_x-m.min_x), travel=dist/Math.max(1,m.speed);
+    const m=ob.motion, now=Date.now()/1000+this.serverOffset;
+    const dist=Math.max(0,m.max_x-m.min_x), travel=dist/Math.max(1,m.speed);
     const leg=m.warning_seconds+travel, cycle=Math.max(.001,2*leg);
-    let phase=((Date.now()/1000+this.serverOffset-m.epoch)%cycle+cycle)%cycle;
+    let phase=((now-m.epoch)%cycle+cycle)%cycle;
     const reverse=phase>=leg; if(reverse) phase-=leg;
     const warning=phase<m.warning_seconds;
     const progress=warning||!travel?0:Math.min(1,(phase-m.warning_seconds)/travel);
+    // Vertical raise/lower mirror (server owns the truth; snap.obstacle.y
+    // already holds lift-at-snap-time, so derive the rest height first).
+    let lift=0;
+    const vDist=Math.max(0,(m.max_lift??0)-(m.min_lift??0));
+    if(m.v_enabled&&vDist>0){
+      const vt=vDist/Math.max(1,m.v_speed??14), vc=Math.max(.001,2*vt);
+      let vp=((now-m.epoch)%vc+vc)%vc;
+      const vr=vp>=vt; if(vr) vp-=vt;
+      const vpr=!vt?0:Math.min(1,vp/vt);
+      lift=vr?m.max_lift-vpr*vDist:m.min_lift+vpr*vDist;
+    }
+    const restY=ob.y+(ob.lift||0);
     return {...ob,x:reverse?m.max_x-progress*dist:m.min_x+progress*dist,
-      moving:!warning&&dist>0,warning,direction:reverse?-1:1};
+      y:restY-lift,lift,
+      moving:!warning&&dist>0,v_moving:!!m.v_enabled&&vDist>0,warning,direction:reverse?-1:1};
   },
   dims(side) {
     const tower=(this.displayTowers||this.snap?.towers||{})[side];
@@ -583,7 +620,7 @@ const GameView = {
     this.firing = true;
     this.startRecoil(this.mySide());
     this.lastActionAt = performance.now();
-    Sfx.play("shot");
+    Sfx.play((typeof Clockwork !== "undefined" && Clockwork.mode()) ? "steam" : "shot");
     // Optimistic launch: mirror the server's ballistics locally so the shell
     // leaves the barrel the instant the finger/mouse releases instead of
     // waiting for the network round trip. The authoritative server events
@@ -797,7 +834,12 @@ const GameView = {
 
   stepAnims(dt) {
     // A suspended tab must not inject a multi-second physics step on resume.
-    dt = Math.min(dt, 1 / 30);
+    // Animations are wall-clock true at ANY frame rate: the clamp is 1s,
+    // only so a suspended tab can't inject a multi-minute step on resume.
+    // A 1.5s shell flight takes 1.5s even at 1fps (rendered in fewer,
+    // larger steps); game state is server/wall-clock driven, so snapping
+    // forward after a stall converges to the truth. Game feel is sacred.
+    dt = Math.min(dt, 1);
     let shakeKick = 0;
     for (const a of this.anims) {
       const prev = a.t;
@@ -805,7 +847,10 @@ const GameView = {
       if (a.kind === "sound" && prev < 0 && a.t >= 0) Sfx.play(a.name);
       if (a.kind === "recoil" && prev < 0 && a.t >= 0) this.startRecoil(a.side);
       if (a.kind === "explosion" && prev < 0.02 && a.t >= 0.02) {
-        if (!a.cosmetic) Sfx.play("explosion");
+        if (!a.cosmetic) Sfx.play((typeof Clockwork !== "undefined" && Clockwork.mode()) ? "clank" : "explosion");
+        if (a.kind === "explosion" && !a.cosmetic && prev < 0 && a.t >= 0
+            && typeof Clockwork !== "undefined" && Clockwork.mode() === "full")
+          this._hitStopUntil = performance.now() + 75;
         if (!a.particlesStarted) {
           a.particlesStarted = true;
           this.spawnImpactParticles(a.x, a.y, a.cosmetic);
@@ -853,9 +898,27 @@ const GameView = {
   // ---------------- drawing ----------------
   draw() {
     if (!this.ctx || !this.snap || !this.snap.towers) return;
+    if (this._r3d) {
+      let keep = true;
+      try { keep = Render3D.draw(this) !== false; }
+      catch (e) { keep = false; }
+      if (!keep) {                           // permanent fallback this match
+        this._r3d = false;
+        try { Render3D.dispose(); } catch (e) {}
+      }
+    }
+    /* When 3D is live it paints the world (towers/cannons/ground) on the
+     * canvas beneath; the 2D canvas keeps HUD, aim, shots and particles. */
+    const r3dOn = !!this._r3d;
     const c = this.ctx, now = performance.now();
+    /* The 3D canvas paints the world beneath; the 2D canvas becomes a
+     * transparent overlay (HUD/aim/shots/particles), so clear it every
+     * frame — the skipped 2D background was also the implicit clear. */
+    if (r3dOn) c.clearRect(0, 0, this.W, this.H);
     const dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
+    if (this._hitStopUntil && now < this._hitStopUntil
+        && typeof Clockwork !== "undefined" && Clockwork.mode() === "full") dt = 0;
     this.stepAnims(dt);
     this.renderTimer();
 
@@ -877,6 +940,13 @@ const GameView = {
     if (this.shake > 0.3)
       c.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
 
+    // Clockwork pack: fully separated visual layer. Off = classic renderer.
+    const cwMode = (typeof Clockwork !== "undefined") ? Clockwork.mode() : null;
+    if (cwMode) {
+      Clockwork.tick(dt, cwMode);
+      this.MAX_PARTICLES = Clockwork.maxParticles(cwMode);
+      if (!r3dOn) Clockwork.background(this, now / 1000, cwMode);
+    } else if (!r3dOn) {
     // Layered illustrated battlefield. Each layer drifts at a different
     // speed, creating parallax without affecting any server-owned geometry.
     const map = (this.snap && this.snap.map) || "valley";
@@ -935,13 +1005,16 @@ const GameView = {
     c.fillStyle = "rgba(244,201,93,.20)";
     for (let x = 8; x < this.W; x += 34) c.fillRect(x, this.GROUND + 8 + (x % 3) * 3, 19, 2);
 
+    } // end classic background (Clockwork pack off)
     const ob = this.obstacleNow();
-    if (ob) {
+    if (ob && !r3dOn) {   // 3D mode draws the steam press instead; this box is the 2D fallback
       c.save();
       if(ob.warning){c.shadowColor="#f59e0b";c.shadowBlur=10+7*Math.sin(now/120);}
-      c.fillStyle = ob.warning ? "#6b4f32" : "#4b5563"; c.strokeStyle = "#111827"; c.lineWidth = 4;
+      c.fillStyle = ob.warning ? "#6b4f32" : "#6b5433"; c.strokeStyle = "#1a130a"; c.lineWidth = 4;
       c.fillRect(ob.x, ob.y, ob.w, ob.h); c.strokeRect(ob.x, ob.y, ob.w, ob.h);
       c.fillStyle = "rgba(255,255,255,.14)"; c.fillRect(ob.x + 8, ob.y + 8, ob.w - 16, 8);
+      c.fillStyle = "#2e2416";
+      for (const ry of [ob.y + 26, ob.y + ob.h - 22]) for (const rx of [ob.x + 12, ob.x + ob.w - 12]) { c.beginPath(); c.arc(rx + 3, ry + 3, 3, 0, 7); c.fill(); }
       if(ob.motion?.enabled){
         c.fillStyle=ob.warning?"#fbbf24":"#d1d5db";c.font="bold 20px sans-serif";c.textAlign="center";
         c.fillText(ob.warning?"!":(ob.direction>0?"›":"‹"),ob.x+ob.w/2,ob.y+31);
@@ -952,13 +1025,15 @@ const GameView = {
     }
     // towers + HP bars and capped, deterministic idle life.
     for (const side of ["p1", "p2"]) {
-      this.drawIdleLife(side, now / 1000);
-      this.drawTower(side); this.drawCoating(side); this.drawHpBar(side); this.drawRankBadge(side);
+      if (!r3dOn) { this.drawIdleLife(side, now / 1000); this.drawTower(side); this.drawCoating(side); }
+      this.drawHpBar(side); this.drawRankBadge(side);
     }
-    // A struck tower flashes as a whole, independently of the blast glow.
-    for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
-    // cannons
-    for (const side of ["p1", "p2"]) this.drawCannon(side);
+    if (!r3dOn) {
+      // A struck tower flashes as a whole, independently of the blast glow.
+      for (const side of ["p1", "p2"]) this.drawTowerFlash(side);
+      // cannons
+      for (const side of ["p1", "p2"]) this.drawCannon(side);
+    }
     // aim arrow
     if ((this.aiming || performance.now() < (this.showAimUntil || 0))
         && this.canFire()) this.drawAim();
@@ -1012,6 +1087,7 @@ const GameView = {
   },
 
   drawShot(a) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.shot(this, a); return; }
     const c = this.ctx;
     // muzzle flash at launch
     if (a.t < 0.08 && a.side) {
@@ -1049,6 +1125,7 @@ const GameView = {
   },
 
   drawExplosion(a) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.explosion(this, a); return; }
     const c = this.ctx, t = a.t;
     if (a.cosmetic) {
       // small dust puff where a shell left the world
@@ -1092,6 +1169,8 @@ const GameView = {
         c.beginPath(); c.moveTo(p.x, p.y);
         c.lineTo(p.x - p.vx * 0.026, p.y - p.vy * 0.026); c.stroke();
       } else {
+        if (p.type === "smoke" && (typeof Clockwork !== "undefined") && Clockwork.mode()
+            && Clockwork.steamParticle(c, p, q)) continue;
         c.globalAlpha = 0.3 * q;
         c.fillStyle = "#94a3b8";
         c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
@@ -1120,6 +1199,7 @@ const GameView = {
   },
 
   drawDebris(a) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.debris(this, a); return; }
     const c = this.ctx;
     c.save();
     c.globalAlpha = Math.max(0, 1 - a.t * a.t);
@@ -1187,6 +1267,7 @@ const GameView = {
   },
 
   drawIdleLife(side, t) {
+    if ((typeof Clockwork !== "undefined") && Clockwork.mode()) return;
     const c = this.ctx, m = this.muzzle(side), f = side === "p1" ? 1 : -1;
     // Two tiny smoke puffs are computed, not allocated, so idle cost is fixed.
     for (let i = 0; i < 2; i++) {
@@ -1210,6 +1291,8 @@ const GameView = {
   },
 
   drawTower(side) {
+    const cwMode = (typeof Clockwork !== "undefined") ? Clockwork.mode() : null;
+    if (cwMode) { Clockwork.tower(this, side, cwMode); return; }
     const c = this.ctx, tower = (this.displayTowers || this.snap.towers)[side];
     const rawSkin = this.snap.skins[side] || {};
     const style = Array.isArray(rawSkin)
@@ -1349,6 +1432,16 @@ const GameView = {
     const rp = rt > 0 ? 1 - rt / .34 : 1;
     const kick = rp < .24 ? 7 * (rp / .24) : 7 * (1 - Math.pow((rp - .24) / .76, .55));
     c.save(); c.translate(m.x - f * Math.cos(ang) * kick, m.y + Math.sin(ang) * kick); c.rotate(-f * ang);
+    // Clockwork pack: the mockup's own riveted cannon (natural elevation
+    // ~53.7deg, pivot at the trunnion) rotates with the aim.
+    if (typeof Clockwork !== "undefined" && Clockwork.mode() && Clockwork._img.cannon) {
+      const rest = 53.7 * Math.PI / 180, dw = 56, dh = 58, pivX = 35, pivY = 40.5;
+      if (f < 0) c.scale(-1, 1);
+      c.rotate(rest);
+      c.drawImage(Clockwork._img.cannon, -pivX, -pivY, dw, dh);
+      c.restore();
+      return;
+    }
     // Tapered, banded barrel in the shared navy/brass art direction.
     const barrel = c.createLinearGradient(0, -7, 0, 7);
     barrel.addColorStop(0, "#8aa2ad"); barrel.addColorStop(.45, "#3c5967"); barrel.addColorStop(1, "#183543");
