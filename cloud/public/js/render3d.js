@@ -157,6 +157,14 @@ const Render3D = {
         mf.position.set(game.W / 2, -6, -720);
         scene.add(mf);
       }
+      /* Step 3: atmospheric haze band at the mountain bases - pushes the
+       * backdrop one value step quieter so the towers keep silhouette. */
+      {
+        const haze = glowSprite(0x35597e, game.W * 1.35, 190, 0.2);
+        haze.material.blending = T.NormalBlending;
+        haze.position.set(game.W / 2, 78, -430);
+        scene.add(haze);
+      }
       if (bg.moon) {
         const mn = bg.moon.scene.clone(true);
         mn.scale.setScalar(1.15);
@@ -382,6 +390,7 @@ const Render3D = {
      * one grade — the "Tunic" unifier. OutputPass applies the tone map.
      * Optional: any load failure keeps the plain render path. */
     let composer = null;
+    const admCfg = (window.App && App.graphics && App.graphics.webgl3d) || {};
     try {
       const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }, { ShaderPass }] = await Promise.all([
         import("../vendor/postprocessing/EffectComposer.js"),
@@ -403,6 +412,12 @@ const Render3D = {
       const bloom = new UnrealBloomPass(new T.Vector2(game.W, game.H), 0.5, 0.65, 0.8);
       composer.addPass(bloom);
       composer.addPass(new OutputPass());
+      /* Step 3: soft vignette seats the battle in its frame (final grade). */
+      if (admCfg.vignette !== false) composer.addPass(new ShaderPass({
+        uniforms: { tDiffuse: { value: null } },
+        vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+        fragmentShader: "uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec4 col = texture2D(tDiffuse, vUv); vec2 d = vUv - 0.5; float v = smoothstep(0.92, 0.42, length(d) * 1.12); gl_FragColor = vec4(col.rgb * mix(0.80, 1.0, v), col.a); }"
+      }));
       Render3D._bloom = bloom;
     } catch (e) { composer = null; Render3D._bloom = null; }
     Render3D._composer = composer;
@@ -423,6 +438,37 @@ const Render3D = {
       }
       mkBlob(game.W * 0.32, -250, 130, 60, 0.3);
       mkBlob(game.W * 0.68, -250, 130, 60, 0.3);
+      /* Step 3 (floor integration): towers stand on bolted base plates with a
+       * brass front trim; the stage gets a front lip with brass brackets and
+       * scorch decals - objects connect instead of floating (report gap 7). */
+      if (admCfg.floor_detail !== false) {
+        const plateMat = new T.MeshStandardMaterial({ color: 0x3a3444, roughness: 0.8, metalness: 0.35 });
+        const brassMat = new T.MeshStandardMaterial({ color: 0x9a7433, roughness: 0.5, metalness: 0.5 });
+        for (const side of ["p1", "p2"]) {
+          const cx = game.tx(side) + game.TCOLS * game.BLOCK / 2;
+          const plate = new T.Mesh(new T.BoxGeometry(game.TCOLS * game.BLOCK + 26, 5, 96), plateMat);
+          plate.position.set(cx, 2.5, 0);
+          scene.add(plate);
+          const trim = new T.Mesh(new T.BoxGeometry(game.TCOLS * game.BLOCK + 26, 2, 4), brassMat);
+          trim.position.set(cx, 4.5, 46);
+          scene.add(trim);
+          for (let b = 0; b < 4; b++) {
+            const bolt = new T.Mesh(new T.BoxGeometry(6, 3, 6), brassMat);
+            bolt.position.set(cx - (game.TCOLS * game.BLOCK) / 2 + 10 + b * ((game.TCOLS * game.BLOCK - 20) / 3), 5.5, 40);
+            scene.add(bolt);
+          }
+        }
+        const lip = new T.Mesh(new T.BoxGeometry(game.W + 40, 10, 6), plateMat);
+        lip.position.set(game.W / 2, -5, 88);
+        scene.add(lip);
+        for (let i = 0; i < 8; i++) {
+          const brk = new T.Mesh(new T.BoxGeometry(14, 12, 8), brassMat);
+          brk.position.set(62.5 + i * 125, -3, 90);
+          scene.add(brk);
+        }
+        mkBlob(game.W * 0.5 - 85, 24, 74, 40, 0.28);
+        mkBlob(game.W * 0.5 + 95, 38, 58, 34, 0.24);
+      }
     }
 
     Render3D._r = r; Render3D._scene = scene; Render3D._cam = cam;
