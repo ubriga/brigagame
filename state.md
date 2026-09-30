@@ -406,3 +406,14 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
   stubs visible, visCount [4,0,0,0] + rub y 105/9/9/9), phone 390px 060808.
 - block_rubble.glb 6,632 bytes. Deploys sw 83->84->85 all to test env only.
 - Guest-prompt feature STILL PARKED (parent 08:50: re-pop interval admin-configurable 5/10/20 min).
+
+## 2026-09-30 ~09:23 IDT - gfx 3.0 step 3 (bg/floor/HUD integration) - sw 86 on test
+- render3d.js v16: tower base plates + brass trim/bolts, stage front lip + 8 brass brackets,
+  scorch decals, atmospheric haze band at mountain bases, post-chain vignette (after OutputPass).
+- Admin gates: admCfg.floor_detail / admCfg.vignette (default on) under App.graphics.webgl3d master.
+- No new GLBs (built from primitives + existing glowTex) - budget impact ~0 bytes.
+- Comparison frames: BEFORE sw85 @61% (062025/062031) vs AFTER sw86 @49% (062237/062242),
+  composites /downloads/cmp-before-after-step3.png + cmp-mockup-after-step3.png.
+- HP mismatch (61 vs 49): bot hits ~70-90/salvo overshoot the freeze threshold; comparison targets
+  the new elements, not tower state.
+- HUD DOM left untouched (guest banner/buttons are his features; report gap 6 deferred to his call).
