@@ -6,7 +6,12 @@ const CONFIG = {
   // presence pulse reports a different version the app reloads itself in the
   // lobby (never mid-game) to pick up the new build.
   CLIENT_VERSION: "44",
-  API_BASE: "",  // Cloudflare copy: same-origin Worker serves both API and assets,
+  // Origin-aware: the Worker serves assets same-origin (""), while the
+  // GitHub Pages mirror must call the Worker explicitly. Runtime-detect so an
+  // rsync of this folder to gh-pages can never clobber the Pages API base again.
+  API_BASE: (typeof location !== "undefined" && location.hostname.endsWith("github.io"))
+    ? "https://brigagame.ubriga.workers.dev"
+    : "",
   // Google OAuth Web Client ID (same value as the backend GOOGLE_CLIENT_ID).
   GOOGLE_CLIENT_ID: "609382927099-k7b75i2igf0ka0t0ohknfa6svlcp5s29.apps.googleusercontent.com",
   // Adaptive match-state polling: hot right after activity, backs off when
