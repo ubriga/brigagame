@@ -70,6 +70,12 @@ function controlSpecs() {
         },
         bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
             difficulty: [null, null, "difficulty"] },
+        rating_rules: {
+            hvh_quick_ranked: [null, null, "bool"], hvh_friend_ranked: [null, null, "bool"],
+            bot_easy_ranked: [null, null, "bool"], bot_medium_ranked: [null, null, "bool"],
+            bot_hard_ranked: [null, null, "bool"], bot_ultra_ranked: [null, null, "bool"],
+            bot_expert_ranked: [null, null, "bool"]
+        },
         ux_onboarding: {
             tutorial_first_match: [null, null, "bool"],
             newbie_easy_matches: [0, 20, "int"],
@@ -82,6 +88,8 @@ function controlSpecs() {
         },
         guest_mode: { enabled: [null, null, "bool"], ttl_hours: [1, 168, "int"],
             games_until_register_prompt: [0, 50, "int"], ranked_allowed: [null, null, "bool"] },
+        guest_prompt: { enabled: [null, null, "bool"], interval_min: [1, 120, "int"],
+            first_delay_sec: [0, 600, "int"] },
         contact_form: { enabled: [null, null, "bool"], destination_email: [null, null, "str"],
             user_max_per_hour: [1, 50, "int"], guest_max_per_hour: [1, 20, "int"],
             max_length: [100, 5000, "int"], reply_enabled: [null, null, "bool"] },

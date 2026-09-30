@@ -830,7 +830,7 @@ const App = {
       <textarea id="contact-message" rows="6" maxlength="2000" placeholder="מה קרה, באיזה מסך, ומה ציפיתם שיקרה?"></textarea>
       ${identified ? `<p class="sub">הפנייה משויכת אוטומטית לחשבון שלך (${esc(u.name)}) והתשובה תגיע למייל של החשבון.</p>`
         : `<label>מייל לתשובה</label><input id="contact-email" type="email" maxlength="200" placeholder="you@example.com" dir="ltr" style="text-align:left">`}
-      <input id="contact-website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">`;
+      <input data-hp name="${this._hpName || (this._hpName = "f" + Math.random().toString(36).slice(2, 10))}" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">`;
   },
 
   _contactWireSend(root, u, screen, onSuccess) {
@@ -846,7 +846,7 @@ const App = {
       Sfx.play("click");
       const result = await API.post("/api/contact", {
         type, message, email: email.trim(),
-        website: root.querySelector("#contact-website").value,
+        hp: (root.querySelector("[data-hp]") || {}).value || "",
         context: {
           client_version: (typeof CONFIG !== "undefined" && CONFIG.CLIENT_VERSION) || "",
           screen, lang: Lang.current, user_agent: navigator.userAgent,
@@ -1593,7 +1593,23 @@ const App = {
     }
     const { status, data } = await API.get("/api/leaderboard");
     if (!this.routeCurrent(seq)) return;
-    if (status !== 200) { toast("שגיאה"); return; }
+    if (status !== 200) {
+      // Never leave a permanent skeleton: dead session gets a clear re-login
+      // card, transient failure gets a retry card.
+      view.removeAttribute("aria-busy");
+      const unauth = status === 401 || status === 403;
+      view.innerHTML = `<h1>🏆 טבלת דירוג</h1>
+        <div class="card" style="text-align:center;padding:32px 18px">
+          <div style="font-size:42px">${unauth ? "🔒" : "⚠️"}</div>
+          <h2>${unauth ? "צריך להתחבר מחדש" : "לא הצלחנו לטעון את הטבלה"}</h2>
+          <p class="sub">${unauth ? "ההתחברות פגה או שהמכשיר הזה לא מחובר לחשבון." : "אולי תקלה זמנית ברשת - נסו שוב בעוד רגע."}</p>
+          ${unauth ? `<button class="primary" onclick="location.hash='#/login'">להתחברות</button>`
+                   : `<button class="primary" id="lb-retry">נסה שוב</button>`}
+        </div>`;
+      const rb = view.querySelector("#lb-retry");
+      if (rb) rb.onclick = () => { Sfx.play("click"); rb.disabled = true; rb.textContent = "טוען..."; this.vLeaderboard(view, seq); };
+      return;
+    }
     let html = `<h1>🏆 טבלת דירוג</h1><p class="sub">הטבלה מסודרת לפי נקודות דרגה. הנקודות קובעות את הדרגה ואת ההתקדמות לדרגה הבאה.</p>
       <div class="card"><table><tr><th>#</th><th>שחקן</th><th>דרגה</th><th>נקודות דרגה</th><th>נצ׳</th><th>הפ׳</th></tr>`;
     data.leaderboard.forEach((p, i) => {
