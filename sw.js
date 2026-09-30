@@ -1,5 +1,5 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "91f-r3d-engine-reuse";
+const RELEASE = "92-hp-lb-session-audit";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",

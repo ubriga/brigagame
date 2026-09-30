@@ -56,6 +56,12 @@ const API = {
         }
         this.setReconnecting(false);
         if (res.status === 401 && !path.startsWith("/api/auth")) {
+          // One grace retry on reads: a transient/replica 401 must not log the
+          // player out. Only a repeated 401 wipes the token.
+          if (method === "GET" && attempt + 1 < attempts) {
+            await new Promise(r => setTimeout(r, 1500));
+            continue;
+          }
           this.setToken(null);
           location.hash = "#/login";
         }
