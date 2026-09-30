@@ -365,3 +365,10 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - GLB total 202,836 bytes (~198KB). Budget: engine ~166KB gzip incl. post chain; well under 450KB cap.
 - QA (test, guest, bot matches): bloom/composer/ACES live (toneMapping=4, exposure 1.12, pr=1, no adaptive drop). Screenshots: /downloads/cloud-browser-20260930-032641.png (late-match), 032941 (mid-match, airship). sw=74 on test only; prod untouched (still 73-lineage).
 - NOT promoted to production; awaiting Orel verdict. Rollback flag intact.
+
+## 2026-09-30 ~06:38 — stage-3 polish pass 1 (sw 75/76), test only
+- Moon: emissive cut (1.0,0.875,0.55)→(0.42,0.37,0.24), craters moved to dedicated moonDim mat — disc keeps texture, halo sprite intact (parent: was blown out by bloom).
+- Mountains: monotonic aerial fade far→near — new mountainFar mat (0.30,0.36,0.45 + emissive haze 0.07,0.09,0.12), far ridge peaks raised 300-470 (was occluded behind near ridge max 320), mid mountain gets small emissive lift, front mountainHi darkest (0.07,0.10,0.155). Fade now obvious at screenshot scale.
+- Verified live: bloom/composer on, QA screenshot /downloads/cloud-browser-20260930-033741.png (match 7eee9c93a53c).
+- Commits: 4147d5d (rebuild), plus polish commit (moon+mountains). sw 76 on test; prod untouched.
+- Follow-up queued (parent 06:37): obstacle redesign — user directive via WhatsApp: obstacle "not interfering enough, not designed enough"; options brief requested (lettered, effort); follow-up task to raise obstacle involvement per-level + admin control.

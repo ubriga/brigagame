@@ -48,6 +48,8 @@ const Render3D = {
         viaduct: await opt("../assets/gfx3d/bg_viaduct.glb"),
         village: await opt("../assets/gfx3d/bg_village.glb"),
         mountainsFar: await opt("../assets/gfx3d/bg_mountains_far.glb"),
+        pressFrame: await opt("../assets/gfx3d/press_frame.glb"),
+        pressPiston: await opt("../assets/gfx3d/press_piston.glb"),
       };
     } catch (e) { models = null; }
     Render3D._models = models;
@@ -419,6 +421,80 @@ const Render3D = {
           if (mo.obj.position.x > mo.max) mo.obj.position.x = mo.min;
         }
       }
+    }
+    /* Steam press obstacle (visual-only, option ב): frame + cyclic piston,
+     * steam puffs at slam, pulsing warning lamp. Lazy-built once the snap's
+     * obstacle is known; the server keeps owning the (invisible) hitbox. */
+    const mdls = Render3D._models;
+    if (!Render3D._press && mdls && mdls.bg && mdls.bg.pressFrame && mdls.bg.pressPiston) try {
+      const ob0 = (game.obstacleNow ? game.obstacleNow() : null) || (game.snap && game.snap.obstacle);
+      if (ob0) {
+        const sc = Render3D._scene, cx = ob0.x + ob0.w / 2;
+        const frame = mdls.bg.pressFrame.scene.clone(true);
+        frame.position.set(cx, 0, 0); sc.add(frame);
+        const piston = mdls.bg.pressPiston.scene.clone(true);
+        piston.position.set(cx, 2, 0); sc.add(piston);
+        const lamp = new T.Sprite(new T.SpriteMaterial({
+          map: Render3D._glowTex, color: 0xffb35c, transparent: true, opacity: 0.3,
+          blending: T.AdditiveBlending, depthWrite: false, fog: false }));
+        lamp.scale.set(44, 44, 1); lamp.position.set(cx, 180, 14); sc.add(lamp);
+        const puffs = [];
+        for (const px of [-34, 0, 34]) {
+          const sp = new T.Sprite(new T.SpriteMaterial({
+            map: Render3D._glowTex, color: 0xcfd8e3, transparent: true, opacity: 0,
+            blending: T.NormalBlending, depthWrite: false, fog: false }));
+          sp.scale.set(26, 26, 1); sp.position.set(cx + px, 168, 8); sc.add(sp);
+          puffs.push({ sp, life: 0, x: cx + px });
+        }
+        let rail = null;
+        if (ob0.motion && ob0.motion.enabled && ob0.motion.max_x > ob0.motion.min_x) {
+          rail = new T.Mesh(
+            new T.BoxGeometry(ob0.motion.max_x - ob0.motion.min_x + 130, 5, 30),
+            new T.MeshStandardMaterial({ color: 0x3d2f1c, roughness: 0.6, metalness: 0.4 }));
+          rail.position.set((ob0.motion.min_x + ob0.motion.max_x) / 2 + ob0.w / 2, 2.5, 0);
+          sc.add(rail);
+        }
+        Render3D._press = { frame, piston, lamp, puffs, rail, top: 118, bot: 2,
+          period: 3600, t0: performance.now(), prevPhase: 0, offs: [-34, 0, 34] };
+      }
+    } catch (e) { Render3D._pressErr = String(e); }
+    const pr = Render3D._press;
+    if (pr) {
+      const obL = (game.obstacleNow ? game.obstacleNow() : null) || (game.snap && game.snap.obstacle);
+      if (obL) {   // the press rides the server-owned hitbox (static or moving lane)
+        const cx = obL.x + obL.w / 2;
+        pr.frame.position.x = cx; pr.piston.position.x = cx; pr.lamp.position.x = cx;
+        for (let i = 0; i < pr.puffs.length; i++) pr.puffs[i].sp.position.x = cx + pr.offs[i];
+      }
+      const nowMs = performance.now();
+      const phase = ((nowMs - pr.t0) % pr.period) / pr.period;
+      const span = pr.top - pr.bot;
+      let y = pr.bot;
+      if (phase < 0.35) {           // slow rise with ease-out (anticipation)
+        const k = phase / 0.35; y = pr.bot + span * (1 - (1 - k) * (1 - k));
+      } else if (phase < 0.55) {    // hold at top, lamp warns
+        y = pr.top;
+      } else if (phase < 0.63) {    // fast slam, accelerating
+        const k = (phase - 0.55) / 0.08; y = pr.top - span * k * k;
+      }                             // else rest at bottom
+      pr.piston.position.y = y;
+      const holding = phase >= 0.35 && phase < 0.55;
+      const warn = obL && obL.warning;
+      pr.lamp.material.opacity = (holding || warn) ? 0.55 + 0.35 * Math.sin(nowMs / 85) : 0.22;
+      if (pr.prevPhase < 0.63 && phase >= 0.63)   // slam landed → steam burst
+        for (const p of pr.puffs) { p.life = 1; p.sp.position.y = 168; }
+      pr.prevPhase = phase;
+      const dt2 = Math.min(0.25, Render3D._bgT2 ? (nowMs - Render3D._bgT2) / 1000 : 0.016);
+      for (const p of pr.puffs) {
+        if (p.life > 0) {
+          p.life = Math.max(0, p.life - dt2 / 1.1);
+          p.sp.position.y += 42 * dt2;
+          p.sp.material.opacity = 0.4 * p.life;
+          const s = 26 * (1.7 - p.life * 0.7);
+          p.sp.scale.set(s, s, 1);
+        }
+      }
+      Render3D._bgT2 = nowMs;
     }
     if (Render3D._composer) Render3D._composer.render(); else Render3D._r.render(Render3D._scene, Render3D._cam);
 
