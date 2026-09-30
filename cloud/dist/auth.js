@@ -81,13 +81,28 @@ export async function createSession(db, userId) {
     await db.run("DELETE FROM sessions WHERE expires_at <= ?", [now.toISOString()]);
     await db.run("DELETE FROM sessions WHERE expires_at <= ?", [now.toISOString()]);
     // Bound session-table growth: keep the newest MAX_SESSIONS_PER_USER.
-    await db.run("DELETE FROM sessions WHERE user_id = ? AND id NOT IN"
-        + " (SELECT id FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?)", [userId, userId, MAX_SESSIONS_PER_USER - 1]);
+    // The LIMIT is an inlined module constant, never a bound parameter - bound
+    // values inside a subquery LIMIT are a binder edge case we do not rely on.
+    const cap = await db.run("DELETE FROM sessions WHERE user_id = ? AND id NOT IN"
+        + " (SELECT id FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT "
+        + String(MAX_SESSIONS_PER_USER - 1) + ")", [userId, userId]);
+    if (cap.changes > 0) {
+        await db.run("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+            + " VALUES (?, 'auth.session_capped', 'user', ?, ?, ?)", [userId, String(userId), JSON.stringify({ removed: cap.changes }), new Date().toISOString()]);
+    }
     await db.run("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?,?,?,?)", [hash, userId, now.toISOString(), expires.toISOString()]);
     return token;
 }
 export async function destroySession(db, token) {
-    await db.run("DELETE FROM sessions WHERE token_hash = ?", [await sha256Hex(token)]);
+    const hash = await sha256Hex(token);
+    // Audit logouts (actor resolved before the delete): session disappearances
+    // must be diagnosable after the fact.
+    const sess = await db.get("SELECT user_id FROM sessions WHERE token_hash = ?", [hash]);
+    const del = await db.run("DELETE FROM sessions WHERE token_hash = ?", [hash]);
+    if (del.changes > 0) {
+        await db.run("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
+            + " VALUES (?, 'auth.logout', 'user', ?, '{}', ?)", [sess ? Number(sess.user_id) : null, sess ? String(sess.user_id) : "", new Date().toISOString()]);
+    }
 }
 export async function currentUser(db, request) {
     const auth = request.headers.get("authorization") ?? "";

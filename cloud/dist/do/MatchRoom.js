@@ -378,7 +378,7 @@ export class MatchRoom {
             return;
         }
         const controls = await getControls(this.env);
-        await finalizeMatch(d1(this.env.DB), this.match, winnerSide, controls.xp);
+        await finalizeMatch(d1(this.env.DB), this.match, winnerSide, controls.xp, controls);
     }
     /** Append events to the D1 journal so polling clients (state?since=N)
      * can incrementally sync, mirroring emit_events. */

@@ -2066,6 +2066,11 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "games_until_register_prompt": 3,
         "ranked_allowed": false
     },
+    "guest_prompt": {
+        "enabled": false,
+        "interval_min": 10,
+        "first_delay_sec": 45
+    },
     "contact_form": {
         "enabled": true,
         "destination_email": "ubriga@gmail.com",
@@ -2084,6 +2089,15 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "enabled": true,
         "wait_seconds": 30,
         "difficulty": "medium"
+    },
+    "rating_rules": {
+        "hvh_quick_ranked": true,
+        "hvh_friend_ranked": true,
+        "bot_easy_ranked": false,
+        "bot_medium_ranked": true,
+        "bot_hard_ranked": true,
+        "bot_ultra_ranked": true,
+        "bot_expert_ranked": true
     },
     "ux_onboarding": {
         "tutorial_first_match": true,

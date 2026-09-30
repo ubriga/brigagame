@@ -373,9 +373,18 @@ async function handleRequest(request, env, ctx) {
         const user = await currentUser(d1(env.DB), request);
         const registered = user && !user.is_guest;
         const body = await request.json().catch(() => ({}));
-        // Honeypot: bots that fill the hidden field get a silent success.
-        if (String(body.website ?? "").trim())
+        // Honeypot: bots that fill the hidden field get a silent success, but
+        // every hit is audited - a legit user caught by browser autofill must
+        // leave a trace instead of vanishing. The client field carries a
+        // meaningless randomized name so autofill cannot classify it.
+        const hpVal = String(body.hp ?? body.website ?? "").trim();
+        if (hpVal) {
+            const ipH = request.headers.get("CF-Connecting-IP") ?? "";
+            await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, ip_hash, user_agent, created_at)"
+                + " VALUES (?, 'contact.honeypot_hit', 'contact_report', '', ?, ?, ?, ?)")
+                .bind(user ? Number(user.id) : null, JSON.stringify({ hp_len: hpVal.length, registered: Boolean(registered) }), ipH ? await sha256Hex(ipH) : "", (request.headers.get("User-Agent") ?? "").slice(0, 300), new Date().toISOString()).run().catch(() => { });
             return json({ ok: true });
+        }
         const rtype = ["bug", "question", "suggestion"].includes(String(body.type)) ? String(body.type) : "";
         if (!rtype)
             return json({ error: "bad_type", error_he: "יש לבחור סוג פנייה." }, 400);

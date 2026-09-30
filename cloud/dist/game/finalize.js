@@ -25,13 +25,25 @@ export function rankLossPoints(currentPoints, versusAi = false, aiRankLevel) {
     const strongerDiscount = Math.max(0.5, 1.0 - 0.05 * (botLevel - playerLevel));
     return Math.min(currentPoints, Math.round(humanLoss * 0.5 * strongerDiscount * 10) / 10);
 }
+/** Resolve whether a match is unrated practice per admin rating_rules.
+ * Defaults preserve legacy behavior: easy bot = practice, everything else ranked. */
+export function resolvePractice(m, state, controls) {
+    const rr = (controls ?? {}).rating_rules ?? {};
+    if (m.p2_ai) {
+        const tier = String(state?.ai_tier ?? (state?.ai_difficulty === "easy" ? "easy" : "medium"));
+        const ranked = rr["bot_" + tier + "_ranked"] ?? (tier !== "easy");
+        return !ranked;
+    }
+    const ranked = m.mode === "friend" ? (rr.hvh_friend_ranked ?? true) : (rr.hvh_quick_ranked ?? true);
+    return !ranked;
+}
 /** Apply server-authoritative match results and economy rules. */
-export async function finalizeMatch(db, m, winnerSide, xp) {
+export async function finalizeMatch(db, m, winnerSide, xp, controls) {
     const loserSide = winnerSide === "p1" ? "p2" : "p1";
     m.status = "finished";
     m.winner = (winnerSide === "p2" && m.p2_ai) ? null : m[winnerSide];
     m.state.winner_side = winnerSide;
-    const practice = Boolean(m.p2_ai && m.state.ai_difficulty === "easy");
+    const practice = controls ? resolvePractice(m, m.state, controls) : Boolean(m.p2_ai && m.state.ai_difficulty === "easy");
     const results = {};
     for (const [side, outcome] of [[winnerSide, "win"], [loserSide, "loss"]]) {
         const uid = m[side];
