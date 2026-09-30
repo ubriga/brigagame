@@ -904,7 +904,7 @@ const GameView = {
       catch (e) { keep = false; }
       if (!keep) {                           // permanent fallback this match
         this._r3d = false;
-        try { Render3D.dispose(); } catch (e) {}
+        try { Render3D.disposeFull(); } catch (e) {}
       }
     }
     /* When 3D is live it paints the world (towers/cannons/ground) on the
