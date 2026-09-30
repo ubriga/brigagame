@@ -417,3 +417,13 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - HP mismatch (61 vs 49): bot hits ~70-90/salvo overshoot the freeze threshold; comparison targets
   the new elements, not tower state.
 - HUD DOM left untouched (guest banner/buttons are his features; report gap 6 deferred to his call).
+
+## 2026-09-30 ~09:33 IDT - gfx 3.0 step 4 (full game QA) - all green on sw 86
+- Live fire via game's own fire(): mid-flight arc+shell over 3D (062931).
+- Hits+destruction live: damage numbers, debris, rubble stubs in unfrozen matches (062950, 062732).
+- English match renders identically (063140); Hebrew/RTL all session. Phone 390px covered in step 3.
+- Perf (cloud desktop GPU, NOT S24): ~363fps combat avg, 328 draw calls / 24,240 tris per scene
+  render, adaptive untriggered (pr 1, bloom on), NaN readback finite, 5 composer passes.
+- 2D fallback proven live: forced Render3D.draw()->false mid-match, seamless 2D takeover same
+  state (063222). NOTE: no webglcontextlost handler exists (black screen on real context loss) -
+  edge case, not new (predates 3D work), flagged for his decision.
