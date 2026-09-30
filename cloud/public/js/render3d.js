@@ -80,6 +80,10 @@ const Render3D = {
     r.setPixelRatio(pr);
     r.setSize(game.W, game.H, false);
     r.outputColorSpace = T.SRGBColorSpace;
+    /* Filmic tone mapping: compresses highlights instead of clipping them,
+     * the single biggest "game look" upgrade available (research-backed). */
+    r.toneMapping = T.ACESFilmicToneMapping;
+    r.toneMappingExposure = 1.12;
 
     const scene = new T.Scene();
     scene.background = new T.Color(0x0c1f30);
@@ -285,7 +289,14 @@ const Render3D = {
       if (!models) return new T.Mesh(blockGeo, Render3D._mats[side]);
       const pick = (r * 5 + c * 3 + (side === "p2" ? 1 : 0)) % 9;
       const src = pick === 0 ? models.window : (pick === 1 || pick === 5) ? models.vent : models.brass;
-      return src.scene.clone(true);
+      const cl = src.scene.clone(true);
+      /* Value structure: tower base ~20% darker than its top (baked-AO
+       * reading). Emissive windows stay bright — the contrast is the point. */
+      const dim = 0.80 + 0.20 * Math.max(0, Math.min(1, (7 - r) / 6));
+      cl.traverse((o) => {
+        if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(dim); }
+      });
+      return cl;
     };
     for (const side of ["p1", "p2"]) {
       const group = [];
@@ -325,6 +336,44 @@ const Render3D = {
       Render3D._cannons[side] = pivot;
     }
 
+    /* Post chain: bloom bonds emissives (lanterns/windows/moon/stars) into
+     * one grade — the "Tunic" unifier. OutputPass applies the tone map.
+     * Optional: any load failure keeps the plain render path. */
+    let composer = null;
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import("../vendor/postprocessing/EffectComposer.js"),
+        import("../vendor/postprocessing/RenderPass.js"),
+        import("../vendor/postprocessing/UnrealBloomPass.js"),
+        import("../vendor/postprocessing/OutputPass.js"),
+      ]);
+      composer = new EffectComposer(r);
+      composer.addPass(new RenderPass(scene, cam));
+      const bloom = new UnrealBloomPass(new T.Vector2(game.W, game.H), 0.5, 0.65, 0.8);
+      composer.addPass(bloom);
+      composer.addPass(new OutputPass());
+      Render3D._bloom = bloom;
+    } catch (e) { composer = null; Render3D._bloom = null; }
+    Render3D._composer = composer;
+
+    // Contact shadow blobs: soft dark ellipses that ground towers and props.
+    {
+      const mkBlob = (x, z, sx, sz, op) => {
+        const m = new T.Mesh(new T.PlaneGeometry(sx, sz),
+          new T.MeshBasicMaterial({ map: Render3D._glowTex, color: 0x000000,
+            transparent: true, opacity: op, depthWrite: false }));
+        m.rotation.x = -Math.PI / 2;
+        m.position.set(x, 0.6, z);
+        scene.add(m);
+      };
+      for (const side of ["p1", "p2"]) {
+        const cx = game.tx(side) + game.TCOLS * game.BLOCK / 2;
+        mkBlob(cx, 6, game.TCOLS * game.BLOCK + 90, 95, 0.42);
+      }
+      mkBlob(game.W * 0.32, -250, 130, 60, 0.3);
+      mkBlob(game.W * 0.68, -250, 130, 60, 0.3);
+    }
+
     Render3D._r = r; Render3D._scene = scene; Render3D._cam = cam;
     Render3D._frame = { n: 0, t: 0 }; Render3D._lowStreak = 0; Render3D._adapted = false;
     Render3D._ready = true;
@@ -336,7 +385,7 @@ const Render3D = {
   draw(game) {
     const T = Render3D._T, t0 = performance.now();
     const towers = (game.displayTowers || (game.snap && game.snap.towers));
-    if (!towers) { Render3D._r.render(Render3D._scene, Render3D._cam); return true; }
+    if (!towers) { if (Render3D._composer) Render3D._composer.render(); else Render3D._r.render(Render3D._scene, Render3D._cam); return true; }
     for (const side of ["p1", "p2"]) {
       const tw = towers[side] || [];
       const grid = Render3D._blocks[side];
@@ -371,7 +420,7 @@ const Render3D = {
         }
       }
     }
-    Render3D._r.render(Render3D._scene, Render3D._cam);
+    if (Render3D._composer) Render3D._composer.render(); else Render3D._r.render(Render3D._scene, Render3D._cam);
 
     // Adaptive pixel ratio + fallback request (admin-tunable floor).
     // First window is 1s so an overloaded device reacts fast; later windows
@@ -389,7 +438,9 @@ const Render3D = {
         const floor = Number(cfg.min_fps) || 45;
         if (avg < floor) {
           Render3D._adapted = true;
-          if (Render3D._pr > 0.5) {
+          if (Render3D._bloom && Render3D._bloom.enabled !== false) {
+            Render3D._bloom.enabled = false;   // bloom is the first luxury to go
+          } else if (Render3D._pr > 0.5) {
             Render3D._pr = Math.max(0.5, Math.round(Render3D._pr * 0.75 * 100) / 100);
             Render3D._r.setPixelRatio(Render3D._pr);
           } else if (++Render3D._lowStreak >= 3) return false; // give up → 2D
@@ -408,6 +459,7 @@ const Render3D = {
     } catch (e) {}
     Render3D._gl = null; Render3D._host = null; Render3D._syncBox = null;
     Render3D._models = null; Render3D._bgMotion = null; Render3D._bgT = 0;
+    Render3D._composer = null; Render3D._bloom = null;
     Render3D._r = null; Render3D._scene = null; Render3D._cam = null;
     Render3D._blocks = { p1: [], p2: [] }; Render3D._cannons = {};
     Render3D._ready = false;
