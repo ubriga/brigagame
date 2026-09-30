@@ -67,7 +67,7 @@ button.btn.secondary { background: linear-gradient(145deg, #234e63, #17394d); co
 button.btn.danger { background: linear-gradient(145deg, #ef7b70, #c94f49); color: #240b0a; border-color: #f49c92; box-shadow: 0 5px 0 #7f302d, 0 9px 18px rgba(2,11,19,.2); }
 button.btn.small { padding: 6px 12px; font-size: 13px; border-radius: 9px; }
 
-input, select {
+input, select, textarea {
   background: var(--panel2); border: 1px solid #475569; color: var(--text);
   border-radius: 10px; padding: 10px 12px; font-size: 15px; width: 100%;
 }
@@ -87,6 +87,7 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 /* game */
 #game-stage { position: relative; width: 100%; animation: stage-in .28s ease-out; }
 #game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: pan-y; background: #071b2d; border: 1px solid rgba(99,170,187,.48); box-shadow: 0 16px 36px rgba(2,11,19,.38), inset 0 0 0 1px rgba(255,255,255,.03); }
+#game-canvas.gl3d { background: transparent; }
 #game-hud { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .player-tag { display: flex; align-items: center; gap: 8px; background: linear-gradient(145deg, #14364c, #0d293d); padding: 7px 12px; border: 1px solid rgba(78,132,153,.38); border-radius: 12px; font-size: 14px; box-shadow: 0 6px 16px rgba(2,11,19,.18); transition: outline-color .2s ease, transform .2s ease; }
 .player-tag img { width: 26px; height: 26px; border-radius: 50%; }
@@ -104,7 +105,7 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 /* In-match exit: same power SVG as the header logout button, one icon on
    every device. Tap reveals the confirmation strip before leaving. */
 #exit-match-btn { background: var(--panel2); border: none; color: var(--text); border-radius: 8px; padding: 5px 9px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 30px; }
-#exit-confirm { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid rgba(231,101,91,.45); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; font-size: 14px; }
+#exit-confirm { position: sticky; top: 8px; z-index: 20; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid rgba(231,101,91,.45); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; font-size: 14px; }
 #exit-confirm .exit-note { flex-basis: 100%; text-align: center; font-size: 12px; color: var(--muted); }
 @media (max-width: 600px) {
   #match-info { order:-1; width:100%; justify-content:center; }
@@ -125,6 +126,9 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
   position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
   align-items: center; justify-content: center; background: rgba(15,23,42,.82);
   border-radius: var(--radius); text-align: center; padding: 20px;
+  /* The 3D stack positions the game canvas at z-index 1; without this the
+     overlay (z-index auto) paints under it and its buttons can't be tapped. */
+  z-index: 2;
 }
 #game-overlay h2 { font-size: 30px; margin: 0; }
 
@@ -249,7 +253,8 @@ footer { line-height: 1.8; }
 }
 
 /* Unified illustrated interface details */
-input, select { box-shadow: inset 0 2px 5px rgba(2,11,19,.22); border-color: var(--line); }
+input, select, textarea { box-shadow: inset 0 2px 5px rgba(2,11,19,.22); border-color: var(--line); }
+textarea { resize: vertical; box-sizing: border-box; }
 .tabs button { border: 1px solid rgba(78,132,153,.35); background: linear-gradient(145deg, #1b465b, #123447); color: var(--muted); box-shadow: 0 3px 0 #082334; }
 .tabs button.active { background: linear-gradient(145deg, #55d5c3, #2da99e); color: #062027; border-color: #73e0d0; }
 .swatch { border: 1px solid rgba(255,255,255,.12); box-shadow: inset 0 0 14px rgba(2,11,19,.2); }
@@ -476,3 +481,27 @@ body.guest-mode #topbar { margin-top: 40px; }
 #consent-banner .consent-text { max-width: 640px; }
 #consent-banner a { color: var(--accent, #38bdf8); }
 #consent-banner .consent-actions { display: flex; gap: 8px; }
+
+/* === Clockwork brass lobby (pack-gated: body.clockwork, stage 3) === */
+body.clockwork { --accent: #e0a94e; }
+body.clockwork .brand, body.clockwork h1, body.clockwork h2 { color: #ecc069; }
+body.clockwork .card {
+  border-color: rgba(202, 146, 60, .5);
+  box-shadow: 0 10px 26px rgba(2, 11, 19, .28), inset 0 1px rgba(255, 255, 255, .04), 0 0 0 1px rgba(120, 84, 32, .25);
+  background-image:
+    radial-gradient(circle 4px at 13px 13px, #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    radial-gradient(circle 4px at calc(100% - 13px) 13px, #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    radial-gradient(circle 4px at 13px calc(100% - 13px), #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    radial-gradient(circle 4px at calc(100% - 13px) calc(100% - 13px), #d3ab55 30%, #7a5a22 55%, transparent 62%),
+    linear-gradient(145deg, rgba(24, 44, 56, .96), rgba(14, 32, 44, .96));
+  background-repeat: no-repeat;
+}
+body.clockwork button.btn:not(.secondary):not(.danger),
+body.clockwork a.btn:not(.secondary):not(.danger) {
+  background: linear-gradient(145deg, #e6b455, #a8742c);
+  color: #241503; border-color: #f0cd8a;
+  box-shadow: 0 5px 0 #6d4a1a, 0 9px 18px rgba(2, 11, 19, .22), inset 0 1px rgba(255, 255, 255, .3);
+}
+body.clockwork button.btn:active:not(.secondary):not(.danger) { box-shadow: 0 2px 0 #6d4a1a, 0 5px 10px rgba(2, 11, 19, .22); }
+body.clockwork input, body.clockwork select, body.clockwork textarea { border-color: #6d5326; }
+#exit-match-btn.armed { outline: 2px solid var(--danger); }

@@ -28,6 +28,25 @@ const App = {
       if (m.status === 200) App.setMe(m.data);
     };
     window.addEventListener("hashchange", () => this.route());
+    document.querySelector('a[data-nav="contact"]')?.addEventListener("click", (e) => {
+      if (this.me) { e.preventDefault(); Sfx.play("click"); this.showContactOverlay(); }
+    });
+    const gfxBtn = document.getElementById("gfx-btn");
+    if (gfxBtn) {
+      const gfxPaint = () => {
+        const low = (typeof Consent !== "undefined" ? Consent.getPref("bg_gfx_low") : null) === "1";
+        gfxBtn.textContent = low ? "🎡❄️" : "🎡";
+        gfxBtn.title = low ? "גרפיקה חסכונית: פעיל (לחיצה = זיהוי אוטומטי)" : "גרפיקה חסכונית למכשירים חלשים (לחיצה = הפעלה ידנית)";
+        gfxBtn.style.opacity = (window.App && App.graphics && App.graphics.enabled) ? "1" : ".35";
+      };
+      gfxBtn.onclick = () => {
+        const low = Consent.getPref("bg_gfx_low") === "1";
+        Consent.setPref("bg_gfx_low", low ? "0" : "1");
+        if (typeof Sfx !== "undefined") Sfx.play("click");
+        gfxPaint();
+      };
+      gfxPaint();
+    }
     document.getElementById("mute-btn").onclick = () => {
       const m = Sfx.toggleMute();
       document.getElementById("mute-btn").textContent = m ? "🔇" : "🔊";
@@ -35,6 +54,7 @@ const App = {
     document.getElementById("logout-btn").onclick = async () => {
       await API.post("/api/auth/logout"); API.setToken(null);
       App.stopPulse();
+      clearTimeout(App._gpTimer); App._gpTimer = null; App._guestPromptCfg = null;
       App.me = null; location.hash = "#/login";
     };
     document.getElementById("mute-btn").textContent = Sfx.muted ? "🔇" : "🔊";
@@ -210,9 +230,14 @@ const App = {
     window.__BG_LOCKED__ = false;
     this.me = data.user; this.inventory = data.inventory || {};
     this.ux = data.ux || {};
+    this.graphics = data.graphics || null;
+    if (this.graphics && this.graphics.enabled === true && typeof Clockwork !== "undefined") Clockwork.preload();
+    document.body.classList.toggle("clockwork", !!(this.graphics && this.graphics.enabled === true));
     this._guest = this.me && this.me.is_guest ? (data.guest || {}) : null;
     document.body.classList.toggle("guest-mode", !!this._guest);
     if (this._guest) this.showGuestBanner(); else this.hideGuestBanner();
+    this._guestPromptCfg = data.guest_prompt || null;
+    this.scheduleGuestPrompt();
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
     this._daily = data.daily_available; this._streak = data.streak;
@@ -249,7 +274,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=9").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=12").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -290,6 +315,67 @@ const App = {
   hideGuestBanner() {
     clearInterval(this._guestTimer); this._guestTimer = null;
     document.getElementById("guest-banner")?.remove();
+  },
+
+  // Timed guest sign-up prompt (separate from the once-per-session games
+  // prompt). Server-controlled via gameplay_controls.guest_prompt:
+  // enabled, first_delay_sec until the first show, interval_min between
+  // re-shows after dismissal. Never appears mid-match or over another
+  // popup. The dismiss stamp is a consent-gated convenience pref, so on
+  // "essential only" it is kept for the tab session only.
+  scheduleGuestPrompt() {
+    clearTimeout(this._gpTimer); this._gpTimer = null;
+    const cfg = this._guestPromptCfg;
+    if (!this.me || !this.me.is_guest || !cfg || cfg.enabled !== true) return;
+    const delay = Math.max(5, Number(cfg.first_delay_sec ?? 45)) * 1000;
+    this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), delay);
+  },
+
+  maybeShowGuestPrompt() {
+    const cfg = this._guestPromptCfg;
+    if (!this.me || !this.me.is_guest || !cfg || cfg.enabled !== true) return;
+    const h = location.hash || "#/lobby";
+    const busy = h.startsWith("#/game")
+      || document.querySelector(".guest-prompt-overlay, .match-offer, .tutorial-overlay");
+    if (busy) { this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), 30000); return; }
+    const interval = Math.max(1, Number(cfg.interval_min ?? 10)) * 60000;
+    const last = Number((typeof Consent !== "undefined" ? Consent.getPref("bg_guest_prompt_dismissed") : null) || 0);
+    const wait = last ? interval - (Date.now() - last) : 0;
+    if (wait > 0) { this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), wait + 1000); return; }
+    this.showGuestPrompt(interval);
+  },
+
+  showGuestPrompt(interval) {
+    document.querySelectorAll(".guest-prompt-overlay.timed").forEach(o => o.remove());
+    const en = Lang.current === "en";
+    const ov = document.createElement("div");
+    ov.className = "guest-prompt-overlay timed";
+    ov.innerHTML = `<div class="card guest-prompt-card" style="position:relative">
+      <button id="guest-prompt-close" aria-label="${en ? "Close" : "סגור"}" style="position:absolute;top:8px;${en ? "right" : "left"}:8px;background:none;border:none;font-size:18px;cursor:pointer;color:inherit;opacity:.7">✕</button>
+      <h2>🎭 ${en ? "Keep your progress" : "לשמור את ההתקדמות?"}</h2>
+      <p>${en
+        ? "You are playing as a guest: the account deletes itself and progress is lost. Sign up free and everything carries over."
+        : "אתה משחק כאורח: החשבון נמחק וההתקדמות הולכת לאיבוד. נרשמים בחינם והכל עובר איתך."}</p>
+      <button class="btn" id="guest-prompt-yes">${en ? "Sign up free" : "הרשמה חינם"}</button>
+      <button class="btn secondary" id="guest-prompt-no">${en ? "Maybe later" : "אולי אחר כך"}</button>
+    </div>`;
+    document.body.appendChild(ov);
+    const dismiss = () => {
+      ov.remove();
+      if (typeof Consent !== "undefined") Consent.setPref("bg_guest_prompt_dismissed", String(Date.now()));
+      clearTimeout(this._gpTimer);
+      this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), interval);
+    };
+    ov.querySelector("#guest-prompt-close").onclick = dismiss;
+    ov.querySelector("#guest-prompt-no").onclick = dismiss;
+    ov.querySelector("#guest-prompt-yes").onclick = () => {
+      ov.remove();
+      if (typeof Consent !== "undefined") Consent.setPref("bg_guest_prompt_dismissed", String(Date.now()));
+      clearTimeout(this._gpTimer);
+      this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), interval);
+      this._guestUpgrade = true;
+      location.hash = "#/login";
+    };
   },
 
   showLockdown(title, body, endsAt, preview = false) {
@@ -726,13 +812,12 @@ const App = {
 
 
   // ---------------- contact / bug report ----------------
-  vContact(view, seq) {
-    if (!this.routeCurrent(seq)) return;
-    const u = this.me ?? {};
-    const identified = Boolean(u.id) && !u.is_guest;
-    const from = (this._lastHash && !this._lastHash.startsWith("#/contact")) ? this._lastHash : "#/lobby";
-    view.removeAttribute("aria-busy");
-    view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto">
+  // Shared form bits: the lobby button and nav link open the form INLINE
+  // (overlay on the current page); the #/contact route stays for direct
+  // links. Both use the same markup and submit logic.
+  _contactMarkup(u) {
+    const identified = Boolean(u && u.id) && !u.is_guest;
+    return `
       <h1>🛟 דיווח על תקלה / צור קשר</h1>
       <p class="sub">נתקלתם בתקלה, יש שאלה או רעיון לשיפור? הפנייה נשלחת ישירות למפתח במייל, ומצורפים אליה אוטומטית פרטים טכניים (גרסה, דפדפן, מסך) שעוזרים לאתר תקלות.</p>
       <label>סוג הפנייה</label>
@@ -745,40 +830,78 @@ const App = {
       <textarea id="contact-message" rows="6" maxlength="2000" placeholder="מה קרה, באיזה מסך, ומה ציפיתם שיקרה?"></textarea>
       ${identified ? `<p class="sub">הפנייה משויכת אוטומטית לחשבון שלך (${esc(u.name)}) והתשובה תגיע למייל של החשבון.</p>`
         : `<label>מייל לתשובה</label><input id="contact-email" type="email" maxlength="200" placeholder="you@example.com" dir="ltr" style="text-align:left">`}
-      <input id="contact-website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn" id="contact-send">שליחה</button>
-        <button class="btn secondary" id="contact-back">חזרה ללובי</button>
-      </div></div>`;
-    document.getElementById("contact-back").onclick = () => { Sfx.play("click"); location.hash = "#/lobby"; };
-    const sendBtn = document.getElementById("contact-send");
+      <input id="contact-website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">`;
+  },
+
+  _contactWireSend(root, u, screen, onSuccess) {
+    const identified = Boolean(u && u.id) && !u.is_guest;
+    const sendBtn = root.querySelector("#contact-send");
     sendBtn.onclick = async () => {
-      const type = document.getElementById("contact-type").value;
-      const message = document.getElementById("contact-message").value;
+      const type = root.querySelector("#contact-type").value;
+      const message = root.querySelector("#contact-message").value;
       if (!message.trim()) { toast("כתבו כמה מילים לפני השליחה"); return; }
-      const email = identified ? "" : (document.getElementById("contact-email")?.value ?? "");
+      const email = identified ? "" : (root.querySelector("#contact-email")?.value ?? "");
       if (!identified && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast("כתובת המייל לא תקינה"); return; }
       sendBtn.disabled = true;
       Sfx.play("click");
       const result = await API.post("/api/contact", {
         type, message, email: email.trim(),
-        website: document.getElementById("contact-website").value,
+        website: root.querySelector("#contact-website").value,
         context: {
           client_version: (typeof CONFIG !== "undefined" && CONFIG.CLIENT_VERSION) || "",
-          screen: from, lang: Lang.current, user_agent: navigator.userAgent,
+          screen, lang: Lang.current, user_agent: navigator.userAgent,
         },
       });
-      if (result.status === 200 && result.data && result.data.ok) {
-        view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto;text-align:center">
-          <h1>✅ הפנייה נשלחה</h1>
-          <p class="sub">תודה! הדיווח הגיע אלינו ואנחנו חוזרים למייל בהקדם.</p>
-          <button class="btn" id="contact-done" style="margin-top:10px">חזרה ללובי</button></div>`;
-        document.getElementById("contact-done").onclick = () => { location.hash = "#/lobby"; };
-      } else {
-        sendBtn.disabled = false;
-        toast(apiError(result, "השליחה נכשלה - נסו שוב"));
-      }
+      if (result.status === 200 && result.data && result.data.ok) onSuccess();
+      else { sendBtn.disabled = false; toast(apiError(result, "השליחה נכשלה - נסו שוב")); }
     };
+  },
+
+  showContactOverlay() {
+    document.getElementById("contact-overlay")?.remove();
+    const u = this.me ?? {};
+    const ov = document.createElement("div");
+    ov.id = "contact-overlay";
+    ov.className = "guest-prompt-overlay";
+    ov.innerHTML = `<div class="card" style="max-width:560px;width:min(560px,92vw);max-height:88vh;overflow-y:auto;overflow-x:hidden;position:relative">
+      <button id="contact-close" aria-label="סגור" style="position:absolute;top:8px;left:8px;background:none;border:none;font-size:18px;cursor:pointer;color:inherit;opacity:.7">✕</button>
+      ${this._contactMarkup(u)}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="contact-send">שליחה</button>
+        <button class="btn secondary" id="contact-cancel">ביטול</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.querySelector("#contact-close").onclick = close;
+    ov.querySelector("#contact-cancel").onclick = () => { Sfx.play("click"); close(); };
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    this._contactWireSend(ov, u, location.hash || "#/lobby", () => {
+      ov.querySelector(".card").innerHTML = `<div style="text-align:center">
+        <h1>✅ הפנייה נשלחה</h1>
+        <p class="sub">תודה! הדיווח הגיע אלינו ואנחנו חוזרים למייל בהקדם.</p>
+        <button class="btn" id="contact-done" style="margin-top:10px">סגור</button></div>`;
+      ov.querySelector("#contact-done").onclick = close;
+    });
+  },
+
+  vContact(view, seq) {
+    if (!this.routeCurrent(seq)) return;
+    const u = this.me ?? {};
+    const from = (this._lastHash && !this._lastHash.startsWith("#/contact")) ? this._lastHash : "#/lobby";
+    view.removeAttribute("aria-busy");
+    view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto">${this._contactMarkup(u)}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn" id="contact-send">שליחה</button>
+        <button class="btn secondary" id="contact-back">חזרה ללובי</button>
+      </div></div>`;
+    document.getElementById("contact-back").onclick = () => { Sfx.play("click"); location.hash = "#/lobby"; };
+    this._contactWireSend(view, u, from, () => {
+      view.innerHTML = `<div class="card" style="max-width:560px;margin:0 auto;text-align:center">
+        <h1>✅ הפנייה נשלחה</h1>
+        <p class="sub">תודה! הדיווח הגיע אלינו ואנחנו חוזרים למייל בהקדם.</p>
+        <button class="btn" id="contact-done" style="margin-top:10px">חזרה ללובי</button></div>`;
+      document.getElementById("contact-done").onclick = () => { location.hash = "#/lobby"; };
+    });
   },
 
   async vLobby(view, seq = this._routeSeq) {
@@ -877,7 +1000,7 @@ const App = {
     };
     const howtoBtn = document.getElementById("howto-btn");
     if (howtoBtn) howtoBtn.onclick = () => { Sfx.play("click"); this.showHowTo(); };
-    document.getElementById("contact-btn").onclick = () => { Sfx.play("click"); location.hash = "#/contact"; };
+    document.getElementById("contact-btn").onclick = () => { Sfx.play("click"); this.showContactOverlay(); };
     const friendBtn = document.getElementById("friend-btn");
     if (friendBtn) friendBtn.onclick = async () => {
       Sfx.play("click");

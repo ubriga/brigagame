@@ -19,9 +19,11 @@ const Sfx = {
     coin: "assets/sfx/coin.mp3",
     win: "assets/sfx/win.mp3",
     lose: "assets/sfx/lose.mp3",
+    steam: "assets/sfx/steam.mp3",
+    clank: "assets/sfx/clank.mp3",
   },
   // Per-sound loudness trim on top of the normalized files.
-  GAIN: { shot: 0.9, explosion: 1, crumble: 0.85, click: 0.45, coin: 0.7, win: 0.9, lose: 0.9 },
+  GAIN: { shot: 0.9, explosion: 1, crumble: 0.85, click: 0.45, coin: 0.7, win: 0.9, lose: 0.9, steam: 0.85, clank: 0.95 },
 
   ensure() {
     if (!this.ctx) {
