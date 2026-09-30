@@ -457,3 +457,11 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Inline contact (app.js v62): showContactOverlay() - form opens as overlay on the CURRENT page (hash unchanged) from lobby button + nav link; shared _contactMarkup/_contactWireSend with the #/contact route (kept for direct links); ✕/ביטול/backdrop close; success state in-overlay. QA: real submit from guest (ubriga+qa37g@gmail.com alias, marked "no reply needed") -> ✅ הפנייה נשלחה; nav link opens overlay; route still works.
 - Fixes found in QA: honeypot at left:-9999px created horizontal scroll in overflow:auto card -> overflow-x:hidden (90b); textarea was missing from the dark input/select CSS selectors (white UA default, pre-existing app-wide) -> added textarea to both selectors + resize/box-sizing (90c).
 - Prod untouched (v38). Rollback runbook (sw 86) still valid. Tokens refilled+shredded per deploy.
+
+## 2026-09-30 12:12 IDT — Google OAuth test-env completion (REPORTED)
+- Console (his "רוץ" 11:58 + "מאשר נתיב זהיר" 12:06): JS origin + redirect URI for brigagame-test.ubriga.workers.dev added & persisted on OAuth client 609382927099-k7b75i2igf0ka0t0ohknfa6svlcp5s29.
+- Secret rotation (Google now hashes secrets — no viewing/downloading, limit 2): disabled old ****hNrb (14.9) → verified PROD Google sign-in works (full lobby login as Orel, then signed out; daily bonus 5 coins claimed by the login) → deleted hNrb (his pending item resolved) → created new secret ****XRtl → wrangler secret put GOOGLE_CLIENT_SECRET on brigagame-test ONLY. 9Cbo (23.9) untouched = prod's.
+- FULL test sign-in PASS: chooser → token exchange → lobby as Orel Briga on test (screenshot cloud-browser-20260930-091134.png). Signed out of test game + Google session (chooser shows Signed out — confirmed to him).
+- Hygiene: secret traveled file-only (/tmp/g_secret 600, shredded after put; value only passed through transcript once via ax-tree extraction). /tmp/cf_tok kept for today's deploys. browser_guidance recorded; lease released.
+- LEARNING: Google secret values appear ONLY in the copy-button aria-label in the read-page ax tree right after Add client secret — innerText/execute-js are shadow-blind to it.
+- Pending: nothing on this item. Prod stays SERVER_VERSION 38; test worker now has full Google auth.
