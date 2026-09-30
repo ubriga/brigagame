@@ -676,6 +676,10 @@ const Render3D = {
     Render3D._composer = null; Render3D._bloom = null;
     Render3D._r = null; Render3D._scene = null; Render3D._cam = null;
     Render3D._blocks = { p1: [], p2: [] }; Render3D._cannons = {};
+    // The press belongs to the disposed scene: without this reset the next
+    // match's guard (`!Render3D._press`) skips the rebuild and the obstacle
+    // is invisible in 3D for every match after the first.
+    Render3D._press = null;
     Render3D._ready = false;
   },
 };
