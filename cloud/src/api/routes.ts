@@ -267,6 +267,11 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
         next: nextStreakMilestone(streakCfg, Number(u.streak)),
       },
       coating, expansion,
+      guest_prompt: (() => { const gp = controls.guest_prompt ?? {}; return {
+        enabled: gp.enabled === true,
+        interval_min: Math.max(1, Math.min(120, Math.trunc(Number(gp.interval_min ?? 10)) || 10)),
+        first_delay_sec: Math.max(0, Math.min(600, Math.trunc(Number(gp.first_delay_sec ?? 45)) || 0)),
+      }; })(),
       guest: u.is_guest ? {
         expires_at: guestExpiresAt(u, guestCfg),
         games_until_register_prompt: guestCfg.games_until_register_prompt,

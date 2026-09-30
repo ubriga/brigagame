@@ -2072,6 +2072,11 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "games_until_register_prompt": 3,
     "ranked_allowed": false
   },
+  "guest_prompt": {
+    "enabled": false,
+    "interval_min": 10,
+    "first_delay_sec": 45
+  },
   "contact_form": {
     "enabled": true,
     "destination_email": "brigagame2026@gmail.com",

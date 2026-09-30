@@ -51,6 +51,7 @@ const App = {
     document.getElementById("logout-btn").onclick = async () => {
       await API.post("/api/auth/logout"); API.setToken(null);
       App.stopPulse();
+      clearTimeout(App._gpTimer); App._gpTimer = null; App._guestPromptCfg = null;
       App.me = null; location.hash = "#/login";
     };
     document.getElementById("mute-btn").textContent = Sfx.muted ? "🔇" : "🔊";
@@ -232,6 +233,8 @@ const App = {
     this._guest = this.me && this.me.is_guest ? (data.guest || {}) : null;
     document.body.classList.toggle("guest-mode", !!this._guest);
     if (this._guest) this.showGuestBanner(); else this.hideGuestBanner();
+    this._guestPromptCfg = data.guest_prompt || null;
+    this.scheduleGuestPrompt();
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
     this._daily = data.daily_available; this._streak = data.streak;
@@ -268,7 +271,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=11").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=12").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -309,6 +312,67 @@ const App = {
   hideGuestBanner() {
     clearInterval(this._guestTimer); this._guestTimer = null;
     document.getElementById("guest-banner")?.remove();
+  },
+
+  // Timed guest sign-up prompt (separate from the once-per-session games
+  // prompt). Server-controlled via gameplay_controls.guest_prompt:
+  // enabled, first_delay_sec until the first show, interval_min between
+  // re-shows after dismissal. Never appears mid-match or over another
+  // popup. The dismiss stamp is a consent-gated convenience pref, so on
+  // "essential only" it is kept for the tab session only.
+  scheduleGuestPrompt() {
+    clearTimeout(this._gpTimer); this._gpTimer = null;
+    const cfg = this._guestPromptCfg;
+    if (!this.me || !this.me.is_guest || !cfg || cfg.enabled !== true) return;
+    const delay = Math.max(5, Number(cfg.first_delay_sec ?? 45)) * 1000;
+    this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), delay);
+  },
+
+  maybeShowGuestPrompt() {
+    const cfg = this._guestPromptCfg;
+    if (!this.me || !this.me.is_guest || !cfg || cfg.enabled !== true) return;
+    const h = location.hash || "#/lobby";
+    const busy = h.startsWith("#/game")
+      || document.querySelector(".guest-prompt-overlay, .match-offer, .tutorial-overlay");
+    if (busy) { this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), 30000); return; }
+    const interval = Math.max(1, Number(cfg.interval_min ?? 10)) * 60000;
+    const last = Number((typeof Consent !== "undefined" ? Consent.getPref("bg_guest_prompt_dismissed") : null) || 0);
+    const wait = last ? interval - (Date.now() - last) : 0;
+    if (wait > 0) { this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), wait + 1000); return; }
+    this.showGuestPrompt(interval);
+  },
+
+  showGuestPrompt(interval) {
+    document.querySelectorAll(".guest-prompt-overlay.timed").forEach(o => o.remove());
+    const en = Lang.current === "en";
+    const ov = document.createElement("div");
+    ov.className = "guest-prompt-overlay timed";
+    ov.innerHTML = `<div class="card guest-prompt-card" style="position:relative">
+      <button id="guest-prompt-close" aria-label="${en ? "Close" : "סגור"}" style="position:absolute;top:8px;${en ? "right" : "left"}:8px;background:none;border:none;font-size:18px;cursor:pointer;color:inherit;opacity:.7">✕</button>
+      <h2>🎭 ${en ? "Keep your progress" : "לשמור את ההתקדמות?"}</h2>
+      <p>${en
+        ? "You are playing as a guest: the account deletes itself and progress is lost. Sign up free and everything carries over."
+        : "אתה משחק כאורח: החשבון נמחק וההתקדמות הולכת לאיבוד. נרשמים בחינם והכל עובר איתך."}</p>
+      <button class="btn" id="guest-prompt-yes">${en ? "Sign up free" : "הרשמה חינם"}</button>
+      <button class="btn secondary" id="guest-prompt-no">${en ? "Maybe later" : "אולי אחר כך"}</button>
+    </div>`;
+    document.body.appendChild(ov);
+    const dismiss = () => {
+      ov.remove();
+      if (typeof Consent !== "undefined") Consent.setPref("bg_guest_prompt_dismissed", String(Date.now()));
+      clearTimeout(this._gpTimer);
+      this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), interval);
+    };
+    ov.querySelector("#guest-prompt-close").onclick = dismiss;
+    ov.querySelector("#guest-prompt-no").onclick = dismiss;
+    ov.querySelector("#guest-prompt-yes").onclick = () => {
+      ov.remove();
+      if (typeof Consent !== "undefined") Consent.setPref("bg_guest_prompt_dismissed", String(Date.now()));
+      clearTimeout(this._gpTimer);
+      this._gpTimer = setTimeout(() => this.maybeShowGuestPrompt(), interval);
+      this._guestUpgrade = true;
+      location.hash = "#/login";
+    };
   },
 
   showLockdown(title, body, endsAt, preview = false) {
