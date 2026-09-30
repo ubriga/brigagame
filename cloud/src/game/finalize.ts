@@ -39,13 +39,26 @@ export function rankLossPoints(currentPoints: number, versusAi = false, aiRankLe
 
 interface XpConfig { human_win: number; bot_win: number; per_damage: number; }
 
+/** Resolve whether a match is unrated practice per admin rating_rules.
+ * Defaults preserve legacy behavior: easy bot = practice, everything else ranked. */
+export function resolvePractice(m: any, state: any, controls: any): boolean {
+  const rr = (controls ?? {}).rating_rules ?? {};
+  if (m.p2_ai) {
+    const tier = String(state?.ai_tier ?? (state?.ai_difficulty === "easy" ? "easy" : "medium"));
+    const ranked = rr["bot_" + tier + "_ranked"] ?? (tier !== "easy");
+    return !ranked;
+  }
+  const ranked = m.mode === "friend" ? (rr.hvh_friend_ranked ?? true) : (rr.hvh_quick_ranked ?? true);
+  return !ranked;
+}
+
 /** Apply server-authoritative match results and economy rules. */
-export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpConfig): Promise<void> {
+export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpConfig, controls?: any): Promise<void> {
   const loserSide = winnerSide === "p1" ? "p2" : "p1";
   m.status = "finished";
   m.winner = (winnerSide === "p2" && m.p2_ai) ? null : m[winnerSide];
   m.state.winner_side = winnerSide;
-  const practice = Boolean(m.p2_ai && m.state.ai_difficulty === "easy");
+  const practice = controls ? resolvePractice(m, m.state, controls) : Boolean(m.p2_ai && m.state.ai_difficulty === "easy");
   const results: Record<string, any> = {};
   for (const [side, outcome] of [[winnerSide, "win"], [loserSide, "loss"]] as const) {
     const uid = m[side];

@@ -2096,6 +2096,15 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "wait_seconds": 30,
     "difficulty": "medium"
   },
+  "rating_rules": {
+    "hvh_quick_ranked": true,
+    "hvh_friend_ranked": true,
+    "bot_easy_ranked": false,
+    "bot_medium_ranked": true,
+    "bot_hard_ranked": true,
+    "bot_ultra_ranked": true,
+    "bot_expert_ranked": true
+  },
   "ux_onboarding": {
     "tutorial_first_match": true,
     "newbie_easy_matches": 3,

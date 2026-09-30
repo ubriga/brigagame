@@ -78,6 +78,11 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
       difficulty: [null, null, "difficulty"] },
+    rating_rules: {
+      hvh_quick_ranked: [null, null, "bool"], hvh_friend_ranked: [null, null, "bool"],
+      bot_easy_ranked: [null, null, "bool"], bot_medium_ranked: [null, null, "bool"],
+      bot_hard_ranked: [null, null, "bool"], bot_ultra_ranked: [null, null, "bool"],
+      bot_expert_ranked: [null, null, "bool"] },
     ux_onboarding: {
       tutorial_first_match: [null, null, "bool"],
       newbie_easy_matches: [0, 20, "int"],

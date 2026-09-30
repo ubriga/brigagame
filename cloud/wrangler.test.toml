@@ -22,6 +22,6 @@ database_id = "6deaf2d8-827d-4e82-88c4-50ea5236d865"
 
 [vars]
 FRONTEND_ORIGIN = "https://brigagame-test.ubriga.workers.dev"
-SERVER_VERSION = "42"
+SERVER_VERSION = "43"
 ADMIN_EMAIL = "brigagame2026@gmail.com"
 ALLOWED_ORIGINS = "https://brigagame-test.ubriga.workers.dev"

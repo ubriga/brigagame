@@ -88,20 +88,27 @@ const GameView = {
     // enforced server-side; waiting room = match deleted).
     const exitBtn = document.getElementById("exit-match-btn");
     const confirmBar = document.getElementById("exit-confirm");
+    // Exit stays visible while the confirmation strip is open (a second tap
+    // collapses it) - mid-game there is always a visible exit control.
     exitBtn.onclick = () => {
       Sfx.play("click");
+      if (!confirmBar.classList.contains("hidden")) {
+        confirmBar.classList.add("hidden");
+        exitBtn.classList.remove("armed");
+        return;
+      }
       const note = confirmBar.querySelector(".exit-note");
       if (note) note.textContent = this.snap?.practice
         ? "יציאה ממשחק תרגול לא תשפיע על הדירוג"
         : "יציאה ממשחק פעיל תיספר כהפסד בדירוג";
-      exitBtn.classList.add("hidden");
       confirmBar.classList.remove("hidden");
+      exitBtn.classList.add("armed");
       Lang.apply(confirmBar);
     };
     document.getElementById("exit-match-no").onclick = () => {
       Sfx.play("click");
       confirmBar.classList.add("hidden");
-      exitBtn.classList.remove("hidden");
+      exitBtn.classList.remove("armed");
     };
     document.getElementById("exit-match-yes").onclick = async (e) => {
       Sfx.play("click");
