@@ -372,3 +372,12 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Verified live: bloom/composer on, QA screenshot /downloads/cloud-browser-20260930-033741.png (match 7eee9c93a53c).
 - Commits: 4147d5d (rebuild), plus polish commit (moon+mountains). sw 76 on test; prod untouched.
 - Follow-up queued (parent 06:37): obstacle redesign — user directive via WhatsApp: obstacle "not interfering enough, not designed enough"; options brief requested (lettered, effort); follow-up task to raise obstacle involvement per-level + admin control.
+
+## 2026-09-30 ~07:12 — obstacle steam press (visual-only, option ב relayed via parent 06:59), test only, sw 79
+- New GLBs press_frame/press_piston (dedicated pressSteel/pressBrass/pressIron mats, lifted + slight emissive — first pass read too dark at night).
+- render3d.js v11: lazy press build in draw(), cyclic piston (rise ease-out 35% / hold+lamp pulse 20% / slam 8% / rest), 3 steam puffs on slam (1.1s), additive lamp sprite (also pulses on ob.warning), ground rail when obstacle.motion enabled, press tracks obstacleNow() x every frame (server-owned hitbox; moving-obstacle modifier verified live).
+- game.js: 2D striped box now drawn ONLY when r3d off (fallback), restyled brass + rivets. Server logic untouched; obstacle hitbox unchanged.
+- QA (fresh lease, guest, bot match a374cfab5dc9, moving obstacle): press:true, rail:true, pressErr:null. Screenshots /downloads/cloud-browser-20260930-041102.png (piston up, lamp) + 041125.png (piston down/rest). Steam subtle in stills, better in motion (caveat).
+- Direction chevrons (‹ ›) from old 2D box are gone in 3D mode (lamp covers warning) - noted for follow-up.
+- Budget: +25KB GLBs (press_frame 16.6KB + press_piston 8.3KB), total models ~223KB - under caps.
+- sw 79 test only; prod untouched; token shredded after deploy.

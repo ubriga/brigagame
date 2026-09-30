@@ -437,13 +437,13 @@ const Render3D = {
         const lamp = new T.Sprite(new T.SpriteMaterial({
           map: Render3D._glowTex, color: 0xffb35c, transparent: true, opacity: 0.3,
           blending: T.AdditiveBlending, depthWrite: false, fog: false }));
-        lamp.scale.set(44, 44, 1); lamp.position.set(cx, 180, 14); sc.add(lamp);
+        lamp.scale.set(44, 44, 1); lamp.position.set(cx, 190, 14); sc.add(lamp);
         const puffs = [];
         for (const px of [-34, 0, 34]) {
           const sp = new T.Sprite(new T.SpriteMaterial({
             map: Render3D._glowTex, color: 0xcfd8e3, transparent: true, opacity: 0,
             blending: T.NormalBlending, depthWrite: false, fog: false }));
-          sp.scale.set(26, 26, 1); sp.position.set(cx + px, 168, 8); sc.add(sp);
+          sp.scale.set(26, 26, 1); sp.position.set(cx + px, 178, 8); sc.add(sp);
           puffs.push({ sp, life: 0, x: cx + px });
         }
         let rail = null;
@@ -482,7 +482,7 @@ const Render3D = {
       const warn = obL && obL.warning;
       pr.lamp.material.opacity = (holding || warn) ? 0.55 + 0.35 * Math.sin(nowMs / 85) : 0.22;
       if (pr.prevPhase < 0.63 && phase >= 0.63)   // slam landed → steam burst
-        for (const p of pr.puffs) { p.life = 1; p.sp.position.y = 168; }
+        for (const p of pr.puffs) { p.life = 1; p.sp.position.y = 178; }
       pr.prevPhase = phase;
       const dt2 = Math.min(0.25, Render3D._bgT2 ? (nowMs - Render3D._bgT2) / 1000 : 0.016);
       for (const p of pr.puffs) {
