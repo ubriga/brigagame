@@ -481,3 +481,9 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Prod live verified: config.js CLIENT_VERSION 42 + API_BASE worker URL, sw 91b, login page render, guest play -> lobby, easy bot match active: obstacle 2D box visible, exit button visible, practice indicator, bot events firing. Guest self-deletes ~24h (no D1 cleanup). Prod webgl3d default OFF (catalog webgl3d_enabled:false, no override) -> stale-press bug latent on prod, 2D unaffected.
 - OBSTACLE BUG ROOT CAUSE: Render3D.dispose() never reset Render3D._press. Match 2+ in the same SPA session: lazy-build guard (!_press) skipped, stale press objects sat in the disposed scene -> obstacle INVISIBLE in 3D from the second match on (hitbox stayed live server-side). His two 12:22-12:23 bot games were consecutive: first fine, second invisible. Repro: pressAfterDispose true pre-fix. Fix: _press=null in dispose (render3d.js) + sw 91c-press-reset. Test deploy bdbc2ad1. GUI QA (mobile emulation, user 25): match A press built -> exit -> pressAfterDispose false -> match B press rebuilt AND in-scene, 0 errors, screenshot.
 - CLEANUP SLIP: session cleanup DELETE removed ALL user-25 test sessions (broad predicate) - he must re-login on next test visit. QA token shredded; lease released.
+
+## 2026-09-30 ~13:28 IDT — hotfix 91c בפרוד + הדלקת 3D הוחזרה לכבוי
+- worker פרוד 299ef210 (v43+fix), gh-pages 8cd0750, main bd03a87, sw 91c-press-reset live.
+- הופעל webgl3d_enabled=true; נמצא כשל דטרמיניסטי בסביבת ה-QA מול gh-pages: שרשרת טעינת GLB מתה ב-init אחרי block_brass (catch שותק → models=null → placeholder, בלי מכבש). ידני: כל 19 GLB תקינים. בטסט עובד.
+- הדגל הוחזר לכבוי (json_remove, מצב קודם בדיוק). ממתין להוראה: תיקון חוסן per-asset + retry, בידוד שורש, redeploy, הדלקה מחדש.
+- QA match 9272a5fccf7f יצא. PAT deploy-v43-hotfix91c-2026-09-30 בוטל ואומת 401.
