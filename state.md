@@ -509,3 +509,25 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - Test env v44 QA all green (real GUI): leaderboard render, contact row+audit, honeypot no-row+quarantine audit, guest lock screen, dead-session clean #/login redirect, 6 email-code logins -> 5 sessions + capped audits x2, admin reply saved+audit+honest 502 (no SMTP secret on test).
 - Prod worker v44 live (version id ee290784). gh-pages push BLOCKED on GitHub sudo email verification - asked him via parent to approve mailer + send code on WhatsApp. Frontend fixes (autofill-proof form, error cards, 401 retry) go live only after push.
 - QA leftovers on test DB: user 29 qa44@test.local, admin session uid 25, contact_reports #5, audit rows. Prod untouched by QA so far except 2 deleted probe sessions earlier.
+
+## 2026-09-30 16:23 ILT — v44 PROD LIVE + HOTFIX + full prod QA green
+
+### Deploy
+- Worker v44 live (ee290784). gh-pages pushed: v44 (01227b7) + hotfix (603e2d1). main pushed (1592c1f, 1120299).
+- HOTFIX (self-inflicted, found during prod QA): gh-pages js/config.js had API_BASE "" clobbered by rsync from cloud/public (same-origin worker copy) -> ALL site API calls broke ~16:07-16:18. Durable fix: config.js now runtime-detects location.hostname github.io -> worker URL, "" same-origin otherwise; sw 92a; config v=26. rsync can never clobber again.
+- PATs: deploy-44-hp-lb (minted w/ his sudo code, pushed, deleted, 401-verified, shredded); deploy-44-hotfix-apibase (sudo session still active, same lifecycle). Both gone.
+
+### D1 session root-cause (assignment step 3)
+- read_replication DISABLED, single EEUR primary 6e304f1a; live worker binding = same id. NO infra read-split.
+- My earlier "probe session vanished" claim was MY hash bug (sha256 of token file with trailing newline). His sessions 142/146 remain genuinely absent; only token-targeted destroySession (logout, previously unaudited) fits. v44 audits auth.logout + auth.session_capped so it's diagnosable now.
+
+### Prod QA (GUI as player, cloud browser) — ALL GREEN
+- (א) Leaderboard loads as logged-in QA user (17 rows incl header; screenshot).
+- (ב) Contact submission via GUI (QA user 67, ubriga+qa44@gmail.com) -> contact_reports id 11 + contact.report audit, ZERO report_email_failed; mail ARRIVED ubriga@gmail.com 16:20:26 ("[Brigagame 2.0] דיווח על תקלה - QA44", verified via Gmail integration).
+- (ג) Admin reply via GUI admin panel (session for user 1) -> replied_at 13:22:25Z + contact.reply audit mailed:true (FIRST EVER contact.reply audit) -> mail ARRIVED to ubriga+qa44@gmail.com 16:22:24 (verified in mailbox).
+- (ד) Dead session -> 1.5s grace retry -> token wiped -> clean #/login screen (screenshot).
+- Honeypot renders random name per render (no id) on prod form.
+
+### Leftovers on prod
+- users id 67 (QA44, ubriga+qa44@gmail.com, rating 1000, 0 games - NOT on leaderboard), contact_reports #11 (+reply), 2 QA mails in his inbox. Sessions for 67 and the QA admin session deleted. Await his call on deleting user 67 + report 11.
+- state.md commits pending push (no live PAT); push at next deploy.
