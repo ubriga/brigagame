@@ -3,6 +3,11 @@
  * block towers/cannons, lighting/fog, adaptive pixel ratio, instant fallback
  * to the 2D renderer. This module ONLY reads game state; logic is untouched.
  * The server snapshot (snap.towers) stays the single source of truth. */
+/* GLB asset base resolved from THIS script's URL, so model paths work from
+ * any deployment subpath (GitHub Pages project site) as well as root.
+ * (fetch() inside GLTFLoader resolves against the document base, unlike
+ * dynamic import() which resolves against the referencing script.) */
+const R3D_GFX3D = new URL("../assets/gfx3d/", document.currentScript.src).href;
 const Render3D = {
   _T: null, _r: null, _scene: null, _cam: null,
   _blocks: { p1: [], p2: [] }, _mats: null, _cannons: {},
@@ -24,43 +29,66 @@ const Render3D = {
     Render3D._T = T;
     /* Stage 2: real mockup-inspired models. Any load failure keeps the
      * stage-1 placeholder path below (fallback intact). */
-    let models = null;
-    try {
+    let models = Render3D._modelCache || null;
+    if (!models) try {
       const { GLTFLoader } = await import("../vendor/GLTFLoader.min.js");
       const loader = new GLTFLoader();
-      const load = (u) => new Promise((res, rej) => loader.load(u, res, undefined, rej));
+      /* Per-asset loading with one retry: a single failed GLB never kills the
+       * whole set, and every failure is named in the console (no silent
+       * all-or-nothing). */
+      const loadOne = async (file, tries) => {
+        const u = R3D_GFX3D + file;
+        for (let i = 0; i < tries; i++) {
+          try { return await new Promise((res, rej) => loader.load(u, res, undefined, rej)); }
+          catch (e) {
+            if (i === tries - 1) { console.warn("[r3d] GLB load failed:", u, e && (e.message || e)); return null; }
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
+        return null;
+      };
       models = {
-        brass: await load("../assets/gfx3d/block_brass.glb"),
-        window: await load("../assets/gfx3d/block_window.glb"),
-        vent: await load("../assets/gfx3d/block_vent.glb"),
-        cannon: await load("../assets/gfx3d/cannon.glb"),
+        brass: await loadOne("block_brass.glb", 2),
+        window: await loadOne("block_window.glb", 2),
+        vent: await loadOne("block_vent.glb", 2),
+        cannon: await loadOne("cannon.glb", 2),
       };
+      if (!models.brass && !models.window && !models.vent && !models.cannon) {
+        models = null;   // nothing loaded at all: full placeholder path
+      }
       // Stage 3 background set: each asset optional; a miss never kills the scene.
-      const opt = (u) => new Promise((res) => loader.load(u, res, undefined, () => res(null)));
-      models.bg = {
-        mountains: await opt("../assets/gfx3d/bg_mountains.glb"),
-        airship: await opt("../assets/gfx3d/bg_airship.glb"),
-        moon: await opt("../assets/gfx3d/bg_moon.glb"),
-        gear: await opt("../assets/gfx3d/bg_gear.glb"),
-        cloud: await opt("../assets/gfx3d/bg_cloud.glb"),
-        plate: await opt("../assets/gfx3d/ground_plate.glb"),
-        lantern: await opt("../assets/gfx3d/prop_lantern.glb"),
-        viaduct: await opt("../assets/gfx3d/bg_viaduct.glb"),
-        village: await opt("../assets/gfx3d/bg_village.glb"),
-        mountainsFar: await opt("../assets/gfx3d/bg_mountains_far.glb"),
-        blockCorner: await opt("../assets/gfx3d/block_corner.glb"),
-        blockBelt: await opt("../assets/gfx3d/block_belt.glb"),
-        blockRubble: await opt("../assets/gfx3d/block_rubble.glb"),
-        pressFrame: await opt("../assets/gfx3d/press_frame.glb"),
-        pressPiston: await opt("../assets/gfx3d/press_piston.glb"),
+      const opt = (file) => loadOne(file, 1);
+      if (models) models.bg = {
+        mountains: await opt("bg_mountains.glb"),
+        airship: await opt("bg_airship.glb"),
+        moon: await opt("bg_moon.glb"),
+        gear: await opt("bg_gear.glb"),
+        cloud: await opt("bg_cloud.glb"),
+        plate: await opt("ground_plate.glb"),
+        lantern: await opt("prop_lantern.glb"),
+        viaduct: await opt("bg_viaduct.glb"),
+        village: await opt("bg_village.glb"),
+        mountainsFar: await opt("bg_mountains_far.glb"),
+        blockCorner: await opt("block_corner.glb"),
+        blockBelt: await opt("block_belt.glb"),
+        blockRubble: await opt("block_rubble.glb"),
+        pressFrame: await opt("press_frame.glb"),
+        pressPiston: await opt("press_piston.glb"),
       };
-    } catch (e) { models = null; }
+    } catch (e) { models = null; console.warn("[r3d] model init failed:", e && (e.message || e)); }
+    if (models) Render3D._modelCache = models;
     Render3D._models = models;
     /* The 2D canvas already owns a 2D context, so WebGL gets its own canvas
      * stacked UNDER it in #game-stage. The 2D canvas keeps drawing HUD,
      * aim, shots and particles on top; world painting moves to WebGL. */
     const host = game.canvas;
-    const gl = document.createElement("canvas");
+    /* Engine reuse: the renderer/WebGL context persist across matches (parked
+     * by dispose); only the scene graph is rebuilt per match. Recreating the
+     * context per match made every match after the first composite black on
+     * some browsers. */
+    let r, gl;
+    if (!Render3D._r) {
+    gl = document.createElement("canvas");
     gl.id = "gl3d-canvas";
     gl.style.cssText = "position:absolute;z-index:0;pointer-events:none";
     host.parentElement.insertBefore(gl, host);
@@ -81,9 +109,10 @@ const Render3D = {
      * 2D view immediately; if the browser restores the context, re-init 3D. */
     gl.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
-      if (game._r3d) {
-        game._r3d = false;
-        try { Render3D.dispose(); } catch (e2) {}
+      const g0 = Render3D._game;
+      if (g0 && g0._r3d) {
+        g0._r3d = false;
+        try { Render3D.disposeFull(); } catch (e2) {}
         if (typeof toast === "function") {
           const en = (typeof Lang !== "undefined" && Lang.current === "en");
           toast(en ? "Advanced graphics paused - switched to the simple view"
@@ -92,12 +121,12 @@ const Render3D = {
       }
     });
     gl.addEventListener("webglcontextrestored", () => {
-      try { game._r3dTryInit(); } catch (e) {}
+      try { const g1 = Render3D._game; if (g1) g1._r3dTryInit(); } catch (e) {}
     });
     /* High-density phones (DPR>2) skip MSAA and start at 1.5x: at that
      * pixel density AA is invisible but costs real fill-rate. */
     const dpr = window.devicePixelRatio || 1;
-    const r = new T.WebGLRenderer({ canvas: gl, antialias: dpr <= 2, powerPreference: "high-performance" });
+    r = new T.WebGLRenderer({ canvas: gl, antialias: dpr <= 2, powerPreference: "high-performance" });
     const pr = dpr > 2 ? 1.5 : Math.min(dpr, 2);
     Render3D._pr = pr;
     r.setPixelRatio(pr);
@@ -107,6 +136,27 @@ const Render3D = {
      * the single biggest "game look" upgrade available (research-backed). */
     r.toneMapping = T.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.12;
+    } else {
+      /* Parked engine from a previous match: re-attach the same canvas to the
+       * new game's host and re-point sizing/listeners. */
+      gl = Render3D._gl;
+      host.parentElement.insertBefore(gl, host);
+      host.style.position = "relative";
+      host.style.zIndex = "1";
+      host.classList.add("gl3d");
+      const syncBox = () => {
+        gl.style.left = host.offsetLeft + "px";
+        gl.style.top = host.offsetTop + "px";
+        gl.style.width = host.offsetWidth + "px";
+        gl.style.height = host.offsetHeight + "px";
+      };
+      syncBox();
+      window.addEventListener("resize", syncBox);
+      Render3D._host = host; Render3D._syncBox = syncBox;
+      Render3D._r.setPixelRatio(Render3D._pr);
+      Render3D._r.setSize(game.W, game.H, false);
+      r = Render3D._r;
+    }
 
     const scene = new T.Scene();
     scene.background = new T.Color(0x0c1f30);
@@ -331,6 +381,7 @@ const Render3D = {
       const src = (edge && models.bg.blockCorner) ? models.bg.blockCorner
         : (r % 4 === 2 && models.bg.blockBelt) ? models.bg.blockBelt
         : pick === 0 ? models.window : (pick === 1 || pick === 5) ? models.vent : models.brass;
+      if (!src) return new T.Mesh(blockGeo, Render3D._mats[side]);
       const cl = src.scene.clone(true);
       if (edge && c === blockProto._cols - 1 && c !== 0) {   // mirror the corner spine outward
         cl.scale.x = -1;
@@ -379,7 +430,7 @@ const Render3D = {
       const pivot = new T.Group();
       const topY = game.TROWS * game.BLOCK;
       pivot.position.set(game.tx(side) + game.TCOLS * game.BLOCK / 2, topY + 10, 0);
-      if (models) {
+      if (models && models.cannon) {
         const cm = models.cannon.scene.clone(true);   // barrel along +x, rotates with aim
         cm.scale.setScalar(1.28);                        // reference frame: bigger cannon read
         cm.position.y = -2;
@@ -491,6 +542,7 @@ const Render3D = {
 
     Render3D._r = r; Render3D._scene = scene; Render3D._cam = cam;
     Render3D._frame = { n: 0, t: 0 }; Render3D._lowStreak = 0; Render3D._adapted = false;
+    Render3D._game = game;
     Render3D._ready = true;
     return true;
   },
@@ -664,23 +716,41 @@ const Render3D = {
     return true;
   },
 
+  /* Match-level teardown: the scene graph goes, but the renderer, canvas,
+   * THREE module and loaded models stay PARKED for the next match. Creating
+   * a fresh WebGL context per match is what made every match after the first
+   * composite black on some browsers (and burns the browser's context budget
+   * on real devices). */
   dispose() {
-    try { Render3D._r && Render3D._r.dispose(); } catch (e) {}
     try {
       if (Render3D._syncBox) window.removeEventListener("resize", Render3D._syncBox);
       if (Render3D._gl && Render3D._gl.parentElement) Render3D._gl.parentElement.removeChild(Render3D._gl);
       if (Render3D._host) Render3D._host.classList.remove("gl3d");
     } catch (e) {}
-    Render3D._gl = null; Render3D._host = null; Render3D._syncBox = null;
+    try { Render3D._composer && Render3D._composer.dispose && Render3D._composer.dispose(); } catch (e) {}
+    try { Render3D._glowTex && Render3D._glowTex.dispose && Render3D._glowTex.dispose(); } catch (e) {}
+    if (Render3D._models) Render3D._modelCache = Render3D._models;
+    Render3D._glowTex = null;
+    Render3D._host = null; Render3D._syncBox = null;
     Render3D._models = null; Render3D._bgMotion = null; Render3D._bgT = 0;
     Render3D._composer = null; Render3D._bloom = null;
-    Render3D._r = null; Render3D._scene = null; Render3D._cam = null;
+    Render3D._scene = null; Render3D._cam = null;
+    Render3D._game = null;
     Render3D._blocks = { p1: [], p2: [] }; Render3D._cannons = {};
     // The press belongs to the disposed scene: without this reset the next
     // match's guard (`!Render3D._press`) skips the rebuild and the obstacle
     // is invisible in 3D for every match after the first.
     Render3D._press = null;
     Render3D._ready = false;
+  },
+
+  /* Full teardown: drops the parked engine too (context lost, or the adaptive
+   * path gave up on 3D for this device). The next init starts cold. */
+  disposeFull() {
+    try { Render3D.dispose(); } catch (e) {}
+    try { Render3D._r && Render3D._r.dispose(); } catch (e) {}
+    Render3D._r = null; Render3D._gl = null; Render3D._T = null;
+    Render3D._modelCache = null;
   },
 };
 if (typeof window !== "undefined") window.Render3D = Render3D;
