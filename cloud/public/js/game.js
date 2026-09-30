@@ -813,7 +813,12 @@ const GameView = {
 
   stepAnims(dt) {
     // A suspended tab must not inject a multi-second physics step on resume.
-    dt = Math.min(dt, 1 / 30);
+    // Animations are wall-clock true at ANY frame rate: the clamp is 1s,
+    // only so a suspended tab can't inject a multi-minute step on resume.
+    // A 1.5s shell flight takes 1.5s even at 1fps (rendered in fewer,
+    // larger steps); game state is server/wall-clock driven, so snapping
+    // forward after a stall converges to the truth. Game feel is sacred.
+    dt = Math.min(dt, 1);
     let shakeKick = 0;
     for (const a of this.anims) {
       const prev = a.t;

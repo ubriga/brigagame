@@ -57,8 +57,11 @@ const Render3D = {
     syncBox();
     window.addEventListener("resize", syncBox);
     Render3D._gl = gl; Render3D._host = host; Render3D._syncBox = syncBox;
-    const r = new T.WebGLRenderer({ canvas: gl, antialias: true, powerPreference: "high-performance" });
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    /* High-density phones (DPR>2) skip MSAA and start at 1.5x: at that
+     * pixel density AA is invisible but costs real fill-rate. */
+    const dpr = window.devicePixelRatio || 1;
+    const r = new T.WebGLRenderer({ canvas: gl, antialias: dpr <= 2, powerPreference: "high-performance" });
+    const pr = dpr > 2 ? 1.5 : Math.min(dpr, 2);
     Render3D._pr = pr;
     r.setPixelRatio(pr);
     r.setSize(game.W, game.H, false);
@@ -145,7 +148,7 @@ const Render3D = {
     }
 
     Render3D._r = r; Render3D._scene = scene; Render3D._cam = cam;
-    Render3D._frame = { n: 0, t: 0 }; Render3D._lowStreak = 0;
+    Render3D._frame = { n: 0, t: 0 }; Render3D._lowStreak = 0; Render3D._adapted = false;
     Render3D._ready = true;
     return true;
   },
@@ -178,20 +181,26 @@ const Render3D = {
     }
     Render3D._r.render(Render3D._scene, Render3D._cam);
 
-    // Adaptive pixel ratio + fallback request (admin-tunable floor, 3s window).
+    // Adaptive pixel ratio + fallback request (admin-tunable floor).
+    // First window is 1s so an overloaded device reacts fast; later windows
+    // are 2s. Steps multiply by 0.75 (2.0 → 1.5 → 1.13 …) instead of small
+    // fixed subtractions, so relief lands within a few seconds, not half a
+    // minute. At the 0.5 floor, 3 consecutive low windows give up to 2D.
     const cfg = (window.App && App.graphics && App.graphics.webgl3d) || {};
     if (cfg.adaptive !== false) {
       const dt = performance.now() - t0;
       const f = Render3D._frame; f.n++; f.t += dt;
-      if (f.t >= 3000) {
+      const winMs = Render3D._adapted ? 2000 : 1000;
+      if (f.t >= winMs) {
         const avg = f.n / (f.t / 1000);
         f.n = 0; f.t = 0;
         const floor = Number(cfg.min_fps) || 45;
         if (avg < floor) {
+          Render3D._adapted = true;
           if (Render3D._pr > 0.5) {
-            Render3D._pr = Math.max(0.5, Render3D._pr - 0.25);
+            Render3D._pr = Math.max(0.5, Math.round(Render3D._pr * 0.75 * 100) / 100);
             Render3D._r.setPixelRatio(Render3D._pr);
-          } else if (++Render3D._lowStreak >= 2) return false; // give up → 2D
+          } else if (++Render3D._lowStreak >= 3) return false; // give up → 2D
         } else Render3D._lowStreak = 0;
       }
     }
