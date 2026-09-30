@@ -487,3 +487,9 @@ Deploy: worker 9fdd4d2e, main 08a97de, gh-pages 161fcd0. PAT deploy-end-required
 - הופעל webgl3d_enabled=true; נמצא כשל דטרמיניסטי בסביבת ה-QA מול gh-pages: שרשרת טעינת GLB מתה ב-init אחרי block_brass (catch שותק → models=null → placeholder, בלי מכבש). ידני: כל 19 GLB תקינים. בטסט עובד.
 - הדגל הוחזר לכבוי (json_remove, מצב קודם בדיוק). ממתין להוראה: תיקון חוסן per-asset + retry, בידוד שורש, redeploy, הדלקה מחדש.
 - QA match 9272a5fccf7f יצא. PAT deploy-v43-hotfix91c-2026-09-30 בוטל ואומת 401.
+
+## 2026-09-30 ~13:54 IDT — 3D הודלק בפרוד (91f) אחרי שני תיקוני שורש
+- שורש 1 (404s ב-gh-pages): GLTFLoader.fetch פתר נתיבים יחסיים מול BASE של המסמך, לא של הסקריפט — תחת /brigagame/ כל ה-GLB קיבלו 404 (ב-worker בשורש זה עבד). תיקון: R3D_GFX3D מ-document.currentScript.src + טעינה per-asset עם retry ו-console.warn (לא all-or-nothing שקט).
+- שורש 2 (מסך שחור ממשחק ב'): יצירת WebGL context חדש לכל משחק — ב-headless הקומפוזיט שחור מהקונטקסט השני ובמכשירים אמיתיים שורף תקציב קונטקסטים. תיקון: הרנדרר/קנבס/מודלים "חונים" (parked) בין משחקים; dispose() מוריד רק scene; disposeFull() רק ב-context loss / adaptive give-up. באג נלווה שתוקן: _r הוקרא לפני ההשמה בסוף init (const r=null) — הועבר ל-let r,gl ברמת הפונקציה.
+- גרסאות: worker פרוד 573bd280, gh-pages f8b7574, main 8a6095a, sw 91f-r3d-engine-reuse, index render3d v21/game v31. PAT deploy-91f-r3d-2026-09-30 בוצע+נמחק+אומת 401+שותף.
+- QA טסט: דסקטופ א'→יציאה→ב' ✓ (מכבש בשניהם, cache בלי refetch), מובייל-אמולציה א'→ב' ✓. פרוד חי: אורח, א' (c38afdf904fd) → יציאה → ב' (3d9136b5e15c) — תלת-מימד + מכבש בשניהם, צילומי מסך. webgl3d_enabled=true בפרוד D1. אפס שחקנים היה בכל חלון הפריסה.
