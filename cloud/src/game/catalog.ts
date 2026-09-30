@@ -2143,7 +2143,11 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
   "dynamic_obstacle": {
     "enabled": true,
     "speed": 20,
-    "warning_seconds": 1.5
+    "warning_seconds": 1.5,
+    "v_enabled": false,
+    "v_speed": 14,
+    "v_min_lift": 0,
+    "v_max_lift": 90
   },
   "bot_system": {
     "enabled": true,

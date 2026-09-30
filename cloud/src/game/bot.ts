@@ -139,7 +139,7 @@ export function executeShot(
     const ob = obstacleAt(state);
     const blocked = Boolean(points.length && ob
       && (ob.x ?? 0) <= points[points.length - 1][0] && points[points.length - 1][0] <= (ob.x ?? 0) + (ob.w ?? 0)
-      && (ob.y ?? 0) <= points[points.length - 1][1] && points[points.length - 1][1] <= 520);
+      && (ob.y ?? 0) <= points[points.length - 1][1] && points[points.length - 1][1] <= (ob.y ?? 0) + (ob.h ?? 0));
     const offWorld = events.some((e) => e.type === "explosion" && e.cosmetic);
     const result = {
       weapon, damage: Math.round(Math.max(0, before - after) * 10) / 10,

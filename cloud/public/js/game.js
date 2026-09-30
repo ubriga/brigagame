@@ -254,14 +254,28 @@ const GameView = {
   },
   obstacleNow() {
     const ob=this.snap?.obstacle; if(!ob?.motion?.enabled) return ob;
-    const m=ob.motion, dist=Math.max(0,m.max_x-m.min_x), travel=dist/Math.max(1,m.speed);
+    const m=ob.motion, now=Date.now()/1000+this.serverOffset;
+    const dist=Math.max(0,m.max_x-m.min_x), travel=dist/Math.max(1,m.speed);
     const leg=m.warning_seconds+travel, cycle=Math.max(.001,2*leg);
-    let phase=((Date.now()/1000+this.serverOffset-m.epoch)%cycle+cycle)%cycle;
+    let phase=((now-m.epoch)%cycle+cycle)%cycle;
     const reverse=phase>=leg; if(reverse) phase-=leg;
     const warning=phase<m.warning_seconds;
     const progress=warning||!travel?0:Math.min(1,(phase-m.warning_seconds)/travel);
+    // Vertical raise/lower mirror (server owns the truth; snap.obstacle.y
+    // already holds lift-at-snap-time, so derive the rest height first).
+    let lift=0;
+    const vDist=Math.max(0,(m.max_lift??0)-(m.min_lift??0));
+    if(m.v_enabled&&vDist>0){
+      const vt=vDist/Math.max(1,m.v_speed??14), vc=Math.max(.001,2*vt);
+      let vp=((now-m.epoch)%vc+vc)%vc;
+      const vr=vp>=vt; if(vr) vp-=vt;
+      const vpr=!vt?0:Math.min(1,vp/vt);
+      lift=vr?m.max_lift-vpr*vDist:m.min_lift+vpr*vDist;
+    }
+    const restY=ob.y+(ob.lift||0);
     return {...ob,x:reverse?m.max_x-progress*dist:m.min_x+progress*dist,
-      moving:!warning&&dist>0,warning,direction:reverse?-1:1};
+      y:restY-lift,lift,
+      moving:!warning&&dist>0,v_moving:!!m.v_enabled&&vDist>0,warning,direction:reverse?-1:1};
   },
   dims(side) {
     const tower=(this.displayTowers||this.snap?.towers||{})[side];

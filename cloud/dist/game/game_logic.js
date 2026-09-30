@@ -13,6 +13,12 @@ import { WEAPONS, armorReduction, hpMultiplier } from "./economy.js";
 export const WORLD_W = 1000;
 export const WORLD_H = 560;
 export const GROUND_Y = 520;
+/* Obstacle hitbox = the visible steam-press silhouette (press_frame.glb):
+ * back wall 116x176 + top housing to 184. Shots must stop where the press
+ * is seen, so the box matches the render exactly (was 68x105 - shots flew
+ * through the upper half and the sides of the visible press). */
+export const OBSTACLE_W = 116;
+export const OBSTACLE_H = 184;
 export const BLOCK = 26;
 export const TOWER_COLS = 4;
 export const TOWER_ROWS = 6;
@@ -36,6 +42,8 @@ export function obstacleAt(state, atTime) {
     const motion = state.obstacle_motion || {};
     if (!ob.x || !motion.enabled)
         return ob;
+    const t = Number(atTime ?? Date.now() / 1000);
+    const epoch = Number(motion.epoch ?? 0);
     const lo = Number(motion.min_x), hi = Number(motion.max_x);
     const distance = Math.max(0, hi - lo);
     const speed = Math.max(1, Number(motion.speed ?? 20));
@@ -43,15 +51,34 @@ export function obstacleAt(state, atTime) {
     const travel = distance ? distance / speed : 0;
     const leg = dwell + travel;
     const cycle = 2 * leg;
-    const phase = (Number(atTime ?? Date.now() / 1000) - Number(motion.epoch ?? 0)) % Math.max(0.001, cycle);
+    const phase = (t - epoch) % Math.max(0.001, cycle);
     const reverse = phase >= leg;
     const local = reverse ? phase - leg : phase;
     const warning = local < dwell;
     const progress = warning || travel === 0 ? 0 : Math.min(1, (local - dwell) / travel);
     const x = reverse ? hi - progress * distance : lo + progress * distance;
-    return { ...ob, x: Math.round(x * 100) / 100, moving: !warning && distance > 0, warning,
+    // Vertical raise/lower: same epoch, continuous ping-pong, no dwell. The
+    // whole box (and press render) floats up by `lift`; 0 = resting on ground.
+    const vEnabled = !!motion.v_enabled;
+    const vLo = Number(motion.min_lift ?? 0), vHi = Number(motion.max_lift ?? 0);
+    const vDist = Math.max(0, vHi - vLo);
+    const vSpeed = Math.max(1, Number(motion.v_speed ?? 14));
+    let lift = 0;
+    if (vEnabled && vDist > 0) {
+        const vTravel = vDist / vSpeed;
+        const vCycle = Math.max(0.001, 2 * vTravel);
+        const vPhase = (((t - epoch) % vCycle) + vCycle) % vCycle;
+        const vReverse = vPhase >= vTravel;
+        const vProgress = vTravel === 0 ? 0 : Math.min(1, (vReverse ? vPhase - vTravel : vPhase) / vTravel);
+        lift = vReverse ? vHi - vProgress * vDist : vLo + vProgress * vDist;
+    }
+    lift = Math.round(lift * 100) / 100;
+    const restY = Number(ob.y ?? (GROUND_Y - Number(ob.h ?? OBSTACLE_H)));
+    return { ...ob, x: Math.round(x * 100) / 100, y: Math.round((restY - lift) * 100) / 100, lift,
+        moving: !warning && distance > 0, v_moving: vEnabled && vDist > 0, warning,
         direction: reverse ? -1 : 1,
-        motion: { enabled: true, min_x: lo, max_x: hi, speed, warning_seconds: dwell, epoch: Number(motion.epoch ?? 0) } };
+        motion: { enabled: true, min_x: lo, max_x: hi, speed, warning_seconds: dwell, epoch,
+            v_enabled: vEnabled, min_lift: vLo, max_lift: vHi, v_speed: vSpeed } };
 }
 export function expandedDims(extraCubes) {
     const extra = Math.max(0, Math.trunc(extraCubes || 0));
@@ -86,7 +113,7 @@ export function newState(p1Mods, p2Mods, rng = defaultRng, now) {
     const p2Cols = p2c[1] + (p2c[2] ? 1 : 0);
     const p1x = randint(rng, TOWER_X_RANGE.p1[0], Math.min(TOWER_X_RANGE.p1[1], 420 - p1Cols * BLOCK));
     const p2x = randint(rng, Math.max(TOWER_X_RANGE.p2[0], 580 + (p2Cols - TOWER_COLS) * BLOCK), Math.min(TOWER_X_RANGE.p2[1], WORLD_W - 40 - p2Cols * BLOCK));
-    const gapStart = p1x + p1Cols * BLOCK + 60, gapEnd = p2x - 128;
+    const gapStart = p1x + p1Cols * BLOCK + 60, gapEnd = p2x - 60 - OBSTACLE_W;
     const obstacleX = randint(rng, Math.floor(gapStart), Math.floor(Math.max(gapStart, gapEnd)));
     const dyn = p1Mods.dynamic_obstacle || { enabled: false, speed: 20, warning_seconds: 1.5 };
     const p1CubeHp = p1Mods.expansion_cube_hp ?? BLOCK_HP;
@@ -94,9 +121,11 @@ export function newState(p1Mods, p2Mods, rng = defaultRng, now) {
     return {
         tower_x: { p1: p1x, p2: p2x },
         map: MAPS[randint(rng, 0, MAPS.length - 1)],
-        obstacle: { x: obstacleX, y: GROUND_Y - 105, w: 68, h: 105 },
+        obstacle: { x: obstacleX, y: GROUND_Y - OBSTACLE_H, w: OBSTACLE_W, h: OBSTACLE_H },
         obstacle_motion: { enabled: !!dyn.enabled, min_x: gapStart, max_x: Math.max(gapStart, gapEnd),
-            speed: Number(dyn.speed ?? 20), warning_seconds: Number(dyn.warning_seconds ?? 1.5), epoch: t },
+            speed: Number(dyn.speed ?? 20), warning_seconds: Number(dyn.warning_seconds ?? 1.5), epoch: t,
+            v_enabled: !!dyn.v_enabled, min_lift: Number(dyn.v_min_lift ?? 0),
+            max_lift: Number(dyn.v_max_lift ?? 90), v_speed: Number(dyn.v_speed ?? 14) },
         towers: { p1: newTower(p1Mods.hp ?? 0, p1Mods.extra_cubes ?? 0, p1CubeHp),
             p2: newTower(p2Mods.hp ?? 0, p2Mods.extra_cubes ?? 0, p2CubeHp) },
         mods: { p1: p1Mods, p2: p2Mods },
@@ -272,7 +301,7 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
             return [x, GROUND_Y, points, false];
         }
         const ob = obstacleAt(state, t0 + t);
-        if (ob && ob.x !== undefined && ob.x <= x && x <= ob.x + ob.w && ob.y <= y && y <= GROUND_Y) {
+        if (ob && ob.x !== undefined && ob.x <= x && x <= ob.x + ob.w && ob.y <= y && y <= ob.y + ob.h) {
             points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
             return [x, y, points, false];
         }

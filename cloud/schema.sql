@@ -208,3 +208,19 @@ CREATE TABLE IF NOT EXISTS contact_reports (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_contact_reports_created ON contact_reports(created_at DESC);
+
+-- OAuth redirect flow state (used by /api/auth/google/start + callback).
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  expires_at REAL NOT NULL
+);
+
+-- Email sign-in codes (used by the email-code auth flow).
+CREATE TABLE IF NOT EXISTS auth_codes (
+  email TEXT PRIMARY KEY,
+  code_hash TEXT NOT NULL,
+  expires_at REAL NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
