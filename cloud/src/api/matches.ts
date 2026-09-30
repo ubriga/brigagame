@@ -7,6 +7,7 @@ import { currentUser } from "../auth.js";
 import { handleMatchmaking, sweepStaleMatches, offerToPresentPlayer, nowIso } from "./matchmaking.js";
 import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
+import { resolvePractice } from "../game/finalize.js";
 import { towerHp, obstacleAt } from "../game/game_logic.js";
 import { rankFor } from "../game/economy.js";
 import { rankPayload, rankForLevel } from "../game/ranks.js";
@@ -53,11 +54,11 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
     ? env.DB.prepare(
         "SELECT id, name, picture, rating, wins, rank_points FROM users WHERE id = ?").bind(uid).first()
     : null;
-  const [rows, u1, u2, catalog]: any[] = await Promise.all([
+  const [rows, u1, u2, catalog, controls]: any[] = await Promise.all([
     env.DB.prepare(
       "SELECT version, data FROM match_events WHERE match_id = ? AND version > ? ORDER BY version, id")
       .bind(m.id, since).all(),
-    userQ(m.p1), userQ(m.p2), effectiveCatalogMap(env),
+    userQ(m.p1), userQ(m.p2), effectiveCatalogMap(env), getControls(env),
   ]);
   const events = (rows.results as any[]).map((r) => JSON.parse(r.data));
   const players: Record<string, any> = {};
@@ -117,7 +118,7 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
     ai_rank_level: state.ai_rank_level ?? null,
     bot_ammo: m.p2_ai ? (state.bot_ammo ?? null) : null,
     bot_tactics: m.p2_ai ? (state.bot_tactics ?? null) : null,
-    practice: Boolean(m.p2_ai && state.ai_difficulty === "easy"),
+    practice: resolvePractice(m, state, controls),
     server_time: Date.now() / 1000,
     events,
   };
