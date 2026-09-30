@@ -986,12 +986,14 @@ const GameView = {
 
     } // end classic background (Clockwork pack off)
     const ob = this.obstacleNow();
-    if (ob) {
+    if (ob && !r3dOn) {   // 3D mode draws the steam press instead; this box is the 2D fallback
       c.save();
       if(ob.warning){c.shadowColor="#f59e0b";c.shadowBlur=10+7*Math.sin(now/120);}
-      c.fillStyle = ob.warning ? "#6b4f32" : "#4b5563"; c.strokeStyle = "#111827"; c.lineWidth = 4;
+      c.fillStyle = ob.warning ? "#6b4f32" : "#6b5433"; c.strokeStyle = "#1a130a"; c.lineWidth = 4;
       c.fillRect(ob.x, ob.y, ob.w, ob.h); c.strokeRect(ob.x, ob.y, ob.w, ob.h);
       c.fillStyle = "rgba(255,255,255,.14)"; c.fillRect(ob.x + 8, ob.y + 8, ob.w - 16, 8);
+      c.fillStyle = "#2e2416";
+      for (const ry of [ob.y + 26, ob.y + ob.h - 22]) for (const rx of [ob.x + 12, ob.x + ob.w - 12]) { c.beginPath(); c.arc(rx + 3, ry + 3, 3, 0, 7); c.fill(); }
       if(ob.motion?.enabled){
         c.fillStyle=ob.warning?"#fbbf24":"#d1d5db";c.font="bold 20px sans-serif";c.textAlign="center";
         c.fillText(ob.warning?"!":(ob.direction>0?"›":"‹"),ob.x+ob.w/2,ob.y+31);
