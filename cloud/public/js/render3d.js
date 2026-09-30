@@ -50,6 +50,7 @@ const Render3D = {
         mountainsFar: await opt("../assets/gfx3d/bg_mountains_far.glb"),
         blockCorner: await opt("../assets/gfx3d/block_corner.glb"),
         blockBelt: await opt("../assets/gfx3d/block_belt.glb"),
+        blockRubble: await opt("../assets/gfx3d/block_rubble.glb"),
         pressFrame: await opt("../assets/gfx3d/press_frame.glb"),
         pressPiston: await opt("../assets/gfx3d/press_piston.glb"),
       };
@@ -299,13 +300,13 @@ const Render3D = {
      * middle rows, vents lower down — mirrors the 2D mockup sheet. */
     const blockProto = (side, r, c) => {
       if (!models) return new T.Mesh(blockGeo, Render3D._mats[side]);
-      const edge = (c === 0 || c === game.TCOLS - 1);
+      const edge = (c === 0 || c === blockProto._cols - 1);
       const pick = (r * 5 + c * 3 + (side === "p2" ? 1 : 0)) % 9;
       const src = (edge && models.bg.blockCorner) ? models.bg.blockCorner
         : (r % 4 === 2 && models.bg.blockBelt) ? models.bg.blockBelt
         : pick === 0 ? models.window : (pick === 1 || pick === 5) ? models.vent : models.brass;
       const cl = src.scene.clone(true);
-      if (edge && c === game.TCOLS - 1) {   // mirror the corner spine outward
+      if (edge && c === blockProto._cols - 1 && c !== 0) {   // mirror the corner spine outward
         cl.scale.x = -1;
         cl.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
         cl.traverse((o) => { if (o.isMesh) o.material.side = T.DoubleSide; });
@@ -318,11 +319,15 @@ const Render3D = {
       });
       return cl;
     };
+    Render3D._rubble = { p1: [], p2: [] };
     for (const side of ["p1", "p2"]) {
       const group = [];
+      const snapCols = Math.min(8, Math.max(game.TCOLS,
+        (game.snap && game.snap.towers && game.snap.towers[side] && game.snap.towers[side][0] && game.snap.towers[side][0].length) || 0));
+      blockProto._cols = snapCols;
       for (let r = 0; r < 12; r++) {                 // pool covers tower_expansion
         const row = [];
-        for (let c = 0; c < game.TCOLS; c++) {
+        for (let c = 0; c < snapCols; c++) {
           const m = blockProto(side, r, c);
           m.position.set(
             game.tx(side) + c * game.BLOCK + game.BLOCK / 2,
@@ -335,6 +340,15 @@ const Render3D = {
         group.push(row);
       }
       Render3D._blocks[side] = group;
+      if (models && models.bg.blockRubble) {
+        for (let c = 0; c < snapCols; c++) {
+          const rb = models.bg.blockRubble.scene.clone(true);
+          rb.position.set(game.tx(side) + c * game.BLOCK + game.BLOCK / 2, 0, 0);
+          rb.visible = false;
+          scene.add(rb);
+          Render3D._rubble[side].push(rb);
+        }
+      }
       // Placeholder cannon: pivot group at the muzzle base, barrel cylinder.
       const pivot = new T.Group();
       const topY = game.TROWS * game.BLOCK;
@@ -423,6 +437,19 @@ const Render3D = {
         grid[r][c].visible = cell != null && cell > 0;
         if (grid[r][c].visible)
           grid[r][c].position.y = (tw.length - r) * game.BLOCK - game.BLOCK / 2;
+      }
+      // Rubble stubs crown torn columns once the tower is damaged (step 2).
+      const rbs = Render3D._rubble && Render3D._rubble[side];
+      if (rbs && rbs.length) {
+        const hp = (game.displayHp && game.displayHp[side]) || (game.snap && game.snap.tower_hp && game.snap.tower_hp[side]);
+        const damaged = hp && hp.hp < hp.max - 0.5;
+        for (let c = 0; c < rbs.length; c++) {
+          let topY = -1;
+          for (let r = 0; r < grid.length; r++)
+            if (grid[r] && grid[r][c] && grid[r][c].visible) topY = Math.max(topY, grid[r][c].position.y);
+          rbs[c].visible = !!(damaged && topY > 0);
+          if (rbs[c].visible) rbs[c].position.y = topY + game.BLOCK / 2 + 1;
+        }
       }
       // Cannon aim: my side follows the live aim, the other rests at 45°.
       const pivot = Render3D._cannons[side];
