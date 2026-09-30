@@ -90,6 +90,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     guest_mode: { enabled: [null, null, "bool"], ttl_hours: [1, 168, "int"],
       games_until_register_prompt: [0, 50, "int"], ranked_allowed: [null, null, "bool"] },
+    guest_prompt: { enabled: [null, null, "bool"], interval_min: [1, 120, "int"],
+      first_delay_sec: [0, 600, "int"] },
     contact_form: { enabled: [null, null, "bool"], destination_email: [null, null, "str"],
       user_max_per_hour: [1, 50, "int"], guest_max_per_hour: [1, 20, "int"],
       max_length: [100, 5000, "int"], reply_enabled: [null, null, "bool"] },
