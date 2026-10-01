@@ -1,5 +1,5 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "92a-ghp-apibase-fix";
+const RELEASE = "93-login-svg-guest-reset";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
@@ -23,6 +23,7 @@ const SHELL = [
   "./assets/gfx/clockwork/rivet.png", "./assets/gfx/clockwork/gauge.png",
   "./assets/gfx/clockwork/needle.png",
   "./assets/gfx/clockwork/tower_sheet.webp", "./assets/gfx/clockwork/cannon.webp",
+  "./assets/ui/brigagame-target.svg",
   "./icons/icon-192.png", "./icons/icon-512.png",
   "./icons/icon-maskable-512.png", "./icons/apple-touch-icon.png"
 ];
