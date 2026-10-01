@@ -508,3 +508,5 @@ body.clockwork input, body.clockwork select, body.clockwork textarea { border-co
 
 /* Install title owns punctuation direction independently of card layout. */
 #install-title { unicode-bidi: plaintext; }
+
+#login-wrap .logo img { display: block; margin: 0 auto; width: 80px; height: 80px; }

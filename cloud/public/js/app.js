@@ -537,7 +537,7 @@ const App = {
         <button id="login-lang" class="lang-switch" title="Language">${Lang.current === "en" ? "עברית" : "EN"}</button>
         ${lockNotice}
         ${guestUpgradeNote}
-        <div class="logo">🎯</div>
+        <div class="logo"><img src="assets/ui/brigagame-target.svg" width="80" height="80" alt="Brigagame target"></div>
         <h1>Brigagame <span style="color:var(--accent)">2.0</span></h1>
         <p class="sub">by OrelAI · משחק ארטילריה מולטיפלייר - הפל את מגדל היריב!</p>
         <p class="sub" style="font-size:13px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז, ובכל משחק המגדלים במיקומים אחרים.</p>
@@ -773,7 +773,7 @@ const App = {
     document.getElementById("topbar").classList.add("hidden");
     const back = API.token ? "#/lobby" : "#/login";
     const fail = (msg) => {
-      view.innerHTML = `<div id="login-wrap"><div class="logo">🎯</div>
+      view.innerHTML = `<div id="login-wrap"><div class="logo"><img src="assets/ui/brigagame-target.svg" width="80" height="80" alt="Brigagame target"></div>
         <div class="card" style="text-align:center"><h2>${esc(msg)}</h2>
         <p class="sub">קישור ההזמנה לא תקף, פג תוקפו או שכבר נוצל.</p>
         <button class="btn" onclick="location.hash='${back}'">${API.token ? "חזרה ללובי" : "לכניסה למשחק"}</button></div></div>`;
@@ -781,7 +781,7 @@ const App = {
     const { status, data } = await API.get("/api/invite/" + encodeURIComponent(code));
     if (status !== 200 || !data || !data.valid) return fail("ההזמנה לא נמצאה 😕");
     const name = esc(data.inviter_name || "חבר");
-    view.innerHTML = `<div id="login-wrap"><div class="logo">🎯</div>
+    view.innerHTML = `<div id="login-wrap"><div class="logo"><img src="assets/ui/brigagame-target.svg" width="80" height="80" alt="Brigagame target"></div>
       <h1 style="font-size:26px">חברך <span style="color:var(--accent)">${name}</span> קורא לך לקרב!</h1>
       <p class="sub">Brigagame 2.0 - משחק ארטילריה מולטיפלייר. הפל את מגדל היריב!</p>
       <div class="card" style="text-align:center">
