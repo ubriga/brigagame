@@ -659,7 +659,10 @@ const App = {
       || window.navigator.standalone === true;
     document.getElementById("login-lang").onclick = () =>
       Lang.set(Lang.current === "en" ? "he" : "en");
+    const loginSeq = this._routeSeq;
     API.get("/api/auth/options").then(({ status, data }) => {
+      // Ignore a response belonging to a login screen that has been replaced.
+      if (!this.routeCurrent(loginSeq) || !location.hash.startsWith("#/login")) return;
       if (status !== 200 || !data) return;
       if (data.guest_enabled) {
         document.getElementById("guest-btn").classList.remove("hidden");
