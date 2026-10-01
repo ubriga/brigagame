@@ -13,6 +13,7 @@ const API = {
 
   setToken(t, remember = true) {
     this.token = t;
+    if (!t && typeof App !== "undefined") App.clearSessionState?.();
     localStorage.removeItem("bg_token");
     sessionStorage.removeItem("bg_token");
     if (t) (remember ? localStorage : sessionStorage).setItem("bg_token", t);

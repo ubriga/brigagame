@@ -505,3 +505,8 @@ body.clockwork a.btn:not(.secondary):not(.danger) {
 body.clockwork button.btn:active:not(.secondary):not(.danger) { box-shadow: 0 2px 0 #6d4a1a, 0 5px 10px rgba(2, 11, 19, .22); }
 body.clockwork input, body.clockwork select, body.clockwork textarea { border-color: #6d5326; }
 #exit-match-btn.armed { outline: 2px solid var(--danger); }
+
+/* Install title owns punctuation direction independently of card layout. */
+#install-title { unicode-bidi: plaintext; }
+
+#login-wrap .logo img { display: block; margin: 0 auto; width: 80px; height: 80px; }
