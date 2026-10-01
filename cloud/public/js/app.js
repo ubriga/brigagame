@@ -53,9 +53,7 @@ const App = {
     };
     document.getElementById("logout-btn").onclick = async () => {
       await API.post("/api/auth/logout"); API.setToken(null);
-      App.stopPulse();
-      clearTimeout(App._gpTimer); App._gpTimer = null; App._guestPromptCfg = null;
-      App.me = null; location.hash = "#/login";
+      location.hash = "#/login";
     };
     document.getElementById("mute-btn").textContent = Sfx.muted ? "🔇" : "🔊";
     // Mobile autoplay: resume the AudioContext on the first gesture anywhere;
@@ -222,7 +220,31 @@ const App = {
     if (chip) chip.onclick = () => { localStorage.removeItem(key); this.setMaintenance(m); };
   },
 
+  // Drop per-account UI when a session ends. Guest upgrade keeps its token
+  // and therefore does not use this path.
+  clearSessionState() {
+    this.stopPulse();
+    clearTimeout(this._gpTimer); this._gpTimer = null;
+    this.hideGuestBanner();
+    document.querySelectorAll(".guest-prompt-overlay, .match-offer").forEach(o => o.remove());
+    document.body.classList.remove("guest-mode", "clockwork");
+    document.getElementById("nav-admin")?.remove();
+    const pic = document.getElementById("user-pic");
+    if (pic) { pic.removeAttribute("src"); pic.classList.add("hidden"); }
+    this.me = null; this.inventory = {}; this.ux = {}; this.graphics = null;
+    this._guest = null; this._guestUpgrade = false; this._guestPromptCfg = null;
+    this._loginRewardData = null; this._loginRewardShown = false;
+    this._repairOfferShown = false; this._repairExpiredShown = false;
+    sessionStorage.removeItem("bg_guest_prompted");
+    if (typeof GameView !== "undefined") GameView.setInventory({});
+  },
+
   setMe(data) {
+    if (this.me && this.me.id !== data.user?.id) this.clearSessionState();
+    if (!data.user?.is_guest) {
+      this._guestUpgrade = false;
+      document.querySelectorAll(".guest-prompt-overlay").forEach(o => o.remove());
+    }
     // A successful /api/me proves a valid session; during lockdown that can
     // only be the admin, so any boot-time lock flag must clear or the route
     // guard would slam the lock screen over the lobby right after login.
@@ -268,6 +290,7 @@ const App = {
     document.getElementById("rank-chip").textContent = this.me.rank + " · " + this.me.rating;
     const pic = document.getElementById("user-pic");
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
+    else { pic.removeAttribute("src"); pic.classList.add("hidden"); }
     // Permanent rule: non-admins must not see any trace that an admin area
     // exists - remove a stale panel button left by a previous admin session
     // in this tab (logout/login does not clear injected DOM).
@@ -650,7 +673,7 @@ const App = {
       if (data.popup) renderGsi();
       if (data.email_code && data.email_from)
         document.getElementById("email-from-note").innerHTML =
-          'הקוד יגיע מ-<b dir="ltr">' + data.email_from + '</b><br>לא מוצאים? בדקו גם בתיקיית הספאם.';
+          `<span data-i18n-skip>${Lang.current === "en" ? "The code will arrive from " : "הקוד יגיע מ- "}</span><b dir="ltr">${esc(data.email_from)}</b><br>${Lang.current === "en" ? "Can't find it? Check the spam folder too." : "לא מוצאים? בדקו גם בתיקיית הספאם."}`;
     });
     document.getElementById("guest-btn").onclick = async () => {
       lastMethod = "guest"; clearError(); setSpin(true);
