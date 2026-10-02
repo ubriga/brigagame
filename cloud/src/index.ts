@@ -12,6 +12,7 @@ import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
 import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
+import { ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings } from "./api/mail.js";
 import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
 
@@ -96,7 +97,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     // manage and lift the lockdown. /api/health stays open for monitoring.
     // During lockdown the Google sign-in path stays open so the admin can
     // log in; session issuance itself is gated on the admin email below.
-    const AUTH_OPEN = new Set(["/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
+    const AUTH_OPEN = new Set(["/api/mail/unsub", "/api/mail/brevo-webhook", "/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
     if (path.startsWith("/api/") && path !== "/api/health" && !path.startsWith("/api/admin/") && !AUTH_OPEN.has(path)) {
       const lock = await getShabbatLockdown(env);
       if (lock.active) {
@@ -108,13 +109,21 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       }
     }
 
+    if (path.startsWith("/api/mail/")) {
+      const mp = await handleMailPublic(env, request, path);
+      if (mp) return mp;
+    }
+
     // ---- Sign-in method toggles (public; admin-controlled) ----
     if (path === "/api/auth/options" && request.method === "GET") {
       const controls = await getControls(env);
       const af = (controls as any).auth_flow ?? {};
       const provider = String(af.email_provider ?? "resend");
       const lockNow = await getShabbatLockdown(env);
+      await ensureMailSchema(env).catch(() => {});
+      const ms = await mailSettings(env);
       return json({
+        mail_optin: ms.enabled, mail_default: ms.default_checked,
         popup: af.popup_enabled !== false,
         redirect: af.redirect_enabled === true,
         email_code: af.email_code_enabled === true && !lockNow.active,
@@ -131,7 +140,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       const controls = await getControls(env);
       if ((controls as any).auth_flow?.redirect_enabled !== true)
         return json({ error: "redirect_disabled", error_he: "דרך ההתחברות הזו כבויה כרגע." }, 403);
-      const state = crypto.randomUUID();
+      const state = crypto.randomUUID() + (url.searchParams.get("mo") === "1" ? "~1" : "~0");
       await env.DB.prepare("INSERT INTO oauth_states (state, created_at, expires_at) VALUES (?,?,?)")
         .bind(state, new Date().toISOString(), Date.now() / 1000 + 600).run();
       const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
@@ -186,7 +195,9 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
             .catch(() => {});
           return Response.redirect(frontendBase(env, url) + "/#/login?lockdenied=1", 302);
         }
+        const existed = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(id.email).first();
         const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
+        if (!existed) await recordSignupOptIn(env, Number(user.id), state.endsWith("~1"), "signup_google_redirect");
         const token = await createSession(d1(env.DB), Number(user.id));
         await env.DB.prepare(
           "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
@@ -284,8 +295,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
       // Registration attaches to the guest session: same row, same token,
       // all progress carries over (only when the email is not taken).
+      const existedE = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
       const up = await upgradeGuestIfPresent(env, request, email, email.split("@")[0], "");
       if (up) {
+        if (!existedE) await recordSignupOptIn(env, Number(up.user.id), body.mail_optin, "signup_email_upgrade");
         await env.DB.prepare(
           "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
           + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
@@ -294,6 +307,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         return json({ token: up.token, user: up.user, upgraded: true });
       }
       const user = await getOrCreateUser(d1(env.DB), email, email.split("@")[0], "");
+      if (!existedE) await recordSignupOptIn(env, Number(user.id), body.mail_optin, "signup_email");
       const token = await createSession(d1(env.DB), Number(user.id));
       return json({ token, user });
     }
@@ -316,8 +330,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
             await audit("lockdown_denied");
             return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.effective_end }, 503);
           }
+          const existedG = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(id.email).first();
           const up = await upgradeGuestIfPresent(env, request, id.email, id.name, id.picture);
           if (up) {
+            if (!existedG) await recordSignupOptIn(env, Number(up.user.id), body.mail_optin, "signup_google_upgrade");
             await env.DB.prepare(
               "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
               + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
@@ -327,6 +343,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
             return json({ token: up.token, user: up.user, upgraded: true });
           }
           const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
+          if (!existedG) await recordSignupOptIn(env, Number(user.id), body.mail_optin, "signup_google_popup");
           const token = await createSession(d1(env.DB), Number(user.id));
           await audit("ok");
           return json({ token, user });

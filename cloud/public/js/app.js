@@ -580,6 +580,11 @@ const App = {
               style="width:auto;padding:0;margin:0;accent-color:var(--accent)">
             <span>זכור אותי</span>
           </label>
+          <label id="mail-optin-row" class="hidden" style="display:none;align-items:center;justify-content:center;gap:6px;margin:4px 0;font-size:14px;cursor:pointer">
+            <input type="checkbox" id="mail-optin"
+              style="width:auto;padding:0;margin:0;accent-color:var(--accent)">
+            <span>שלחו לי עדכונים על המשחק במייל</span>
+          </label>
           <p class="sub" style="font-size:13px">
             בהתחברות אתה מאשר את <a href="terms.html">תנאי השימוש</a>
             ו<a href="privacy.html">מדיניות הפרטיות</a>.</p>
@@ -633,7 +638,7 @@ const App = {
         callback: async (resp) => {
           lastMethod = "redirect"; clearError(); setSpin(true);
           const { status, data } = await API.post("/api/auth/google",
-            { credential: resp.credential });
+            { credential: resp.credential, mail_optin: document.getElementById("mail-optin").checked });
           if (status === 200) finishLogin(data);
           else { setSpin(false); showError((data && data.error_he) || "ההתחברות נכשלה"); }
         },
@@ -643,7 +648,7 @@ const App = {
     };
     const redirectStart = () => {
       clearError(); lastMethod = "redirect";
-      location.href = CONFIG.API_BASE + "/api/auth/google/start";
+      location.href = CONFIG.API_BASE + "/api/auth/google/start?mo=" + (document.getElementById("mail-optin").checked ? "1" : "0");
     };
     document.getElementById("login-retry").onclick = () => {
       if (lastMethod === "redirect") return redirectStart();
@@ -664,6 +669,11 @@ const App = {
       // Ignore a response belonging to a login screen that has been replaced.
       if (!this.routeCurrent(loginSeq) || !location.hash.startsWith("#/login")) return;
       if (status !== 200 || !data) return;
+      if (data.mail_optin) {
+        const row = document.getElementById("mail-optin-row");
+        row.classList.remove("hidden"); row.style.display = "flex";
+        document.getElementById("mail-optin").checked = data.mail_default !== false;
+      }
       if (data.guest_enabled) {
         document.getElementById("guest-btn").classList.remove("hidden");
         document.getElementById("guest-note").classList.remove("hidden");
@@ -711,7 +721,8 @@ const App = {
       if (code.length !== 6) return;
       lastMethod = "email"; clearError(); setSpin(true);
       const { status, data } = await API.post("/api/auth/email/verify",
-        { email: document.getElementById("email-input").value.trim(), code });
+        { email: document.getElementById("email-input").value.trim(), code,
+          mail_optin: document.getElementById("mail-optin").checked });
       if (status === 200) finishLogin(data);
       else showError((data && data.error_he) || "הקוד שגוי. נסה שוב.");
     };

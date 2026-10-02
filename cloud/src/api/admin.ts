@@ -10,6 +10,7 @@ import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
 import { json } from "./routes.js";
 import { sendSmtpMail } from "./smtp.js";
+import { handleMailAdmin } from "./mail.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
@@ -75,6 +76,11 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
       email_code_enabled: [null, null, "bool"], email_provider: [null, null, "email_provider"],
       inboxlv_pass: [null, null, "secret_str"],
+    },
+    mail_updates: {
+      enabled: [null, null, "bool"], default_checked: [null, null, "bool"],
+      daily_cap: [0, 300, "int"], sender_email: [null, null, "str"],
+      brevo_key: [null, null, "secret_str"], webhook_secret: [null, null, "secret_str"],
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
       difficulty: [null, null, "difficulty"] },
@@ -153,6 +159,8 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (rl) return rl;
   const method = request.method;
   const db = env.DB;
+
+  { const mr = await handleMailAdmin(env, request, path, Number(u.id)); if (mr) return mr; }
 
   // GET /api/admin/overview
   if (path === "/api/admin/overview" && method === "GET") {
@@ -465,6 +473,12 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     const af = controls.auth_flow ?? {};
     af.inboxlv_pass_set = Boolean(String(af.inboxlv_pass ?? ""));
     af.inboxlv_pass = "";
+    if (controls.mail_updates) {
+      controls.mail_updates.brevo_key_set = Boolean(String(controls.mail_updates.brevo_key ?? ""));
+      controls.mail_updates.brevo_key = "";
+      controls.mail_updates.webhook_secret_set = Boolean(String(controls.mail_updates.webhook_secret ?? ""));
+      controls.mail_updates.webhook_secret = "";
+    }
     return json({ controls });
   }
   if (path === "/api/admin/gameplay-controls" && method === "POST") {
