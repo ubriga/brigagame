@@ -78,10 +78,10 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
   view.innerHTML = `
     <h1>🛠️ ניהול</h1>
     <div class="tabs">
-      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance"].map(t =>
+      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
           stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
-          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה" }[t]}</button>`).join("")}
+          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
   view.querySelectorAll(".tabs button").forEach(b =>
@@ -498,6 +498,65 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const b = document.getElementById("bc-body").value;
       const { status: s } = await API.post("/api/admin/broadcast", { title, body: b });
       toast(s === 200 ? "ההודעה שודרה לכל המשתמשים" : "שגיאה");
+    };
+  } else if (tab === "mail") {
+    body.innerHTML = '<p class="sub">טוען...</p>';
+    const [st, gc] = await Promise.all([API.get("/api/admin/mail/status"), API.get("/api/admin/gameplay-controls")]);
+    if (st.status !== 200 || gc.status !== 200) { body.innerHTML = "<p>שגיאה בטעינת עדכוני המייל.</p>"; return; }
+    const m = st.data, mc = gc.data.controls.mail_updates || {};
+    const ok = m.recipients.filter(r => r.opted_in && !r.excluded);
+    body.innerHTML = `
+      <div class="card"><h2>📧 שליטה במנגנון</h2>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-enabled" ${mc.enabled ? "checked" : ""} style="width:auto">מנגנון עדכוני מייל פעיל</label>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-default" ${mc.default_checked !== false ? "checked" : ""} style="width:auto">תיבת ההסכמה בהרשמה מסומנת כברירת מחדל</label>
+        <label>מכסת שליחה יומית (עד 300)</label><input type="number" id="mu-cap" min="0" max="300" step="1" value="${Number(mc.daily_cap ?? 250)}">
+        <label>כתובת שולח</label><input type="text" id="mu-sender" dir="ltr" style="text-align:left" maxlength="200" value="${esc(mc.sender_email || "")}">
+        <label>מפתח API של הספק ${mc.brevo_key_set ? "(שמור - הדביקו חדש רק כדי להחליף)" : "(לא הוגדר)"}</label><input type="password" id="mu-key" autocomplete="off" dir="ltr" style="text-align:left" placeholder="${mc.brevo_key_set ? "••••••••" : ""}">
+        <label>סוד Webhook להסרות אוטומטיות ${mc.webhook_secret_set ? "(שמור)" : "(לא הוגדר)"}</label><input type="password" id="mu-wh" autocomplete="off" dir="ltr" style="text-align:left">
+        <button class="btn" id="mu-save" style="margin-top:12px">שמור הגדרות</button>
+        <p class="sub">נשלחו היום: ${m.sent_today} מתוך ${m.daily_cap}</p></div>
+      <div class="card"><h2>✉️ תבנית עדכון</h2>
+        <label>נושא</label><input type="text" id="mt-subject" maxlength="200" value="${esc(m.template.subject)}">
+        <label>תוכן ({name} יוחלף בשם השחקן; קישור הסרה וזיהוי השולח מתווספים אוטומטית)</label>
+        <textarea id="mt-body" rows="9" style="width:100%">${esc(m.template.body)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn secondary" id="mt-save">שמור תבנית</button><button class="btn secondary" id="mt-preview">👁️ תצוגה מקדימה</button></div>
+        <div id="mt-prev" style="margin-top:12px"></div></div>
+      <div class="card"><h2>👥 נמענים (${ok.length} מסכימים)</h2>
+        <p class="sub">רק מי שהסכים וסומן כאן יקבל. אפשר להוריד סימון לנמען בודד.</p>
+        <div style="max-height:260px;overflow:auto"><table>${m.recipients.map(r => `<tr><td><input type="checkbox" data-rcp="${r.id}" ${r.opted_in && !r.excluded ? "checked" : ""} ${r.opted_in ? "" : "disabled"} style="width:auto"></td><td dir="ltr">${esc(r.email)}</td><td>${r.opted_in ? "מסכים" : "הוסר"}</td></tr>`).join("")}</table></div>
+        <button class="btn" id="mt-send" style="margin-top:12px">📤 שלח עדכון לשחקנים</button><div id="mt-status" class="sub" style="margin-top:8px"></div></div>`;
+    const val = (id) => document.getElementById(id).value;
+    document.getElementById("mu-save").onclick = async () => {
+      const mu = { enabled: document.getElementById("mu-enabled").checked, default_checked: document.getElementById("mu-default").checked,
+        daily_cap: Number(val("mu-cap")), sender_email: val("mu-sender") };
+      if (val("mu-key").trim()) mu.brevo_key = val("mu-key").trim();
+      if (val("mu-wh").trim()) mu.webhook_secret = val("mu-wh").trim();
+      const r = await API.post("/api/admin/gameplay-controls", { controls: { mail_updates: mu } });
+      toast(r.status === 200 ? "ההגדרות נשמרו" : "שגיאה בשמירה");
+      if (r.status === 200) vAdmin(App, view, "mail");
+    };
+    document.getElementById("mt-save").onclick = async () => {
+      const r = await API.post("/api/admin/mail/template", { subject: val("mt-subject"), body: val("mt-body") });
+      toast(r.status === 200 ? "התבנית נשמרה" : ((r.data && r.data.error_he) || "שגיאה"));
+    };
+    document.getElementById("mt-preview").onclick = async () => {
+      const r = await API.post("/api/admin/mail/preview", { subject: val("mt-subject"), body: val("mt-body") });
+      if (r.status !== 200) return toast("שגיאה");
+      document.getElementById("mt-prev").innerHTML = `<div style="background:#fff;color:#111;border-radius:10px;padding:12px"><b>${esc(r.data.subject)}</b><hr>${r.data.html}</div>`;
+    };
+    document.getElementById("mt-send").onclick = async () => {
+      const ids = [...body.querySelectorAll("[data-rcp]")].filter(x => x.checked && !x.disabled).map(x => Number(x.dataset.rcp));
+      if (!ids.length) return toast("אין נמענים מסומנים");
+      if (!confirm("לשלוח את העדכון ל-" + ids.length + " שחקנים?")) return;
+      const campaign = "c" + Date.now();
+      const stat = document.getElementById("mt-status"); let sent = 0, failed = 0, capped = 0;
+      for (let i = 0; i < ids.length; i += 10) {
+        const r = await API.post("/api/admin/mail/send-batch", { campaign, subject: val("mt-subject"), body: val("mt-body"), ids: ids.slice(i, i + 10) });
+        if (r.status !== 200) { stat.textContent = (r.data && r.data.error_he) || "השליחה נעצרה"; return; }
+        sent += r.data.sent; failed += r.data.failed; capped += r.data.capped;
+        stat.textContent = "נשלחו " + sent + " | נכשלו " + failed + " | מעבר למכסה " + capped;
+      }
+      stat.textContent = "הסתיים: נשלחו " + sent + ", נכשלו " + failed + ", לא נשלחו בגלל המכסה " + capped;
     };
   } else if (tab === "coupons") {
     body.innerHTML = `<div class="card">

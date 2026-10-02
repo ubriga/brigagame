@@ -2085,6 +2085,14 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "max_length": 2000,
     "reply_enabled": true
   },
+  "mail_updates": {
+    "enabled": false,
+    "default_checked": true,
+    "daily_cap": 250,
+    "sender_email": "brigagame.game@inbox.lv",
+    "brevo_key": "",
+    "webhook_secret": ""
+  },
   "invite_system": {
     "enabled": true,
     "max_per_day": 5,
