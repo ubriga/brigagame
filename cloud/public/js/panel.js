@@ -515,7 +515,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>סוד Webhook להסרות אוטומטיות ${mc.webhook_secret_set ? "(שמור)" : "(לא הוגדר)"}</label><input type="password" id="mu-wh" autocomplete="off" dir="ltr" style="text-align:left">
         <button class="btn" id="mu-save" style="margin-top:12px">שמור הגדרות</button>
         <p class="sub">נשלחו היום: ${m.sent_today} מתוך ${m.daily_cap}</p></div>
-      <div class="card"><h2>✉️ תבנית עדכון</h2>
+      <div class="card"><h2>✉️ תבנית עדכון</h2><p class="sub">שחקנים קיימים (שלא סימנו הסכמה בעצמם) יקבלו בראש המייל הודעה בולטת: "קיבלת את המייל כי נרשמת למשחק" עם קישור הסרה גדול. התצוגה המקדימה מציגה אותה.</p>
         <label>נושא</label><input type="text" id="mt-subject" maxlength="200" value="${esc(m.template.subject)}">
         <label>תוכן ({name} יוחלף בשם השחקן; קישור הסרה וזיהוי השולח מתווספים אוטומטית)</label>
         <textarea id="mt-body" rows="9" style="width:100%">${esc(m.template.body)}</textarea>

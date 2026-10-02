@@ -90,16 +90,24 @@ export async function recordSignupOptIn(env: Env, userId: number, wanted: unknow
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" } as any)[c]);
 
-export function renderMail(subject: string, body: string, name: string, unsub: string) {
+export function renderMail(subject: string, body: string, name: string, unsub: string, existing = false) {
   const who = name && !name.includes("@") ? name : "שחקן יקר";
-  const text0 = body.replaceAll("{name}", who);
-  const footerText = `\n\n--\nנשלח מ-Brigagame 2.0 (OrelAI) - ${SITE}\nקיבלת את המייל הזה כי הסכמת לקבל עדכונים על המשחק.\nלהסרה מהרשימה בלחיצה אחת: ${unsub}`;
+  const intro = existing
+    ? `קיבלת את המייל הזה כי נרשמת למשחק Brigagame 2.0. לא רוצה לקבל עדכונים כאלה? אפשר להסיר את עצמך בלחיצה אחת: ${unsub}\n\n`
+    : "";
+  const text0 = intro + body.replaceAll("{name}", who);
+  const why = existing ? "קיבלת את המייל הזה כי נרשמת למשחק." : "קיבלת את המייל הזה כי הסכמת לקבל עדכונים על המשחק.";
+  const footerText = `\n\n--\nנשלח מ-Brigagame 2.0 (OrelAI) - ${SITE}\n${why}\nלהסרה מהרשימה בלחיצה אחת: ${unsub}`;
   const text = text0 + footerText;
-  const html = `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">`
-    + esc(text0).split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("")
+  const introHtml = existing
+    ? `<div style="background:#fff4d6;border:1px solid #e0b84a;border-radius:8px;padding:12px;margin-bottom:16px;font-size:15px">`
+      + `קיבלת את המייל הזה כי נרשמת למשחק Brigagame 2.0.<br>לא רוצה לקבל עדכונים כאלה? <a href="${unsub}" style="font-weight:bold;font-size:17px">הסר אותי מהרשימה בלחיצה אחת</a></div>`
+    : "";
+  const html = `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">` + introHtml
+    + esc(body.replaceAll("{name}", who)).split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("")
     + `<hr style="border:none;border-top:1px solid #ccc;margin:24px 0">`
     + `<p style="font-size:13px;color:#555">נשלח מ-Brigagame 2.0 (OrelAI) - <a href="${SITE}">${SITE}</a><br>`
-    + `קיבלת את המייל הזה כי הסכמת לקבל עדכונים על המשחק.<br>`
+    + `${why}<br>`
     + `<a href="${unsub}">להסרה מהרשימה בלחיצה אחת</a></p></div>`;
   return { subject: subject.replaceAll("{name}", who), text, html };
 }
@@ -168,7 +176,7 @@ export async function handleMailPublic(env: Env, request: Request, path: string)
 
 export const DEFAULT_TEMPLATE = {
   subject: "עדכון חדש ב-Brigagame 2.0",
-  body: "שלום {name},\n\nיש חדש במשחק! הנה מה שהתווסף:\n\n- ...\n\nנתראה בזירה,\nצוות Brigagame 2.0",
+  body: "שלום {name},\n\nזה העדכון הראשון שלנו על Brigagame 2.0. הוספנו להסביר מה חדש במשחק:\n\n- ...\n\nנתראה בזירה,\nצוות Brigagame 2.0",
 };
 
 export async function handleMailAdmin(env: Env, request: Request, path: string, adminId: number): Promise<Response | null> {
@@ -204,7 +212,7 @@ export async function handleMailAdmin(env: Env, request: Request, path: string, 
   }
   if (path === "/api/admin/mail/preview" && request.method === "POST") {
     const b: any = await request.json().catch(() => ({}));
-    const m = renderMail(String(b.subject ?? "").slice(0, 200), String(b.body ?? "").slice(0, 8000), "דנה", SITE + "/api/mail/unsub?t=example");
+    const m = renderMail(String(b.subject ?? "").slice(0, 200), String(b.body ?? "").slice(0, 8000), "דנה", SITE + "/api/mail/unsub?t=example", b.existing !== false);
     return J({ subject: m.subject, html: m.html, text: m.text });
   }
   if (path === "/api/admin/mail/exclude" && request.method === "POST") {
@@ -232,14 +240,14 @@ export async function handleMailAdmin(env: Env, request: Request, path: string, 
     for (const id of ids) {
       // Only currently opted-in, non-excluded, real accounts - re-checked server-side.
       const r: any = await db.prepare(
-        "SELECT u.id, u.email, u.name FROM mail_optin m JOIN users u ON u.id = m.user_id"
+        "SELECT u.id, u.email, u.name, m.source FROM mail_optin m JOIN users u ON u.id = m.user_id"
         + " WHERE m.user_id = ? AND m.opted_in = 1 AND m.excluded = 0 AND u.is_guest = 0 AND u.email NOT LIKE '%@guest.local'")
         .bind(id).first();
       const dup: any = await db.prepare("SELECT 1 x FROM mail_send_log WHERE campaign = ? AND user_id = ?").bind(campaign, id).first();
       if (!r || dup) { out.skipped++; continue; }
       if (remaining <= 0) { out.capped++; continue; }
       const unsub = await unsubUrl(env, id);
-      const m = renderMail(subject, body, String(r.name ?? ""), unsub);
+      const m = renderMail(subject, body, String(r.name ?? ""), unsub, String(r.source) === "existing_backfill");
       const res = await sendBrevo(s, String(r.email), String(r.name ?? ""), m, unsub);
       if (res.ok) {
         remaining--; out.sent++;
