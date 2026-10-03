@@ -10,9 +10,8 @@ import { handleApi } from "./api/routes.js";
 import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
-import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
-import { ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings } from "./api/mail.js";
+import { ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings, sendGameMail } from "./api/mail.js";
 import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
 
@@ -118,7 +117,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (path === "/api/auth/options" && request.method === "GET") {
       const controls = await getControls(env);
       const af = (controls as any).auth_flow ?? {};
-      const provider = String(af.email_provider ?? "resend");
       const lockNow = await getShabbatLockdown(env);
       await ensureMailSchema(env).catch(() => {});
       const ms = await mailSettings(env);
@@ -127,7 +125,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         popup: af.popup_enabled !== false,
         redirect: af.redirect_enabled === true,
         email_code: af.email_code_enabled === true && !lockNow.active,
-        email_from: provider === "inboxlv" ? "brigagame.game@inbox.lv" : "onboarding@resend.dev",
+        email_from: ms.sender_email,
         // Installed-PWA logins: the Google redirect leaves the app storage, so
         // the client emphasizes the email-code path unless the admin disables it.
         pwa_email_hint: af.pwa_email_hint !== false,
@@ -228,48 +226,16 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       await env.DB.prepare(
         "INSERT INTO auth_codes (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,0,?)")
         .bind(email, codeHash, Date.now() / 1000 + 600, new Date().toISOString()).run();
-      const provider = String((controls as any).auth_flow?.email_provider ?? "resend");
-      if (provider === "inboxlv") {
-        const smtpUser = String((env as any).INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
-        const smtpPass = String((env as any).INBOXLV_PASS ?? "")
-          || String((controls as any).auth_flow?.inboxlv_pass ?? "");
-        if (!smtpUser || !smtpPass) {
-          console.warn("email_code_no_inboxlv_secret");
+      const sent = await sendGameMail(env, email, "קוד הכניסה שלך ל-Brigagame",
+        "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.");
+      if (!sent.ok) {
+        console.error("email_code_send_fail", sent.error);
+        if (sent.error === "no_key")
           return json({ error: "email_unavailable",
             error_he: "שליחת המייל לא מוגדרת עדיין. נסה דרך התחברות אחרת." }, 503);
-        }
-        const sent = await sendSmtpMail({
-          host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
-          from: smtpUser, to: email, subject: "קוד הכניסה שלך ל-Brigagame",
-          text: "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.",
-        });
-        if (!sent.ok) {
-          console.error("smtp_send_fail", sent.error);
-          if (/limit|too many|quota|exceed|rate/i.test(String(sent.error ?? "")))
-            return json({ error: "email_limit",
-              error_he: "הגענו זמנית למגבלת השליחה של שירות המייל. נסו שוב בעוד כשעה, או התחברו עם גוגל." }, 429);
-          return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
-        }
-        return json({ ok: true });
-      }
-      const resendKey = (env as any).RESEND_API_KEY ?? "";
-      if (!resendKey) {
-        console.warn("email_code_no_provider");
-        return json({ error: "email_unavailable",
-          error_he: "שליחת המייל לא מוגדרת עדיין. נסה דרך התחברות אחרת." }, 503);
-      }
-      const send = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + resendKey, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: "Brigagame 2.0 <onboarding@resend.dev>",
-          to: [email],
-          subject: "קוד הכניסה שלך ל-Brigagame",
-          text: "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.",
-        }),
-      });
-      if (!send.ok) {
-        console.error("email_send_fail", send.status, (await send.text()).slice(0, 200));
+        if (/limit|too many|quota|exceed|rate|550-5\.4\.5|daily/i.test(String(sent.error ?? "")))
+          return json({ error: "email_limit",
+            error_he: "הגענו זמנית למגבלת השליחה של שירות המייל. נסו שוב מאוחר יותר, או התחברו עם גוגל." }, 429);
         return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
       }
       return json({ ok: true });
@@ -502,18 +468,12 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       ].join("\n");
       let mailed = false;
       const dest = String(cf.destination_email ?? "").trim() || String(env.ADMIN_EMAIL ?? "");
-      const smtpUser = String((env as any).INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
-      const smtpPass = String((env as any).INBOXLV_PASS ?? "")
-        || String((controls as any).auth_flow?.inboxlv_pass ?? "");
-      if (smtpUser && smtpPass && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
-        const sent = await sendSmtpMail({
-          host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
-          from: smtpUser, to: dest, subject, text,
-        });
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
+        const sent = await sendGameMail(env, dest, subject, text);
         mailed = sent.ok;
         if (!sent.ok) console.error("contact_mail_fail", sent.error);
       } else {
-        console.error("contact_mail_no_creds_or_dest");
+        console.error("contact_mail_no_dest");
       }
       if (!mailed) {
         await env.DB.prepare(

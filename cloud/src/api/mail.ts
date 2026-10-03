@@ -124,6 +124,20 @@ export async function sendMailGmail(s: any, to: string, m: { subject: string; te
   return r;
 }
 
+/** Plain transactional mail (login codes, contact notifications, admin replies) from the game Gmail.
+ *  Independent of the player-updates switch: only needs the sender address and the app password. */
+export async function sendGameMail(env: Env, to: string, subject: string, text: string):
+  Promise<{ ok: boolean; error?: string }> {
+  const s = await mailSettings(env);
+  if (s.dry_run) { console.log("mail_dry_run", to, subject); return { ok: true }; }
+  if (!s.app_password) return { ok: false, error: "no_key" };
+  const r = await sendSmtpMail({
+    host: "smtp.gmail.com", port: 465, user: s.sender_email, pass: s.app_password,
+    from: s.sender_email, to, subject, text,
+  });
+  return { ok: r.ok, error: r.error };
+}
+
 const page = (title: string, body: string) => new Response(
   `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
   + `<title>${esc(title)}</title><body style="font-family:Arial,sans-serif;background:#0b1120;color:#e5e7eb;display:flex;justify-content:center;padding:40px 16px">`

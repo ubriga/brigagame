@@ -9,8 +9,7 @@ import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
 import { json } from "./routes.js";
-import { sendSmtpMail } from "./smtp.js";
-import { handleMailAdmin } from "./mail.js";
+import { handleMailAdmin, sendGameMail } from "./mail.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
@@ -49,7 +48,7 @@ async function getMaintenance(env: Env): Promise<{ on: boolean; message: string 
   } catch { return { on: false, message: "" }; }
 }
 
-type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "email_provider" | "secret_str" | "str"];
+type Spec = [number | null, number | null, "bool" | "int" | "float" | "difficulty" | "secret_str" | "str"];
 
 function controlSpecs(): Record<string, Record<string, Spec>> {
   const tierSpecs = (t: string): Record<string, Spec> => ({
@@ -74,8 +73,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
   return {
     auth_flow: {
       popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
-      email_code_enabled: [null, null, "bool"], email_provider: [null, null, "email_provider"],
-      inboxlv_pass: [null, null, "secret_str"],
+      email_code_enabled: [null, null, "bool"],
     },
     mail_updates: {
       enabled: [null, null, "bool"], default_checked: [null, null, "bool"],
@@ -443,19 +441,11 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       "ממשיכים לשחק,",
       "צוות Brigagame 2.0",
     ].join("\n");
-    const smtpUser = String((env as any).INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
-    const smtpPass = String((env as any).INBOXLV_PASS ?? "")
-      || String((controls as any).auth_flow?.inboxlv_pass ?? "");
     let mailed = false;
-    if (smtpUser && smtpPass) {
-      const sent = await sendSmtpMail({
-        host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
-        from: smtpUser, to, subject, text,
-      });
+    {
+      const sent = await sendGameMail(env, to, subject, text);
       mailed = sent.ok;
       if (!sent.ok) console.error("contact_reply_mail_fail", sent.error);
-    } else {
-      console.error("contact_reply_mail_no_creds");
     }
     const now = nowIso();
     await db.prepare("UPDATE contact_reports SET replied_at = ?, reply_message = ? WHERE id = ?")
@@ -471,8 +461,6 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (path === "/api/admin/gameplay-controls" && method === "GET") {
     const controls: any = await getControls(env);
     const af = controls.auth_flow ?? {};
-    af.inboxlv_pass_set = Boolean(String(af.inboxlv_pass ?? ""));
-    af.inboxlv_pass = "";
     if (controls.mail_updates) {
       controls.mail_updates.gmail_app_password_set = Boolean(String(controls.mail_updates.gmail_app_password ?? ""));
       controls.mail_updates.gmail_app_password = "";
@@ -510,9 +498,6 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
           } else if (kind === "difficulty") {
             value = String(value);
             if (!["easy", "medium", "hard", "ultra", "expert"].includes(value)) throw new Error("bad");
-          } else if (kind === "email_provider") {
-            value = String(value);
-            if (!["resend", "inboxlv"].includes(value)) throw new Error("bad");
           } else if (kind === "str") {
             value = String(value ?? "").trim().slice(0, 300);
             if (!value) throw new Error("bad");

@@ -26,6 +26,7 @@ export async function getControls(env: Env): Promise<any> {
     const over = JSON.parse(String((row as any).value));
     const merged: any = { ...DEFAULT_GAMEPLAY_CONTROLS };
     for (const k of Object.keys(over)) merged[k] = { ...(merged[k] ?? {}), ...over[k] };
+    if (merged.auth_flow) { delete merged.auth_flow.email_provider; delete merged.auth_flow.inboxlv_pass; }
     return merged;
   } catch { return DEFAULT_GAMEPLAY_CONTROLS; }
 }
