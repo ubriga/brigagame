@@ -1,5 +1,5 @@
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "95-mail-updates";
+const RELEASE = "96-gmail-only";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
