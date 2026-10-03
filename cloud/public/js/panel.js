@@ -519,7 +519,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>תוכן ({name} יוחלף בשם השחקן; קישור הסרה וזיהוי השולח מתווספים אוטומטית)</label>
         <textarea id="mt-body" rows="9" style="width:100%">${esc(m.template.body)}</textarea>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn secondary" id="mt-save">שמור תבנית</button><button class="btn secondary" id="mt-preview">👁️ תצוגה מקדימה</button></div>
-        <div id="mt-prev" style="margin-top:12px"></div></div>
+        <div id="mt-prev" data-i18n-skip style="margin-top:12px"></div></div>
       <div class="card"><h2>👥 נמענים (${ok.length} מסכימים)</h2>
         <p class="sub">רק מי שהסכים וסומן כאן יקבל. אפשר להוריד סימון לנמען בודד.</p>
         <div style="max-height:260px;overflow:auto"><table>${m.recipients.map(r => `<tr><td><input type="checkbox" data-rcp="${r.id}" ${r.opted_in && !r.excluded ? "checked" : ""} ${r.opted_in ? "" : "disabled"} style="width:auto"></td><td dir="ltr">${esc(r.email)}</td><td>${r.opted_in ? "מסכים" : "הוסר"}</td></tr>`).join("")}</table></div>
