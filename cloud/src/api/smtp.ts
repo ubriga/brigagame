@@ -1,5 +1,5 @@
 // Minimal SMTP-over-TLS client (RFC 5321 subset) for Cloudflare Workers.
-// Used for the inbox.lv provider: port 465, direct TLS, AUTH LOGIN.
+// Used for the game Gmail (smtp.gmail.com): port 465, direct TLS, AUTH LOGIN with an app password.
 import { connect } from "cloudflare:sockets";
 
 function b64(s: string): string {
