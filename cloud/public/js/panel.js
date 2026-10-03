@@ -509,10 +509,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       <div class="card"><h2>📧 שליטה במנגנון</h2>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-enabled" ${mc.enabled ? "checked" : ""} style="width:auto">מנגנון עדכוני מייל פעיל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-default" ${mc.default_checked !== false ? "checked" : ""} style="width:auto">תיבת ההסכמה בהרשמה מסומנת כברירת מחדל</label>
-        <label>מכסת שליחה יומית (עד 300)</label><input type="number" id="mu-cap" min="0" max="300" step="1" value="${Number(mc.daily_cap ?? 250)}">
+        <label>מכסת שליחה יומית (עד 400)</label><input type="number" id="mu-cap" min="0" max="400" step="1" value="${Number(mc.daily_cap ?? 250)}">
         <label>כתובת שולח</label><input type="text" id="mu-sender" dir="ltr" style="text-align:left" maxlength="200" value="${esc(mc.sender_email || "")}">
-        <label>מפתח API של הספק ${mc.brevo_key_set ? "(שמור - הדביקו חדש רק כדי להחליף)" : "(לא הוגדר)"}</label><input type="password" id="mu-key" autocomplete="off" dir="ltr" style="text-align:left" placeholder="${mc.brevo_key_set ? "••••••••" : ""}">
-        <label>סוד Webhook להסרות אוטומטיות ${mc.webhook_secret_set ? "(שמור)" : "(לא הוגדר)"}</label><input type="password" id="mu-wh" autocomplete="off" dir="ltr" style="text-align:left">
+        <label>סיסמת אפליקציה של ה-Gmail השולח ${mc.gmail_app_password_set ? "(שמורה - הדביקו חדשה רק כדי להחליף)" : "(לא הוגדר)"}</label><input type="password" id="mu-key" autocomplete="off" dir="ltr" style="text-align:left" placeholder="${mc.gmail_app_password_set ? "••••••••" : ""}">
         <button class="btn" id="mu-save" style="margin-top:12px">שמור הגדרות</button>
         <p class="sub">נשלחו היום: ${m.sent_today} מתוך ${m.daily_cap}</p></div>
       <div class="card"><h2>✉️ תבנית עדכון</h2><p class="sub">שחקנים קיימים (שלא סימנו הסכמה בעצמם) יקבלו בראש המייל הודעה בולטת: "קיבלת את המייל כי נרשמת למשחק" עם קישור הסרה גדול. התצוגה המקדימה מציגה אותה.</p>
@@ -529,8 +528,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     document.getElementById("mu-save").onclick = async () => {
       const mu = { enabled: document.getElementById("mu-enabled").checked, default_checked: document.getElementById("mu-default").checked,
         daily_cap: Number(val("mu-cap")), sender_email: val("mu-sender") };
-      if (val("mu-key").trim()) mu.brevo_key = val("mu-key").trim();
-      if (val("mu-wh").trim()) mu.webhook_secret = val("mu-wh").trim();
+      if (val("mu-key").trim()) mu.gmail_app_password = val("mu-key").trim();
       const r = await API.post("/api/admin/gameplay-controls", { controls: { mail_updates: mu } });
       toast(r.status === 200 ? "ההגדרות נשמרו" : "שגיאה בשמירה");
       if (r.status === 200) vAdmin(App, view, "mail");

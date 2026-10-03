@@ -1,9 +1,10 @@
 /**
- * Player e-mail updates: opt-in storage, one-click unsubscribe, Brevo sending.
+ * Player e-mail updates: opt-in storage, one-click unsubscribe, sending through the game's own Gmail (SMTP + app password).
  * Everything here is gated by gameplay_controls.mail_updates (admin, server-side).
  * Tables are created lazily (idempotent) so no manual migration is needed.
  */
 import { getControls } from "../util.js";
+import { sendSmtpMail } from "./smtp.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
@@ -40,11 +41,10 @@ export async function mailSettings(env: Env): Promise<any> {
   return {
     enabled: c.enabled === true,
     default_checked: c.default_checked !== false,
-    daily_cap: Math.max(0, Math.min(300, Number(c.daily_cap ?? 250))),
-    sender_email: String(c.sender_email || "brigagame.game@inbox.lv"),
-    brevo_key: String(c.brevo_key ?? ""),
-    webhook_secret: String(c.webhook_secret ?? ""),
-    api_base: String((env as any).BREVO_API_BASE ?? ""),
+    daily_cap: Math.max(0, Math.min(400, Number(c.daily_cap ?? 250))),
+    sender_email: String(c.sender_email || "brigagame2026@gmail.com"),
+    app_password: String((env as any).MAIL_APP_PASSWORD ?? "") || String(c.gmail_app_password ?? ""),
+    dry_run: String((env as any).MAIL_DRY_RUN ?? "") === "1",
   };
 }
 
@@ -112,24 +112,16 @@ export function renderMail(subject: string, body: string, name: string, unsub: s
   return { subject: subject.replaceAll("{name}", who), text, html };
 }
 
-export async function sendBrevo(s: any, to: string, name: string, m: { subject: string; text: string; html: string }, unsub: string):
+export async function sendMailGmail(s: any, to: string, m: { subject: string; text: string; html: string }, unsub: string):
   Promise<{ ok: boolean; permanent?: boolean; error?: string }> {
-  if (!s.brevo_key) return { ok: false, error: "no_key" };
-  const res = await fetch(((s as any).api_base || "https://api.brevo.com") + "/v3/smtp/email", {
-    method: "POST",
-    headers: { "api-key": s.brevo_key, "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: { name: "Brigagame 2.0", email: s.sender_email },
-      to: [{ email: to, name: name && !name.includes("@") ? name.slice(0, 60) : undefined }],
-      subject: m.subject, htmlContent: m.html, textContent: m.text,
-      headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
-    }),
+  if (s.dry_run) { console.log("mail_dry_run", to, m.subject); return { ok: true }; }
+  if (!s.app_password) return { ok: false, error: "no_key" };
+  const r = await sendSmtpMail({
+    host: "smtp.gmail.com", port: 465, user: s.sender_email, pass: s.app_password,
+    from: s.sender_email, to, subject: m.subject, text: m.text, html: m.html,
+    headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
   });
-  if (res.ok) return { ok: true };
-  const t = (await res.text()).slice(0, 300);
-  // 400 invalid_parameter on the address = permanently undeliverable.
-  const permanent = res.status === 400 && /invalid|email/i.test(t) && !/sender|api/i.test(t);
-  return { ok: false, permanent, error: res.status + " " + t };
+  return r;
 }
 
 const page = (title: string, body: string) => new Response(
@@ -157,20 +149,6 @@ export async function handleMailPublic(env: Env, request: Request, path: string)
     return page("הוסרת מהרשימה",
       `<p>לא תקבל יותר עדכונים על Brigagame 2.0 במייל.</p><p style="font-size:14px"><a style="color:#93c5fd" href="${back}">טעות? לחץ כאן כדי להירשם מחדש</a></p>`);
   }
-  if (path === "/api/mail/brevo-webhook" && request.method === "POST") {
-    const s = await mailSettings(env);
-    if (!s.webhook_secret || url.searchParams.get("s") !== s.webhook_secret) return new Response("no", { status: 403 });
-    const ev: any = await request.json().catch(() => ({}));
-    const kind = String(ev.event ?? "");
-    const email = String(ev.email ?? "").trim().toLowerCase();
-    if (email && ["hard_bounce", "blocked", "invalid_email", "spam", "unsubscribed", "complaint"].includes(kind)) {
-      await ensureMailSchema(env);
-      await env.DB.prepare("UPDATE mail_optin SET opted_in = 0, source = ?, updated_at = ?"
-        + " WHERE user_id = (SELECT id FROM users WHERE lower(email) = ?)")
-        .bind("auto_" + kind, nowIso(), email).run();
-    }
-    return new Response("ok");
-  }
   return null;
 }
 
@@ -195,7 +173,7 @@ export async function handleMailAdmin(env: Env, request: Request, path: string, 
       + " WHERE u.is_guest = 0 ORDER BY u.id LIMIT 1000").all();
     return J({
       enabled: s.enabled, default_checked: s.default_checked, daily_cap: s.daily_cap,
-      key_set: Boolean(s.brevo_key), sender_email: s.sender_email,
+      key_set: Boolean(s.app_password), sender_email: s.sender_email,
       sent_today: Number(used?.c ?? 0), template,
       recipients: rows.results.map((r: any) => ({
         id: r.id, email: r.email, name: r.name, opted_in: Boolean(r.opted_in), excluded: Boolean(r.excluded) })),
@@ -226,7 +204,7 @@ export async function handleMailAdmin(env: Env, request: Request, path: string, 
     await ensureMailSchema(env);
     const s = await mailSettings(env);
     if (!s.enabled) return J({ error: "disabled", error_he: "מנגנון המייל כבוי בשליטת האדמין." }, 403);
-    if (!s.brevo_key) return J({ error: "no_key", error_he: "מפתח הספק עדיין לא הוגדר." }, 503);
+    if (!s.app_password && !s.dry_run) return J({ error: "no_key", error_he: "סיסמת האפליקציה של שולח המיילים עדיין לא הוגדרה." }, 503);
     const b: any = await request.json().catch(() => ({}));
     const campaign = String(b.campaign ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
     const subject = String(b.subject ?? "").trim().slice(0, 200);
@@ -248,7 +226,7 @@ export async function handleMailAdmin(env: Env, request: Request, path: string, 
       if (remaining <= 0) { out.capped++; continue; }
       const unsub = await unsubUrl(env, id);
       const m = renderMail(subject, body, String(r.name ?? ""), unsub, String(r.source) === "existing_backfill");
-      const res = await sendBrevo(s, String(r.email), String(r.name ?? ""), m, unsub);
+      const res = await sendMailGmail(s, String(r.email), m, unsub);
       if (res.ok) {
         remaining--; out.sent++;
         await db.prepare("INSERT OR IGNORE INTO mail_send_log (campaign, user_id, day, status, created_at) VALUES (?,?,?,?,?)")

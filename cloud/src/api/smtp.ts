@@ -9,7 +9,8 @@ function b64(s: string): string {
 export async function sendSmtpMail(opts: {
   host: string; port: number; user: string; pass: string;
   from: string; to: string; subject: string; text: string;
-}): Promise<{ ok: boolean; error?: string }> {
+  html?: string; headers?: Record<string, string>; fromName?: string;
+}): Promise<{ ok: boolean; error?: string; permanent?: boolean }> {
   const enc = new TextEncoder();
   const dec = new TextDecoder();
   let socket: any = null;
@@ -57,19 +58,37 @@ export async function sendSmtpMail(opts: {
     await send("MAIL FROM:<" + opts.from + ">");
     await expect([250], "MAIL FROM");
     await send("RCPT TO:<" + opts.to + ">");
-    await expect([250, 251], "RCPT TO");
+    {
+      const r = await readReply();
+      if (r.code >= 550 && r.code <= 553) {
+        try { await send("QUIT"); } catch { /* closing */ }
+        try { await socket.close(); } catch { /* closing */ }
+        return { ok: false, permanent: true, error: "RCPT TO -> " + r.code };
+      }
+      if (![250, 251].includes(r.code))
+        throw new Error("RCPT TO -> " + r.code + " " + r.body.replace(/\s+/g, " ").slice(0, 120));
+    }
     await send("DATA");
     await expect([354], "DATA");
     const nl = "\r\n";
-    const body64 = b64(opts.text).replace(/.{1,76}/g, "$&" + nl);
-    const msg =
-      "From: Brigagame 2.0 <" + opts.from + ">" + nl +
+    const wrap = (t: string) => b64(t).replace(/.{1,76}/g, "$&" + nl);
+    const extra = Object.entries(opts.headers ?? {}).map(([k, v]) => k + ": " + v + nl).join("");
+    const head =
+      "From: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
       "To: <" + opts.to + ">" + nl +
       "Subject: =?UTF-8?B?" + b64(opts.subject) + "?=" + nl +
-      "MIME-Version: 1.0" + nl +
-      "Content-Type: text/plain; charset=UTF-8" + nl +
-      "Content-Transfer-Encoding: base64" + nl + nl +
-      body64 + nl + ".";
+      "MIME-Version: 1.0" + nl + extra;
+    let msg: string;
+    if (opts.html) {
+      const bd = "bg_" + crypto.randomUUID().replaceAll("-", "");
+      msg = head + "Content-Type: multipart/alternative; boundary=\"" + bd + "\"" + nl + nl +
+        "--" + bd + nl + "Content-Type: text/plain; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.text) +
+        "--" + bd + nl + "Content-Type: text/html; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.html) +
+        "--" + bd + "--" + nl + ".";
+    } else {
+      msg = head + "Content-Type: text/plain; charset=UTF-8" + nl +
+        "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.text) + nl + ".";
+    }
     await writer.write(enc.encode(msg + nl));
     await expect([250], "message body");
     await send("QUIT");
