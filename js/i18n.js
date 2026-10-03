@@ -18,7 +18,7 @@ const Lang = {
     "יציאה מהמשחק":"Exit match","לצאת מהמשחק?":"Exit the match?","ביטול":"Cancel","זווית":"Angle","עוצמה":"Power","הזזה":"Move","מגן":"Shield","מגה":"Mega",
     "ללא רוח":"No wind","החטאה!":"Miss!","ניצחת!":"You won!","הפסדת":"You lost","תיקו":"Draw","עוד משחק":"Play again","חזרה ללובי":"Back to lobby",
     "קל - תרגול, ללא נקודות או מטבעות":"Easy - practice, no points or coins","בינוני":"Medium","קשה":"Hard","אולטרה קשה":"Ultra hard","מומחה - האתגר הקשה ביותר":"Expert - ultimate challenge",
-    "זכור אותי":"Remember me","כניסה":"Sign in","לא עכשיו":"Not now","העתק קוד":"Copy code","שתף את הקוד עם חבר":"Share the code with a friend",
+    "זכור אותי":"Remember me","שלחו לי עדכונים על המשחק במייל":"Send me game updates by email","כניסה":"Sign in","לא עכשיו":"Not now","העתק קוד":"Copy code","שתף את הקוד עם חבר":"Share the code with a friend",
     "שמור":"Save","זמין":"Available","מחיר":"Price","פריט":"Item","דרגה":"Tier","שגיאה":"Error","נשמר":"Saved","מחק":"Delete",
     "מדיניות פרטיות":"Privacy policy","תנאי שימוש והבהרה":"Terms and disclaimer","אין הודעות עדיין.":"No messages yet.",
     "ברירת מחדל":"Default","המגדל הכחול הקלאסי":"Classic blue tower","משחק חדש - בחר רמת קושי בלבד":"New game - choose difficulty",
