@@ -97,7 +97,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     // manage and lift the lockdown. /api/health stays open for monitoring.
     // During lockdown the Google sign-in path stays open so the admin can
     // log in; session issuance itself is gated on the admin email below.
-    const AUTH_OPEN = new Set(["/api/mail/unsub", "/api/mail/brevo-webhook", "/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
+    const AUTH_OPEN = new Set(["/api/mail/unsub", "/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
     if (path.startsWith("/api/") && path !== "/api/health" && !path.startsWith("/api/admin/") && !AUTH_OPEN.has(path)) {
       const lock = await getShabbatLockdown(env);
       if (lock.active) {

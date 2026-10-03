@@ -2089,9 +2089,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "enabled": false,
     "default_checked": true,
     "daily_cap": 250,
-    "sender_email": "brigagame.game@inbox.lv",
-    "brevo_key": "",
-    "webhook_secret": ""
+    "sender_email": "brigagame2026@gmail.com",
+    "gmail_app_password": ""
   },
   "invite_system": {
     "enabled": true,

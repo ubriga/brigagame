@@ -79,8 +79,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     mail_updates: {
       enabled: [null, null, "bool"], default_checked: [null, null, "bool"],
-      daily_cap: [0, 300, "int"], sender_email: [null, null, "str"],
-      brevo_key: [null, null, "secret_str"], webhook_secret: [null, null, "secret_str"],
+      daily_cap: [0, 400, "int"], sender_email: [null, null, "str"],
+      gmail_app_password: [null, null, "secret_str"],
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
       difficulty: [null, null, "difficulty"] },
@@ -474,10 +474,8 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     af.inboxlv_pass_set = Boolean(String(af.inboxlv_pass ?? ""));
     af.inboxlv_pass = "";
     if (controls.mail_updates) {
-      controls.mail_updates.brevo_key_set = Boolean(String(controls.mail_updates.brevo_key ?? ""));
-      controls.mail_updates.brevo_key = "";
-      controls.mail_updates.webhook_secret_set = Boolean(String(controls.mail_updates.webhook_secret ?? ""));
-      controls.mail_updates.webhook_secret = "";
+      controls.mail_updates.gmail_app_password_set = Boolean(String(controls.mail_updates.gmail_app_password ?? ""));
+      controls.mail_updates.gmail_app_password = "";
     }
     return json({ controls });
   }
