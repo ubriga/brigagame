@@ -551,6 +551,21 @@ const Render3D = {
   /* draw(game) → false only when the renderer asks for a permanent fallback
    * (sustained low FPS at the lowest pixel ratio). Otherwise renders. */
   draw(game) {
+    /* Keep the WebGL canvas glued to the 2D canvas every frame. It was only
+     * re-measured on window "resize", so any later layout shift (viewport/
+     * address-bar changes, rotation, fullscreen, content above the canvas)
+     * left it misplaced or zero-sized: towers, obstacles and the 3D scene
+     * vanished and only the 2D shots remained. */
+    try {
+      const h = Render3D._host, g = Render3D._gl;
+      if (h && g && h.offsetWidth > 0) {
+        const l = h.offsetLeft + "px", tp = h.offsetTop + "px", w = h.offsetWidth + "px", ht = h.offsetHeight + "px";
+        if (g.style.left !== l) g.style.left = l;
+        if (g.style.top !== tp) g.style.top = tp;
+        if (g.style.width !== w) g.style.width = w;
+        if (g.style.height !== ht) g.style.height = ht;
+      }
+    } catch (e) {}
     const T = Render3D._T, t0 = performance.now();
     const towers = (game.displayTowers || (game.snap && game.snap.towers));
     if (!towers) { if (Render3D._composer) Render3D._composer.render(); else Render3D._r.render(Render3D._scene, Render3D._cam); return true; }
