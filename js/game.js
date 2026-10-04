@@ -849,6 +849,7 @@ const GameView = {
       if (a.kind === "recoil" && prev < 0 && a.t >= 0) this.startRecoil(a.side);
       if (a.kind === "explosion" && prev < 0.02 && a.t >= 0.02) {
         if (!a.cosmetic) Sfx.play((typeof Clockwork !== "undefined" && Clockwork.mode()) ? "clank" : "explosion");
+        if (!a.cosmetic && typeof PesachNight !== "undefined" && PesachNight.on) PesachNight.firework(this.canvas);
         if (a.kind === "explosion" && !a.cosmetic && prev < 0 && a.t >= 0
             && typeof Clockwork !== "undefined" && Clockwork.mode() === "full")
           this._hitStopUntil = performance.now() + 75;

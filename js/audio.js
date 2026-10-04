@@ -141,7 +141,7 @@ const Sfx = {
     } else if (type === "win") {
       [523, 659, 784, 1047].forEach((fq, i) => {
         const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = "triangle"; o.frequency.value = fq;
+        o.type = night ? "sine" : "triangle"; o.frequency.value = night ? fq * 1.5 : fq;
         this._env(g, t + i * 0.12, 0.02, 0.2, 0.3);
         o.connect(g).connect(ctx.destination);
         o.start(t + i * 0.12); o.stop(t + i * 0.12 + 0.35);
@@ -149,7 +149,7 @@ const Sfx = {
     } else if (type === "lose") {
       [392, 330, 262].forEach((fq, i) => {
         const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = "triangle"; o.frequency.value = fq;
+        o.type = night ? "sine" : "triangle"; o.frequency.value = night ? fq * 1.5 : fq;
         this._env(g, t + i * 0.15, 0.02, 0.18, 0.35);
         o.connect(g).connect(ctx.destination);
         o.start(t + i * 0.15); o.stop(t + i * 0.15 + 0.4);
@@ -174,15 +174,19 @@ const Sfx = {
     if (this.muted || this.musicOn || window.__BG_LOCKED__ || !this.ensure()) return;
     this.musicOn = true;
     const ctx = this.ctx;
-    const melody = [262, 330, 392, 330, 294, 349, 440, 349,
-                    262, 330, 392, 523, 440, 392, 330, 294];
+    const night = typeof PesachNight !== "undefined" && PesachNight.on;
+    // Night mode: slower original phrygian-dominant loop with a soft bell tone.
+    const melody = night
+      ? [294, 311, 370, 392, 370, 311, 294, 233, 294, 370, 440, 466, 440, 392, 370, 311]
+      : [262, 330, 392, 330, 294, 349, 440, 349,
+         262, 330, 392, 523, 440, 392, 330, 294];
     let step = 0;
     const tick = () => {
       if (!this.musicOn) return;
       const t = ctx.currentTime;
       const fq = melody[step % melody.length];
       const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = "triangle"; o.frequency.value = fq;
+      o.type = night ? "sine" : "triangle"; o.frequency.value = night ? fq * 1.5 : fq;
       this._env(g, t, 0.02, 0.06, 0.22);
       o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.25);
       if (step % 4 === 0) {
@@ -192,7 +196,7 @@ const Sfx = {
         b.connect(gb).connect(ctx.destination); b.start(t); b.stop(t + 0.35);
       }
       step++;
-      this._musicTimer = setTimeout(tick, 240);
+      this._musicTimer = setTimeout(tick, night ? 340 : 240);
     };
     tick();
   },
