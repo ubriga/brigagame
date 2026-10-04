@@ -73,22 +73,24 @@ export async function sendSmtpMail(opts: {
     const nl = "\r\n";
     const wrap = (t: string) => b64(t).replace(/.{1,76}/g, "$&" + nl);
     const extra = Object.entries(opts.headers ?? {}).map(([k, v]) => k + ": " + v + nl).join("");
+    const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" } as any)[c]);
+    const html = opts.html ?? ('<div dir="rtl" style="font-family:Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">'
+      + esc(opts.text).split(/\n{2,}/).map((p) => "<p>" + p.replace(/\n/g, "<br>") + "</p>").join("") + "</div>");
+    const domain = (opts.from.split("@")[1] || "gmail.com");
+    const msgId = "<" + crypto.randomUUID().replaceAll("-", "") + "@" + domain + ">";
     const head =
+      "Date: " + new Date().toUTCString().replace("GMT", "+0000") + nl +
       "From: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
       "To: <" + opts.to + ">" + nl +
+      "Reply-To: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
+      "Message-ID: " + msgId + nl +
       "Subject: =?UTF-8?B?" + b64(opts.subject) + "?=" + nl +
       "MIME-Version: 1.0" + nl + extra;
-    let msg: string;
-    if (opts.html) {
-      const bd = "bg_" + crypto.randomUUID().replaceAll("-", "");
-      msg = head + "Content-Type: multipart/alternative; boundary=\"" + bd + "\"" + nl + nl +
-        "--" + bd + nl + "Content-Type: text/plain; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.text) +
-        "--" + bd + nl + "Content-Type: text/html; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.html) +
-        "--" + bd + "--" + nl + ".";
-    } else {
-      msg = head + "Content-Type: text/plain; charset=UTF-8" + nl +
-        "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.text) + nl + ".";
-    }
+    const bd = "bg_" + crypto.randomUUID().replaceAll("-", "");
+    const msg = head + "Content-Type: multipart/alternative; boundary=\"" + bd + "\"" + nl + nl +
+      "--" + bd + nl + "Content-Type: text/plain; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.text) +
+      "--" + bd + nl + "Content-Type: text/html; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(html) +
+      "--" + bd + "--" + nl + ".";
     await writer.write(enc.encode(msg + nl));
     await expect([250], "message body");
     await send("QUIT");
