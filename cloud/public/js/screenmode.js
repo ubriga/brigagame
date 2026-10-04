@@ -29,10 +29,20 @@ const ScreenMode = {
       }
     } catch (e) {}
   },
+  label(on) {
+    const en = typeof Lang !== "undefined" && Lang.current === "en";
+    return on ? (en ? "↩ Exit full screen" : "↩ יציאה ממסך מלא")
+              : (en ? "⛶ Full screen (landscape)" : "⛶ מסך מלא (לרוחב)");
+  },
   apply(on) {
     this.active = on;
     document.body.classList.toggle("fs-mode", on);
-    if (this.floatBtn) this.floatBtn.classList.toggle("hidden", !on);
+    if (this.floatBtn) {
+      this.floatBtn.classList.remove("hidden");
+      this.floatBtn.classList.toggle("on", on);
+      this.floatBtn.textContent = this.label(on);
+      this.floatBtn.setAttribute("aria-label", this.label(on));
+    }
     const b = document.getElementById("fs-btn");
     if (b) b.setAttribute("aria-pressed", on ? "true" : "false");
     window.dispatchEvent(new Event("resize"));
@@ -63,11 +73,13 @@ const ScreenMode = {
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor);
     btn.addEventListener("click", () => this.toggle());
 
+    // One always-visible control: enters full screen (landscape) and, once in,
+    // becomes the clear way back out.
     const fl = document.createElement("button");
-    fl.id = "fs-float"; fl.type = "button"; fl.className = "hidden";
-    fl.textContent = lang() ? "↩ Portrait" : "↩ מאונך";
-    fl.setAttribute("aria-label", lang() ? "Back to portrait view" : "חזרה לתצוגה מאונכת");
-    fl.addEventListener("click", () => this.exit());
+    fl.id = "fs-float"; fl.type = "button";
+    fl.textContent = this.label(false);
+    fl.setAttribute("aria-label", this.label(false));
+    fl.addEventListener("click", () => this.toggle());
     document.body.appendChild(fl);
     this.floatBtn = fl;
 

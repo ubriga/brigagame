@@ -548,3 +548,12 @@ body.fs-mode.game-active #ability-bar, body.fs-mode.game-active #weapon-bar { ma
 body.fs-mode.game-active .wpn, body.fs-mode.game-active #ability-bar .btn { padding: 4px 8px; font-size: 12px; }
 body.fs-mode.game-active #fs-float { bottom: auto; top: 6px; left: 50%; transform: translateX(-50%); }
 @media (display-mode: fullscreen), (display-mode: standalone) { #fs-float { opacity: .5; } }
+
+/* v52: one prominent full-screen toggle, always reachable (no scrolling). */
+#fs-float { opacity: 1 !important; bottom: 14px; right: 12px; left: auto; padding: 9px 14px; font-size: 14px; font-weight: 800;
+  background: linear-gradient(180deg,#46d3bd,#2aa391); color: #04222a; border: 0; box-shadow: 0 3px 14px rgba(0,0,0,.45); }
+#fs-float.on { background: #ffb44a; color: #2b1700; }
+body:has(#login-wrap) #fs-float { display: none; }
+body.fs-mode:not(.game-active) #fs-float { bottom: 10px; right: 10px; }
+body.fs-mode.game-active { background: #050d1a; }
+body.fs-mode.game-active #fs-float { right: auto; }
