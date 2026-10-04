@@ -576,3 +576,10 @@ body.fs-mode.game-active #ability-bar .btn { flex: 1 1 46%; padding: 5px 6px; fo
 body.fs-mode.game-active #weapon-bar { display: flex; flex-wrap: wrap; gap: 4px; justify-content: stretch; max-height: calc(100dvh - 190px); overflow-y: auto; }
 body.fs-mode.game-active .wpn { flex: 1 1 46%; padding: 5px 6px; font-size: 12px; min-width: 0; }
 body.fs-mode.game-active #fs-float { top: auto; bottom: 6px; left: 8px; right: auto; transform: none; padding: 6px 10px; font-size: 12px; }
+/* v52: tips line, lobby title, secret night mode */
+.tip-line { margin: 4px 0 10px; opacity: .85; font-size: 14px; transition: opacity .4s; }
+.tip-line.tip-out { opacity: 0; }
+.lobby-title { display: none; font-weight: 900; font-size: 15px; color: #fff6e7; margin: 0 0 6px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+@media (max-width: 640px) { .lobby-title { display: block; } }
+.brand { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#night-fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 40; display: none; }
