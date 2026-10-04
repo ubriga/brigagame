@@ -202,23 +202,45 @@ const App = {
     this._unread = n;
   },
 
-  // Maintenance notice: dismissible to a small side chip per browser. A new
-  // notice text expands again so users do not miss a changed announcement.
+  // Maintenance notice: a sticky top banner that cannot be dismissed, plus a
+  // popup shown on entry and again every 5 minutes while maintenance is on.
+  // The popup is never shown during a match.
   setMaintenance(m) {
-    const el = document.getElementById("maintenance-banner");
+    let el = document.getElementById("maintenance-banner");
     if (!el) return;
-    const message = m && m.on ? (m.message || "המשחק בתחזוקה זמנית") : "";
-    if (!message) { el.className = "hidden"; el.innerHTML = ""; return; }
-    const key = "bg_maintenance_collapsed_" + message;
-    const collapsed = localStorage.getItem(key) === "1";
-    el.className = collapsed ? "maintenance-collapsed" : "maintenance-expanded";
-    el.innerHTML = collapsed
-      ? `<button class="maintenance-chip" title="${esc(message)}" aria-label="הצג הודעת תחזוקה">🚧 תחזוקה</button>`
-      : `<span>🚧 ${esc(message)}</span><button class="maintenance-close" aria-label="סגירת הודעת תחזוקה">×</button>`;
-    const close = el.querySelector(".maintenance-close");
-    if (close) close.onclick = () => { Consent.setPref(key, "1"); this.setMaintenance(m); };
-    const chip = el.querySelector(".maintenance-chip");
-    if (chip) chip.onclick = () => { localStorage.removeItem(key); this.setMaintenance(m); };
+    const message = m && m.on ? (m.message || "האתר בתחזוקה ולכן לא יציב כרגע בגלל שדרוגים") : "";
+    if (!message) {
+      el.className = "hidden"; el.innerHTML = "";
+      document.body.classList.remove("maint-on");
+      document.documentElement.style.removeProperty("--maint-h");
+      clearInterval(this._maintTimer); this._maintTimer = null; this._maintMsg = "";
+      document.getElementById("maint-popup")?.remove();
+      return;
+    }
+    if (el.parentNode !== document.body || document.body.firstChild !== el) document.body.insertBefore(el, document.body.firstChild);
+    el.className = "maintenance-expanded";
+    el.innerHTML = `<span>🚧 ${esc(message)}</span>`;
+    document.body.classList.add("maint-on");
+    const setH = () => document.documentElement.style.setProperty("--maint-h", el.offsetHeight + "px");
+    setH(); setTimeout(setH, 300);
+    if (!this._maintResize) { this._maintResize = true; window.addEventListener("resize", () => { const b = document.getElementById("maintenance-banner"); if (b && b.offsetHeight) document.documentElement.style.setProperty("--maint-h", b.offsetHeight + "px"); }); }
+    this._maintMsg = message;
+    if (!this._maintTimer) {
+      this._maintTimer = setInterval(() => this.showMaintPopup(), 300000);
+      this.showMaintPopup();
+    }
+  },
+
+  showMaintPopup() {
+    if (!this._maintMsg || document.getElementById("maint-popup")) return;
+    if ((location.hash || "").startsWith("#/game")) return; // never interrupt a match
+    const ov = document.createElement("div");
+    ov.id = "maint-popup"; ov.setAttribute("role", "alertdialog");
+    ov.innerHTML = `<div class="maint-box"><div class="maint-ico">🚧</div><h3>האתר לא יציב כרגע</h3>
+      <p>אנחנו בעיצומם של שדרוגים, ולכן ייתכנו תקלות או ניתוקים זמניים. תודה על הסבלנות!</p>
+      <p class="maint-sub">${esc(this._maintMsg)}</p><button class="btn primary maint-ok">הבנתי</button></div>`;
+    document.body.appendChild(ov);
+    ov.querySelector(".maint-ok").onclick = () => ov.remove();
   },
 
   // Drop per-account UI when a session ends. Guest upgrade keeps its token
@@ -952,6 +974,7 @@ const App = {
       <h1>שלום, ${esc(u.name)} 👋</h1>
       <p class="sub">הפל את מגדל היריב לפני שהוא מפיל את שלך.</p>
       ${this._loginRewardData ? `<div class="card ux-welcome"><b>🔥 יום ${this._loginRewardData.streak} ברצף!</b> ${this._loginRewardData.amount > 0 ? `קיבלת היום 🪙 ${this._loginRewardData.amount} מטבעות על הרצף` : "הרצף נמשך!"}</div>` : ""}
+      ${(!u.is_guest && localStorage.getItem("bg_mailtip_dismissed") !== "1") ? `<div class="card ux-welcome" id="mailtip"><b>✉️ מקבל מאיתנו עדכונים במייל?</b> אם המייל הגיע לספאם, סמן "לא ספאם" והוסף את brigagame2026@gmail.com לאנשי הקשר, כדי שלא תפספס עדכונים. <button class="btn secondary" id="mailtip-ok" style="margin-inline-start:8px;padding:4px 10px;font-size:13px">הבנתי</button></div>` : ""}
       ${(this.ux.lobby_labels !== false && Number(u.matches_played || 0) === 0) ? `<div class="card ux-welcome"><b>🎓 משחק ראשון?</b> מומלץ להתחיל מול בוט קל - משחק תרגול בלי דירוג ובלי לחץ. אפשר גם לפתוח את "איך משחקים?" למטה.</div>` : ""}
       <div class="grid cols2">
         <div class="card">
@@ -1022,6 +1045,7 @@ const App = {
       } else if (data.match_id) go(data.match_id);
       else toast(apiError(result, "שגיאה ביצירת משחק מהיר"));
     };
+    document.getElementById("mailtip-ok")?.addEventListener("click", () => { Consent.setPref("bg_mailtip_dismissed", "1"); document.getElementById("mailtip")?.remove(); });
     const aiTier = document.getElementById("ai-tier");
     const savedAiTier = localStorage.getItem("brigagame.aiTier") || sessionStorage.getItem("brigagame.aiTier");
     if (["easy", "medium", "hard", "ultra", "expert"].includes(savedAiTier)) aiTier.value = savedAiTier;

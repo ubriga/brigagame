@@ -21,6 +21,9 @@ export function ensureMailSchema(env) {
             db.prepare("CREATE TABLE IF NOT EXISTS mail_send_log (id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 + " campaign TEXT NOT NULL, user_id INTEGER NOT NULL, day TEXT NOT NULL,"
                 + " status TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(campaign, user_id))"),
+            db.prepare("CREATE TABLE IF NOT EXISTS mail_campaigns (campaign TEXT PRIMARY KEY, subjects TEXT NOT NULL,"
+                + " body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', note TEXT NOT NULL DEFAULT '',"
+                + " created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
         ]);
         const done = await db.prepare("SELECT value FROM settings WHERE key = 'mail_backfill_done'").first();
         if (!done) {
@@ -84,6 +87,12 @@ export async function recordSignupOptIn(env, userId, wanted, source) {
     }
 }
 const esc = (s) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/** Subject may hold several variants separated by " || "; each recipient gets a stable one (by user id). */
+export function pickSubject(subject, uid) {
+    const v = subject.split("||").map(x => x.trim()).filter(Boolean);
+    return v.length ? v[Math.abs(uid) % v.length] : subject;
+}
+const NOT_SPAM_TEXT = "כדי שהעדכונים יגיעו אליך: אם המייל הגיע לתיקיית הספאם, סמן \"לא ספאם\" והוסף את brigagame2026@gmail.com לאנשי הקשר.";
 export function renderMail(subject, body, name, unsub, existing = false) {
     const who = name && !name.includes("@") ? name : "שחקן יקר";
     const intro = existing
@@ -91,7 +100,7 @@ export function renderMail(subject, body, name, unsub, existing = false) {
         : "";
     const text0 = intro + body.replaceAll("{name}", who);
     const why = existing ? "קיבלת את המייל הזה כי נרשמת למשחק." : "קיבלת את המייל הזה כי הסכמת לקבל עדכונים על המשחק.";
-    const footerText = `\n\n--\nנשלח מ-Brigagame 2.0 (OrelAI) - ${SITE}\n${why}\nלהסרה מהרשימה בלחיצה אחת: ${unsub}`;
+    const footerText = `\n\n--\nנשלח מ-Brigagame 2.0 (OrelAI) - ${SITE}\n${why}\n${NOT_SPAM_TEXT}\nלהסרה מהרשימה בלחיצה אחת: ${unsub}`;
     const text = text0 + footerText;
     const introHtml = existing
         ? `<div style="background:#fff4d6;border:1px solid #e0b84a;border-radius:8px;padding:12px;margin-bottom:16px;font-size:15px">`
@@ -101,7 +110,7 @@ export function renderMail(subject, body, name, unsub, existing = false) {
         + esc(body.replaceAll("{name}", who)).split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("")
         + `<hr style="border:none;border-top:1px solid #ccc;margin:24px 0">`
         + `<p style="font-size:13px;color:#555">נשלח מ-Brigagame 2.0 (OrelAI) - <a href="${SITE}">${SITE}</a><br>`
-        + `${why}<br>`
+        + `${why}<br>${esc(NOT_SPAM_TEXT)}<br>`
         + `<a href="${unsub}">להסרה מהרשימה בלחיצה אחת</a></p></div>`;
     return { subject: subject.replaceAll("{name}", who), text, html };
 }
@@ -158,6 +167,63 @@ export async function handleMailPublic(env, request, path) {
     }
     return null;
 }
+/** Ramp of recipients per daily tick: small first, growing, always bounded by the daily cap. */
+export const DRIP_RAMP = [5, 10, 20, 30, 40];
+const DRIP_MAX_PERMANENT_RATE = 0.05;
+/** Fixed-cadence drip (called by the cron trigger). Sends only for campaigns the admin approved. */
+export async function mailDripTick(env) {
+    await ensureMailSchema(env);
+    const s = await mailSettings(env);
+    const out = [];
+    if (!s.enabled || (!s.app_password && !s.dry_run))
+        return out;
+    const db = env.DB;
+    const day = nowIso().slice(0, 10);
+    const camps = await db.prepare("SELECT campaign, subjects, body FROM mail_campaigns WHERE status = 'approved' ORDER BY created_at").all();
+    for (const c of camps.results) {
+        const prior = await db.prepare("SELECT COUNT(DISTINCT day) d FROM mail_send_log WHERE campaign = ? AND day < ?").bind(c.campaign, day).first();
+        const today = await db.prepare("SELECT COUNT(*) n FROM mail_send_log WHERE campaign = ? AND day = ?").bind(c.campaign, day).first();
+        const step = Number(prior?.d ?? 0);
+        const quota = DRIP_RAMP[Math.min(step, DRIP_RAMP.length - 1)];
+        const usedAll = await db.prepare("SELECT COUNT(*) c FROM mail_send_log WHERE day = ? AND status = 'sent'").bind(day).first();
+        let batch = Math.max(0, Math.min(quota - Number(today?.n ?? 0), s.daily_cap - Number(usedAll?.c ?? 0)));
+        const res = { campaign: String(c.campaign), sent: 0, failed: 0 };
+        if (batch <= 0) {
+            out.push(res);
+            continue;
+        }
+        const rows = await db.prepare("SELECT u.id, u.email, u.name, m.source FROM mail_optin m JOIN users u ON u.id = m.user_id"
+            + " WHERE m.opted_in = 1 AND m.excluded = 0 AND u.is_guest = 0 AND u.email NOT LIKE '%@guest.local'"
+            + " AND NOT EXISTS (SELECT 1 FROM mail_send_log l WHERE l.campaign = ? AND l.user_id = u.id)"
+            + " ORDER BY u.id LIMIT ?").bind(c.campaign, batch).all();
+        for (const r of rows.results) {
+            const unsub = await unsubUrl(env, Number(r.id));
+            const m = renderMail(pickSubject(String(c.subjects), Number(r.id)), String(c.body), String(r.name ?? ""), unsub, String(r.source) === "existing_backfill");
+            const sr = await sendMailGmail(s, String(r.email), m, unsub);
+            if (sr.ok) {
+                res.sent++;
+                await db.prepare("INSERT OR IGNORE INTO mail_send_log (campaign, user_id, day, status, created_at) VALUES (?,?,?,?,?)")
+                    .bind(c.campaign, r.id, day, "sent", nowIso()).run();
+            }
+            else {
+                res.failed++;
+                if (sr.permanent) {
+                    await db.prepare("INSERT OR IGNORE INTO mail_send_log (campaign, user_id, day, status, created_at) VALUES (?,?,?,?,?)")
+                        .bind(c.campaign, r.id, day, "failed_perm", nowIso()).run();
+                    await setOptIn(env, Number(r.id), false, "auto_invalid_address");
+                }
+            }
+        }
+        // Reputation guard: too many hard failures in a tick pauses the campaign until the owner reviews it.
+        if (res.sent + res.failed >= 5 && res.failed / (res.sent + res.failed) > DRIP_MAX_PERMANENT_RATE) {
+            await db.prepare("UPDATE mail_campaigns SET status = 'paused', note = ?, updated_at = ? WHERE campaign = ?")
+                .bind(`auto-paused ${day}: ${res.failed} failed of ${res.sent + res.failed}`, nowIso(), c.campaign).run();
+            res.paused = "failure_rate";
+        }
+        out.push(res);
+    }
+    return out;
+}
 export const DEFAULT_TEMPLATE = {
     subject: "עדכון חדש ב-Brigagame 2.0",
     body: "שלום {name},\n\nזה העדכון הראשון שלנו על Brigagame 2.0. הוספנו להסביר מה חדש במשחק:\n\n- ...\n\nנתראה בזירה,\nצוות Brigagame 2.0",
@@ -210,6 +276,37 @@ export async function handleMailAdmin(env, request, path, adminId) {
             .bind(b.excluded ? 1 : 0, nowIso(), Math.trunc(Number(b.user_id))).run();
         return J({ ok: true });
     }
+    if (path === "/api/admin/mail/campaigns" && request.method === "GET") {
+        await ensureMailSchema(env);
+        const cs = await db.prepare("SELECT campaign, subjects, status, note, created_at, updated_at FROM mail_campaigns ORDER BY created_at DESC LIMIT 20").all();
+        const st = await db.prepare("SELECT campaign, day, status, COUNT(*) n FROM mail_send_log GROUP BY campaign, day, status ORDER BY day DESC LIMIT 100").all();
+        return J({ ramp: DRIP_RAMP, campaigns: cs.results, log: st.results });
+    }
+    if (path === "/api/admin/mail/campaign" && request.method === "POST") {
+        await ensureMailSchema(env);
+        const b = await request.json().catch(() => ({}));
+        const campaign = String(b.campaign ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+        const subjects = (Array.isArray(b.subjects) ? b.subjects : []).map((x) => String(x).trim().slice(0, 200)).filter(Boolean).slice(0, 8).join(" || ");
+        const body = String(b.body ?? "").trim().slice(0, 8000);
+        if (!campaign || !subjects || !body)
+            return J({ error: "bad_request", error_he: "בקשה לא תקינה." }, 400);
+        await db.prepare("INSERT INTO mail_campaigns (campaign, subjects, body, status, created_at, updated_at) VALUES (?,?,?,'draft',?,?)"
+            + " ON CONFLICT(campaign) DO UPDATE SET subjects = excluded.subjects, body = excluded.body, status = 'draft', updated_at = excluded.updated_at")
+            .bind(campaign, subjects, body, nowIso(), nowIso()).run();
+        return J({ ok: true, status: "draft" });
+    }
+    if (path === "/api/admin/mail/campaign-status" && request.method === "POST") {
+        await ensureMailSchema(env);
+        const b = await request.json().catch(() => ({}));
+        const campaign = String(b.campaign ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
+        const status = String(b.status ?? "");
+        if (!campaign || !["draft", "approved", "paused", "done"].includes(status))
+            return J({ error: "bad_request" }, 400);
+        await db.prepare("UPDATE mail_campaigns SET status = ?, note = '', updated_at = ? WHERE campaign = ?").bind(status, nowIso(), campaign).run();
+        await db.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at) VALUES (?,?,?,?,?,?)")
+            .bind(adminId, "admin.mail_campaign_status", "campaign", campaign, status, nowIso()).run().catch(() => { });
+        return J({ ok: true, status });
+    }
     if (path === "/api/admin/mail/send-batch" && request.method === "POST") {
         await ensureMailSchema(env);
         const s = await mailSettings(env);
@@ -243,7 +340,7 @@ export async function handleMailAdmin(env, request, path, adminId) {
                 continue;
             }
             const unsub = await unsubUrl(env, id);
-            const m = renderMail(subject, body, String(r.name ?? ""), unsub, String(r.source) === "existing_backfill");
+            const m = renderMail(pickSubject(subject, id), body, String(r.name ?? ""), unsub, String(r.source) === "existing_backfill");
             const res = await sendMailGmail(s, String(r.email), m, unsub);
             if (res.ok) {
                 remaining--;

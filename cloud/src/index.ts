@@ -12,7 +12,7 @@ import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
 import { handleAdminApi } from "./api/admin.js";
-import { ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings, sendGameMail } from "./api/mail.js";
+import { mailDripTick, ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings, sendGameMail } from "./api/mail.js";
 import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
 
@@ -50,6 +50,9 @@ function frontendBase(env: Env, url: URL): string {
 }
 
 export default {
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(mailDripTick(env).then(r => console.log("mail_drip", JSON.stringify(r))).catch(e => console.log("mail_drip_error", String(e))));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const corsUrl = new URL(request.url);
     if (request.method === "OPTIONS" && corsUrl.pathname.startsWith("/api/")) {
