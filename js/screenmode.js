@@ -45,6 +45,8 @@ const ScreenMode = {
     }
     const b = document.getElementById("fs-btn");
     if (b) b.setAttribute("aria-pressed", on ? "true" : "false");
+    const ib = document.getElementById("fs-inline");
+    if (ib) ib.textContent = this.label(on);
     window.dispatchEvent(new Event("resize"));
   },
   async enter(byUser) {
@@ -58,10 +60,16 @@ const ScreenMode = {
     await this.release();
   },
   toggle() { return this.active ? this.exit() : this.enter(true); },
-  onRotate() {
-    if (!this.isTouch()) return;
-    if (this.isLandscape()) { if (!this.active) this.enter(false); }
-    else if (this.active && !this.byUser) this.exit();
+  tickLobby() {
+    const view = document.getElementById("view");
+    if (!view || !/^#\/lobby/.test(location.hash) || document.getElementById("fs-inline")) return;
+    const h1 = view.querySelector("h1");
+    if (!h1 || h1.parentElement !== view) return;
+    const b = document.createElement("button");
+    b.id = "fs-inline"; b.type = "button"; b.textContent = this.label(this.active);
+    b.addEventListener("click", () => this.toggle());
+    const sub = h1.nextElementSibling && h1.nextElementSibling.classList.contains("sub") ? h1.nextElementSibling : h1;
+    sub.insertAdjacentElement("afterend", b);
   },
   init() {
     const lang = () => (typeof Lang !== "undefined" && Lang.current === "en");
@@ -88,15 +96,10 @@ const ScreenMode = {
     document.addEventListener("fullscreenchange", onFs);
     document.addEventListener("webkitfullscreenchange", onFs);
 
-    const mq = matchMedia("(orientation: landscape)");
-    const h = () => this.onRotate();
-    if (mq.addEventListener) mq.addEventListener("change", h); else if (mq.addListener) mq.addListener(h);
-    window.addEventListener("orientationchange", h);
-    // A first tap in landscape upgrades layout-only mode to real fullscreen.
-    document.addEventListener("pointerup", () => {
-      if (this.active && this.isTouch() && !this.fsEl()) this.tryFullscreen();
-    }, { passive: true });
-    if (this.isTouch() && this.isLandscape()) this.enter(false);
+    // No automatic entering/leaving: orientation and resize events (rotation
+    // lock, Google sign-in redirects, address bar) made the mode flap on some
+    // phones. The mode changes only when the user taps the button.
+    setInterval(() => this.tickLobby(), 1000);
   }
 };
 ScreenMode.init();

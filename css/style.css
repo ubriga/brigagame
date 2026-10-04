@@ -557,3 +557,22 @@ body:has(#login-wrap) #fs-float { display: none; }
 body.fs-mode:not(.game-active) #fs-float { bottom: 10px; right: 10px; }
 body.fs-mode.game-active { background: #050d1a; }
 body.fs-mode.game-active #fs-float { right: auto; }
+
+/* v53: full-screen game = stage on one side + controls in a side column, filling the screen. */
+#fs-inline { display: none; width: 100%; margin: 6px 0 12px; padding: 12px 14px; font-size: 16px; font-weight: 800; border: 0; border-radius: 12px;
+  background: linear-gradient(180deg,#46d3bd,#2aa391); color: #04222a; box-shadow: 0 3px 12px rgba(0,0,0,.35); cursor: pointer; }
+@media (max-width: 900px) { #fs-inline { display: block; } }
+#fs-float { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); }
+body.fs-mode.game-active main { padding: 4px 6px; justify-content: flex-start; }
+body.fs-mode.game-active #view { display: grid; height: 100%; align-content: start; align-items: start; column-gap: 8px; row-gap: 2px;
+  grid-template-columns: min(calc((100dvh - 56px) * 1.785714), calc(100vw - 184px)) minmax(0, 1fr); grid-auto-rows: min-content; }
+body.fs-mode.game-active #game-hud { grid-column: 1 / -1; grid-row: 1; }
+body.fs-mode.game-active #exit-confirm { grid-column: 1 / -1; }
+body.fs-mode.game-active #game-stage { grid-column: 1; grid-row: 2 / span 12; width: 100%; margin: 0; }
+body.fs-mode.game-active #reload-wrap, body.fs-mode.game-active #shot-clock, body.fs-mode.game-active #aim-info,
+body.fs-mode.game-active #ability-bar, body.fs-mode.game-active #weapon-bar { grid-column: 2; width: 100%; max-width: none; margin: 1px 0; }
+body.fs-mode.game-active #ability-bar { display: flex; flex-wrap: wrap; justify-content: stretch; gap: 4px; }
+body.fs-mode.game-active #ability-bar .btn { flex: 1 1 46%; padding: 5px 6px; font-size: 12px; }
+body.fs-mode.game-active #weapon-bar { display: flex; flex-wrap: wrap; gap: 4px; justify-content: stretch; max-height: calc(100dvh - 190px); overflow-y: auto; }
+body.fs-mode.game-active .wpn { flex: 1 1 46%; padding: 5px 6px; font-size: 12px; min-width: 0; }
+body.fs-mode.game-active #fs-float { top: auto; bottom: 6px; left: 8px; right: auto; transform: none; padding: 6px 10px; font-size: 12px; }
