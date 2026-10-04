@@ -34,4 +34,4 @@ ALLOWED_ORIGINS = "https://brigagame.ubriga.workers.dev"
 
 # Fixed-cadence mail drip: Sun-Thu 07:17 UTC (10:17 Israel). Sends only approved campaigns.
 [triggers]
-crons = ["17 7 * * 0-4"]
+crons = ["17 7 * * SUN-THU"]
