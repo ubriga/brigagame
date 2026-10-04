@@ -73,14 +73,9 @@ const ScreenMode = {
   },
   init() {
     const lang = () => (typeof Lang !== "undefined" && Lang.current === "en");
-    const btn = document.createElement("button");
-    btn.id = "fs-btn"; btn.type = "button"; btn.textContent = "⛶";
-    btn.title = lang() ? "Full screen (landscape)" : "מסך מלא (לרוחב)";
-    btn.setAttribute("aria-label", btn.title);
-    const anchor = document.getElementById("mute-btn");
-    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor);
-    btn.addEventListener("click", () => this.toggle());
-
+    // The small icon-only button in the top bar was removed (unclear and it
+    // pushed the bar wider than a phone). The labeled pill (#fs-float) and the
+    // lobby button (#fs-inline) are the entry points.
     // One always-visible control: enters full screen (landscape) and, once in,
     // becomes the clear way back out.
     const fl = document.createElement("button");
