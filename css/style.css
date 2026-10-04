@@ -511,3 +511,40 @@ body.clockwork input, body.clockwork select, body.clockwork textarea { border-co
 #install-title { unicode-bidi: plaintext; }
 
 #login-wrap .logo img { display: block; margin: 0 auto; width: 80px; height: 80px; }
+
+/* Landscape full-screen mode (body.fs-mode). Created by OrelAI. */
+#fs-btn { min-width: 36px; font-weight: 800; }
+#fs-float { position: fixed; z-index: 60; bottom: 8px; left: 8px; padding: 6px 10px; font-size: 13px;
+  border-radius: 999px; border: 1px solid #31536a; background: rgba(8,24,38,.72); color: #cfe8f5;
+  opacity: .6; cursor: pointer; }
+#fs-float:hover, #fs-float:focus-visible { opacity: 1; }
+#fs-float.hidden { display: none; }
+html:has(body.fs-mode), body.fs-mode { overscroll-behavior: none; }
+body.fs-mode footer, body.fs-mode #seo-intro, body.fs-mode .install-card, body.fs-mode #install-btn { display: none !important; }
+body.fs-mode #topbar { padding: 4px 10px; flex-wrap: nowrap; gap: 8px; min-height: 0; }
+body.fs-mode #topbar nav { display: flex; overflow-x: auto; flex: 1 1 auto; min-width: 0; scrollbar-width: none; }
+body.fs-mode #topbar nav::-webkit-scrollbar { display: none; }
+body.fs-mode .brand .by, body.fs-mode #user-pic { display: none; }
+body.fs-mode main { padding: 8px 14px; max-width: none; }
+body.fs-mode:not(.game-active) main h1, body.fs-mode:not(.game-active) main h2 { margin: 6px 0; }
+body.fs-mode:not(.game-active) .card { padding: 10px 14px; }
+@media (orientation: landscape) and (min-width: 700px) {
+  body.fs-mode:not(.game-active) main { column-gap: 14px; }
+  body.fs-mode:not(.game-active) .custom-wrap { grid-template-columns: 1fr 1fr; }
+}
+/* Gameplay: the stage is pinned to the viewport - nothing scrolls or moves. */
+body.fs-mode.game-active { overflow: hidden; height: 100dvh; }
+body.fs-mode.game-active #topbar,
+body.fs-mode.game-active .sub, body.fs-mode.game-active .kbd-help,
+body.fs-mode.game-active #practice-ind { display: none !important; }
+body.fs-mode.game-active main { position: fixed; inset: 0; padding: 4px 8px; display: flex; flex-direction: column;
+  align-items: center; justify-content: space-between; overflow: hidden; }
+body.fs-mode.game-active #view { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+body.fs-mode.game-active #game-hud { width: 100%; margin: 0 0 2px; flex-wrap: nowrap; }
+body.fs-mode.game-active #game-stage { width: min(100%, calc((100dvh - 118px) * 1.785714)); flex: 0 0 auto; margin: 0 auto; }
+body.fs-mode.game-active #game-canvas { width: 100%; height: auto; touch-action: none; }
+body.fs-mode.game-active #reload-wrap, body.fs-mode.game-active #shot-clock, body.fs-mode.game-active #aim-info { margin: 1px auto; }
+body.fs-mode.game-active #ability-bar, body.fs-mode.game-active #weapon-bar { margin: 2px; gap: 5px; justify-content: center; }
+body.fs-mode.game-active .wpn, body.fs-mode.game-active #ability-bar .btn { padding: 4px 8px; font-size: 12px; }
+body.fs-mode.game-active #fs-float { bottom: auto; top: 6px; left: 50%; transform: translateX(-50%); }
+@media (display-mode: fullscreen), (display-mode: standalone) { #fs-float { opacity: .5; } }
