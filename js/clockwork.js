@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /* Clockwork Towers graphics pack (direction D2) - a fully separated visual
  * layer. Blocks stay the source of truth; this module only draws. Activated
  * by the graphics_pack admin control; off = the classic renderer untouched.

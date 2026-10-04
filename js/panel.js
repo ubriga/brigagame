@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Loaded on demand, only after the server confirms elevated access for the
 // signed-in account. Registers the management route, nav entry, translations
 // and styles. Nothing here ships inside the regular client bundle.

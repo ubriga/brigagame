@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Lightweight, persistent whole-app language layer. It also translates DOM
 // added later by game/store views, so one user choice covers every route.
 const Lang = {

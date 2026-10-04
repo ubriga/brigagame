@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Lightweight procedural premium tower ornaments. These paths add no image
 // downloads and preserve the server-owned destructible 4x6 block hitbox.
 const PremiumTowerArt = {
