@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - store catalog + admin gameplay controls.
  * Generated from backend/economy.py and backend/app.py (DEFAULT_GAMEPLAY_CONTROLS).

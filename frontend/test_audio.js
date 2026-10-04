@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Audio lifecycle regressions. Run with: node frontend/test_audio.js
 const fs = require("fs");
 const vm = require("vm");

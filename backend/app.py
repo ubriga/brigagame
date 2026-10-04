@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Brigagame 2.0 by OrelAI - Flask backend.
 
 Server-authoritative multiplayer artillery game. The client renders only;

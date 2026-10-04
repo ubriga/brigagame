@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Brigagame 2.0 by OrelAI - frontend configuration.
 // After deploying the backend to PythonAnywhere, set API_BASE to its URL,
 // e.g. "https://<username>.pythonanywhere.com"

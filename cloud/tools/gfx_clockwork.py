@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Brigagame 'Clockwork Towers' (D2) sprite generator v3 - mockup-derived painterly art.
 Backgrounds, portholes, gears and airship are extracted from the APPROVED D2 mockup
 (dir-d2-clockwork.png, the user's visual yardstick), cleaned of game UI by masked

@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Google sign-in verification + server-side session handling.
 
 Flow: the frontend uses Google Identity Services, obtains an ID token and

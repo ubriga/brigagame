@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - economy rules. Faithful TypeScript port of backend/economy.py.
  * Server-authoritative: the client never sends coin amounts.

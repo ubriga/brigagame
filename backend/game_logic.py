@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Server-authoritative game simulation for Brigagame 2.0 by OrelAI.
 
 World coordinates: canvas 1000 x 560, y grows downward, ground at y=520.

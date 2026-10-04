@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Bot strength and admin-control regressions."""
 import json, os, tempfile
 from unittest.mock import patch

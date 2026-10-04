@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Regression guards for 2026-09-16 mobile/PWA QA.
 const fs = require("fs");
 const path = require("path");

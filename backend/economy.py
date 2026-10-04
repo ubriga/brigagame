@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Brigagame 2.0 by OrelAI - economy rules and item catalog.
 
 Single source of truth for coins, prices, rewards, rating and ranks.

@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 const fs=require('fs'), path=require('path');
 const app=fs.readFileSync(path.join(__dirname,'js/app.js'),'utf8');
 const css=fs.readFileSync(path.join(__dirname,'css/style.css'),'utf8');

@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Brigagame 2.0 by OrelAI - backend configuration.
 
 All values come from environment variables so no secret is ever stored in

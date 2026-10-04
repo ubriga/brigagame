@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Install lifecycle for Android Chrome and install-capable desktop browsers.
 const PWAInstall = {
   prompt: null,

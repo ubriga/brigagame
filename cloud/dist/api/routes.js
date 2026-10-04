@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - REST API routes (Cloudflare port of app.py handlers).
  * Each handler mirrors its Python counterpart's logic, error codes, and

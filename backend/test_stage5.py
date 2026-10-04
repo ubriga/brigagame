@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Focused dynamic-obstacle timing and collision regressions."""
 from unittest.mock import patch
 from game_logic import new_state, obstacle_at, _simulate, GROUND_Y

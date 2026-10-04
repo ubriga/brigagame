@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Admin API - port of app.py /api/admin/* endpoints. Same gates (admin email),
  * validation ranges, messages, and audit behavior.
@@ -9,7 +10,7 @@ import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
 import { json } from "./routes.js";
-import { sendSmtpMail } from "./smtp.js";
+import { handleMailAdmin, sendGameMail } from "./mail.js";
 const nowIso = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
 async function adminUser(env, request) {
@@ -65,8 +66,12 @@ function controlSpecs() {
     return {
         auth_flow: {
             popup_enabled: [null, null, "bool"], redirect_enabled: [null, null, "bool"],
-            email_code_enabled: [null, null, "bool"], email_provider: [null, null, "email_provider"],
-            inboxlv_pass: [null, null, "secret_str"],
+            email_code_enabled: [null, null, "bool"],
+        },
+        mail_updates: {
+            enabled: [null, null, "bool"], default_checked: [null, null, "bool"],
+            daily_cap: [0, 400, "int"], sender_email: [null, null, "str"],
+            gmail_app_password: [null, null, "secret_str"],
         },
         bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
             difficulty: [null, null, "difficulty"] },
@@ -148,6 +153,11 @@ export async function handleAdminApi(env, request, path) {
         return rl;
     const method = request.method;
     const db = env.DB;
+    {
+        const mr = await handleMailAdmin(env, request, path, Number(u.id));
+        if (mr)
+            return mr;
+    }
     // GET /api/admin/overview
     if (path === "/api/admin/overview" && method === "GET") {
         const one = async (sql, ...params) => Number((await db.prepare(sql).bind(...params).first())?.c ?? 0);
@@ -441,21 +451,12 @@ export async function handleAdminApi(env, request, path) {
             "ממשיכים לשחק,",
             "צוות Brigagame 2.0",
         ].join("\n");
-        const smtpUser = String(env.INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
-        const smtpPass = String(env.INBOXLV_PASS ?? "")
-            || String(controls.auth_flow?.inboxlv_pass ?? "");
         let mailed = false;
-        if (smtpUser && smtpPass) {
-            const sent = await sendSmtpMail({
-                host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
-                from: smtpUser, to, subject, text,
-            });
+        {
+            const sent = await sendGameMail(env, to, subject, text);
             mailed = sent.ok;
             if (!sent.ok)
                 console.error("contact_reply_mail_fail", sent.error);
-        }
-        else {
-            console.error("contact_reply_mail_no_creds");
         }
         const now = nowIso();
         await db.prepare("UPDATE contact_reports SET replied_at = ?, reply_message = ? WHERE id = ?")
@@ -469,8 +470,10 @@ export async function handleAdminApi(env, request, path) {
     if (path === "/api/admin/gameplay-controls" && method === "GET") {
         const controls = await getControls(env);
         const af = controls.auth_flow ?? {};
-        af.inboxlv_pass_set = Boolean(String(af.inboxlv_pass ?? ""));
-        af.inboxlv_pass = "";
+        if (controls.mail_updates) {
+            controls.mail_updates.gmail_app_password_set = Boolean(String(controls.mail_updates.gmail_app_password ?? ""));
+            controls.mail_updates.gmail_app_password = "";
+        }
         return json({ controls });
     }
     if (path === "/api/admin/gameplay-controls" && method === "POST") {
@@ -506,11 +509,6 @@ export async function handleAdminApi(env, request, path) {
                     else if (kind === "difficulty") {
                         value = String(value);
                         if (!["easy", "medium", "hard", "ultra", "expert"].includes(value))
-                            throw new Error("bad");
-                    }
-                    else if (kind === "email_provider") {
-                        value = String(value);
-                        if (!["resend", "inboxlv"].includes(value))
                             throw new Error("bad");
                     }
                     else if (kind === "str") {

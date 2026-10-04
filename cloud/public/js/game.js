@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Game screen: canvas rendering, drag aiming, polling, animations.
 // Rendering only - every rule is enforced by the server.
 const GameView = {

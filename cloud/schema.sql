@@ -1,3 +1,4 @@
+-- Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 -- Brigagame 2.0 D1 schema, ported 1:1 from backend/db.py
 
 CREATE TABLE IF NOT EXISTS users (

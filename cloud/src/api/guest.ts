@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Guest mode: anonymous temporary accounts ("שחק כאורח").
  * A guest is a regular users row with is_guest=1 and guest_created_at set;

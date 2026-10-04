@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Approved smart-bot rebuild: decisions, resources, controls and real routes."""
 import json, os, tempfile, time
 from unittest.mock import patch

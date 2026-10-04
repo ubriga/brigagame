@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - match settlement. Faithful TypeScript port of app.py's
  * finalize_match / finalize_draw / resolve_time_limit / rank_loss_points /

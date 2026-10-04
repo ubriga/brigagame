@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Cookie/storage consent - a REAL gate, not a dummy button.
 // The choice is persisted (localStorage + cookie), mirrored to the server
 // audit log (IP hashed), and actually enforced: non-essential preference

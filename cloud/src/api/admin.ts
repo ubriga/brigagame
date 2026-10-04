@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Admin API - port of app.py /api/admin/* endpoints. Same gates (admin email),
  * validation ranges, messages, and audit behavior.

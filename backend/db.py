@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """SQLite storage layer. PythonAnywhere-free-tier friendly (file-based DB)."""
 import sqlite3
 from flask import g

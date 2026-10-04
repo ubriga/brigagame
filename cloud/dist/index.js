@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - Cloudflare Worker entry.
  * Routes API requests, upgrades match WebSockets to the MatchRoom DO,
@@ -10,8 +11,8 @@ import { handleApi } from "./api/routes.js";
 import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
-import { sendSmtpMail } from "./api/smtp";
 import { handleAdminApi } from "./api/admin.js";
+import { ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings, sendGameMail } from "./api/mail.js";
 import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
 export { MatchRoom };
@@ -87,7 +88,7 @@ async function handleRequest(request, env, ctx) {
     // manage and lift the lockdown. /api/health stays open for monitoring.
     // During lockdown the Google sign-in path stays open so the admin can
     // log in; session issuance itself is gated on the admin email below.
-    const AUTH_OPEN = new Set(["/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
+    const AUTH_OPEN = new Set(["/api/mail/unsub", "/api/auth/options", "/api/auth/google/start", "/api/auth/google/callback", "/api/auth/google"]);
     if (path.startsWith("/api/") && path !== "/api/health" && !path.startsWith("/api/admin/") && !AUTH_OPEN.has(path)) {
         const lock = await getShabbatLockdown(env);
         if (lock.active) {
@@ -98,17 +99,24 @@ async function handleRequest(request, env, ctx) {
             }
         }
     }
+    if (path.startsWith("/api/mail/")) {
+        const mp = await handleMailPublic(env, request, path);
+        if (mp)
+            return mp;
+    }
     // ---- Sign-in method toggles (public; admin-controlled) ----
     if (path === "/api/auth/options" && request.method === "GET") {
         const controls = await getControls(env);
         const af = controls.auth_flow ?? {};
-        const provider = String(af.email_provider ?? "resend");
         const lockNow = await getShabbatLockdown(env);
+        await ensureMailSchema(env).catch(() => { });
+        const ms = await mailSettings(env);
         return json({
+            mail_optin: ms.enabled, mail_default: ms.default_checked,
             popup: af.popup_enabled !== false,
             redirect: af.redirect_enabled === true,
             email_code: af.email_code_enabled === true && !lockNow.active,
-            email_from: provider === "inboxlv" ? "brigagame.game@inbox.lv" : "onboarding@resend.dev",
+            email_from: ms.sender_email,
             // Installed-PWA logins: the Google redirect leaves the app storage, so
             // the client emphasizes the email-code path unless the admin disables it.
             pwa_email_hint: af.pwa_email_hint !== false,
@@ -120,7 +128,7 @@ async function handleRequest(request, env, ctx) {
         const controls = await getControls(env);
         if (controls.auth_flow?.redirect_enabled !== true)
             return json({ error: "redirect_disabled", error_he: "דרך ההתחברות הזו כבויה כרגע." }, 403);
-        const state = crypto.randomUUID();
+        const state = crypto.randomUUID() + (url.searchParams.get("mo") === "1" ? "~1" : "~0");
         await env.DB.prepare("INSERT INTO oauth_states (state, created_at, expires_at) VALUES (?,?,?)")
             .bind(state, new Date().toISOString(), Date.now() / 1000 + 600).run();
         const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
@@ -173,7 +181,10 @@ async function handleRequest(request, env, ctx) {
                     .catch(() => { });
                 return Response.redirect(frontendBase(env, url) + "/#/login?lockdenied=1", 302);
             }
+            const existed = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(id.email).first();
             const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
+            if (!existed)
+                await recordSignupOptIn(env, Number(user.id), state.endsWith("~1"), "signup_google_redirect");
             const token = await createSession(d1(env.DB), Number(user.id));
             await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
                 + " VALUES (?, 'google_auth_attempt', 'auth', '', ?, ?)")
@@ -203,48 +214,15 @@ async function handleRequest(request, env, ctx) {
         await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
         await env.DB.prepare("INSERT INTO auth_codes (email, code_hash, expires_at, attempts, created_at) VALUES (?,?,?,0,?)")
             .bind(email, codeHash, Date.now() / 1000 + 600, new Date().toISOString()).run();
-        const provider = String(controls.auth_flow?.email_provider ?? "resend");
-        if (provider === "inboxlv") {
-            const smtpUser = String(env.INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
-            const smtpPass = String(env.INBOXLV_PASS ?? "")
-                || String(controls.auth_flow?.inboxlv_pass ?? "");
-            if (!smtpUser || !smtpPass) {
-                console.warn("email_code_no_inboxlv_secret");
+        const sent = await sendGameMail(env, email, "קוד הכניסה שלך ל-Brigagame", "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.");
+        if (!sent.ok) {
+            console.error("email_code_send_fail", sent.error);
+            if (sent.error === "no_key")
                 return json({ error: "email_unavailable",
                     error_he: "שליחת המייל לא מוגדרת עדיין. נסה דרך התחברות אחרת." }, 503);
-            }
-            const sent = await sendSmtpMail({
-                host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
-                from: smtpUser, to: email, subject: "קוד הכניסה שלך ל-Brigagame",
-                text: "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.",
-            });
-            if (!sent.ok) {
-                console.error("smtp_send_fail", sent.error);
-                if (/limit|too many|quota|exceed|rate/i.test(String(sent.error ?? "")))
-                    return json({ error: "email_limit",
-                        error_he: "הגענו זמנית למגבלת השליחה של שירות המייל. נסו שוב בעוד כשעה, או התחברו עם גוגל." }, 429);
-                return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
-            }
-            return json({ ok: true });
-        }
-        const resendKey = env.RESEND_API_KEY ?? "";
-        if (!resendKey) {
-            console.warn("email_code_no_provider");
-            return json({ error: "email_unavailable",
-                error_he: "שליחת המייל לא מוגדרת עדיין. נסה דרך התחברות אחרת." }, 503);
-        }
-        const send = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: { Authorization: "Bearer " + resendKey, "Content-Type": "application/json" },
-            body: JSON.stringify({
-                from: "Brigagame 2.0 <onboarding@resend.dev>",
-                to: [email],
-                subject: "קוד הכניסה שלך ל-Brigagame",
-                text: "קוד הכניסה שלך: " + code + "\n\nהקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, התעלם מהמייל הזה.",
-            }),
-        });
-        if (!send.ok) {
-            console.error("email_send_fail", send.status, (await send.text()).slice(0, 200));
+            if (/limit|too many|quota|exceed|rate|550-5\.4\.5|daily/i.test(String(sent.error ?? "")))
+                return json({ error: "email_limit",
+                    error_he: "הגענו זמנית למגבלת השליחה של שירות המייל. נסו שוב מאוחר יותר, או התחברו עם גוגל." }, 429);
             return json({ error: "email_send_failed", error_he: "שליחת המייל נכשלה. נסה שוב בעוד רגע." }, 502);
         }
         return json({ ok: true });
@@ -271,14 +249,19 @@ async function handleRequest(request, env, ctx) {
         await env.DB.prepare("DELETE FROM auth_codes WHERE email = ?").bind(email).run();
         // Registration attaches to the guest session: same row, same token,
         // all progress carries over (only when the email is not taken).
+        const existedE = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
         const up = await upgradeGuestIfPresent(env, request, email, email.split("@")[0], "");
         if (up) {
+            if (!existedE)
+                await recordSignupOptIn(env, Number(up.user.id), body.mail_optin, "signup_email_upgrade");
             await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
                 + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
                 .bind(Number(up.user.id), String(up.user.id), JSON.stringify({ via: "email_code" }), new Date().toISOString()).run().catch(() => { });
             return json({ token: up.token, user: up.user, upgraded: true });
         }
         const user = await getOrCreateUser(d1(env.DB), email, email.split("@")[0], "");
+        if (!existedE)
+            await recordSignupOptIn(env, Number(user.id), body.mail_optin, "signup_email");
         const token = await createSession(d1(env.DB), Number(user.id));
         return json({ token, user });
     }
@@ -300,8 +283,11 @@ async function handleRequest(request, env, ctx) {
                     await audit("lockdown_denied");
                     return json({ error: "lockdown", title: lock.title, body: lock.body, ends_at: lock.effective_end }, 503);
                 }
+                const existedG = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(id.email).first();
                 const up = await upgradeGuestIfPresent(env, request, id.email, id.name, id.picture);
                 if (up) {
+                    if (!existedG)
+                        await recordSignupOptIn(env, Number(up.user.id), body.mail_optin, "signup_google_upgrade");
                     await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"
                         + " VALUES (?, 'guest.upgrade', 'user', ?, ?, ?)")
                         .bind(Number(up.user.id), String(up.user.id), JSON.stringify({ via: "google_popup" }), new Date().toISOString()).run().catch(() => { });
@@ -309,6 +295,8 @@ async function handleRequest(request, env, ctx) {
                     return json({ token: up.token, user: up.user, upgraded: true });
                 }
                 const user = await getOrCreateUser(d1(env.DB), id.email, id.name, id.picture);
+                if (!existedG)
+                    await recordSignupOptIn(env, Number(user.id), body.mail_optin, "signup_google_popup");
                 const token = await createSession(d1(env.DB), Number(user.id));
                 await audit("ok");
                 return json({ token, user });
@@ -454,20 +442,14 @@ async function handleRequest(request, env, ctx) {
         ].join("\n");
         let mailed = false;
         const dest = String(cf.destination_email ?? "").trim() || String(env.ADMIN_EMAIL ?? "");
-        const smtpUser = String(env.INBOXLV_USER ?? "") || "brigagame.game@inbox.lv";
-        const smtpPass = String(env.INBOXLV_PASS ?? "")
-            || String(controls.auth_flow?.inboxlv_pass ?? "");
-        if (smtpUser && smtpPass && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
-            const sent = await sendSmtpMail({
-                host: "mail.inbox.lv", port: 465, user: smtpUser, pass: smtpPass,
-                from: smtpUser, to: dest, subject, text,
-            });
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
+            const sent = await sendGameMail(env, dest, subject, text);
             mailed = sent.ok;
             if (!sent.ok)
                 console.error("contact_mail_fail", sent.error);
         }
         else {
-            console.error("contact_mail_no_creds_or_dest");
+            console.error("contact_mail_no_dest");
         }
         if (!mailed) {
             await env.DB.prepare("INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, details, created_at)"

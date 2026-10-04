@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Player e-mail updates: opt-in storage, one-click unsubscribe, sending through the game's own Gmail (SMTP + app password).
  * Everything here is gated by gameplay_controls.mail_updates (admin, server-side).

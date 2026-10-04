@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """End-to-end API test: 2-client scripted match + store, coupons, admin."""
 import os, sys, time, json, math, sqlite3, subprocess, urllib.request
 from datetime import datetime, timezone, timedelta

@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Minimal SMTP-over-TLS client (RFC 5321 subset) for Cloudflare Workers.
 // Used for the game Gmail (smtp.gmail.com): port 465, direct TLS, AUTH LOGIN with an app password.
 import { connect } from "cloudflare:sockets";

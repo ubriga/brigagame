@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - server-authoritative game simulation.
  * Faithful TypeScript port of backend/game_logic.py.

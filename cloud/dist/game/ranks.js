@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - IDF rank ladder. Faithful TypeScript port of backend/ranks.py.
  * 19 tower levels: 0 = unranked base tower, 1-18 = טוראי through רא״ל.

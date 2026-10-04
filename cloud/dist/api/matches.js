@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Match REST routes: state snapshot (with incremental events), ready, leave.
  * Port of app.py match_state / match_ready / match_leave. The MatchRoom DO

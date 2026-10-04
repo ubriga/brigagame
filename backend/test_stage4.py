@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Focused tower-expansion regressions: layout, HP, collision, collapse, compatibility."""
 import json
 from unittest.mock import patch

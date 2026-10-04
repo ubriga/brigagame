@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 function apiError(result, fallback = "שגיאה") {
   const data = (result && result.data) || {};
   if (data.error_he) return data.error_he;

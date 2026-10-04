@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /* Render3D — WebGL (Three.js) render layer over the same server-owned game
  * state. Stage 1 (skeleton): capability probe, lazy engine load, placeholder
  * block towers/cannons, lighting/fog, adaptive pixel ratio, instant fallback

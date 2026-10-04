@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Brigagame audio: real CC0 samples (see assets/sfx/CREDITS.md) through Web
 // Audio, with the original code-synthesized sounds as fallback if a sample
 // cannot be decoded. Samples preload at page load; the AudioContext is

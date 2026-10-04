@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """End-to-end bot-turn regression through the real Flask match endpoints."""
 import os,tempfile,time
 fd,path=tempfile.mkstemp(suffix='.db');os.close(fd)

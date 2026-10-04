@@ -1,5 +1,6 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Minimal SMTP-over-TLS client (RFC 5321 subset) for Cloudflare Workers.
-// Used for the inbox.lv provider: port 465, direct TLS, AUTH LOGIN.
+// Used for the game Gmail (smtp.gmail.com): port 465, direct TLS, AUTH LOGIN with an app password.
 import { connect } from "cloudflare:sockets";
 function b64(s) {
     return btoa(unescape(encodeURIComponent(s)));
@@ -50,18 +51,44 @@ export async function sendSmtpMail(opts) {
         await send("MAIL FROM:<" + opts.from + ">");
         await expect([250], "MAIL FROM");
         await send("RCPT TO:<" + opts.to + ">");
-        await expect([250, 251], "RCPT TO");
+        {
+            const r = await readReply();
+            if (r.code >= 550 && r.code <= 553) {
+                try {
+                    await send("QUIT");
+                }
+                catch { /* closing */ }
+                try {
+                    await socket.close();
+                }
+                catch { /* closing */ }
+                return { ok: false, permanent: true, error: "RCPT TO -> " + r.code };
+            }
+            if (![250, 251].includes(r.code))
+                throw new Error("RCPT TO -> " + r.code + " " + r.body.replace(/\s+/g, " ").slice(0, 120));
+        }
         await send("DATA");
         await expect([354], "DATA");
         const nl = "\r\n";
-        const body64 = b64(opts.text).replace(/.{1,76}/g, "$&" + nl);
-        const msg = "From: Brigagame 2.0 <" + opts.from + ">" + nl +
+        const wrap = (t) => b64(t).replace(/.{1,76}/g, "$&" + nl);
+        const extra = Object.entries(opts.headers ?? {}).map(([k, v]) => k + ": " + v + nl).join("");
+        const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+        const html = opts.html ?? ('<div dir="rtl" style="font-family:Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">'
+            + esc(opts.text).split(/\n{2,}/).map((p) => "<p>" + p.replace(/\n/g, "<br>") + "</p>").join("") + "</div>");
+        const domain = (opts.from.split("@")[1] || "gmail.com");
+        const msgId = "<" + crypto.randomUUID().replaceAll("-", "") + "@" + domain + ">";
+        const head = "Date: " + new Date().toUTCString().replace("GMT", "+0000") + nl +
+            "From: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
             "To: <" + opts.to + ">" + nl +
+            "Reply-To: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
+            "Message-ID: " + msgId + nl +
             "Subject: =?UTF-8?B?" + b64(opts.subject) + "?=" + nl +
-            "MIME-Version: 1.0" + nl +
-            "Content-Type: text/plain; charset=UTF-8" + nl +
-            "Content-Transfer-Encoding: base64" + nl + nl +
-            body64 + nl + ".";
+            "MIME-Version: 1.0" + nl + extra;
+        const bd = "bg_" + crypto.randomUUID().replaceAll("-", "");
+        const msg = head + "Content-Type: multipart/alternative; boundary=\"" + bd + "\"" + nl + nl +
+            "--" + bd + nl + "Content-Type: text/plain; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(opts.text) +
+            "--" + bd + nl + "Content-Type: text/html; charset=UTF-8" + nl + "Content-Transfer-Encoding: base64" + nl + nl + wrap(html) +
+            "--" + bd + "--" + nl + ".";
         await writer.write(enc.encode(msg + nl));
         await expect([250], "message body");
         await send("QUIT");

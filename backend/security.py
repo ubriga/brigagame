@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Rate limiting (SQLite-backed) and HTTP security headers."""
 import time
 import hashlib

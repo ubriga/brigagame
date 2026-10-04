@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Static guard for game-start failures that used to collapse to bare "שגיאה".
 const fs = require("fs");
 const app = fs.readFileSync(__dirname + "/js/app.js", "utf8");

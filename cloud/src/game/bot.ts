@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - bot decision engine. Faithful TypeScript port of the
  * app.py functions _tower_ratio / _bot_choose_weapon / _apply_bot_tactics /

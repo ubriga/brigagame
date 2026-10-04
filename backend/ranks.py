@@ -1,3 +1,4 @@
+# Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 """Server-authoritative IDF-style tower progression.
 
 There are 19 tower upgrade levels: level 0 is the unranked base tower and

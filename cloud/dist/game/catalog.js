@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - store catalog + admin gameplay controls.
  * Generated from backend/economy.py and backend/app.py (DEFAULT_GAMEPLAY_CONTROLS).
@@ -2056,9 +2057,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "auth_flow": {
         "popup_enabled": true,
         "redirect_enabled": true,
-        "email_code_enabled": true,
-        "email_provider": "resend",
-        "inboxlv_pass": ""
+        "email_code_enabled": true
     },
     "guest_mode": {
         "enabled": true,
@@ -2078,6 +2077,13 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "guest_max_per_hour": 2,
         "max_length": 2000,
         "reply_enabled": true
+    },
+    "mail_updates": {
+        "enabled": false,
+        "default_checked": true,
+        "daily_cap": 250,
+        "sender_email": "brigagame2026@gmail.com",
+        "gmail_app_password": ""
     },
     "invite_system": {
         "enabled": true,

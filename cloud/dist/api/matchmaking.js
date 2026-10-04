@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * HvH matchmaking - port of app.py quick/friend/join/accept/decline plus the
  * offer machinery (match_offers, declines, presence-based invites) and the

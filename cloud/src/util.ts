@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /** Shared D1 adapter + gameplay-controls loader (merged with D1 overrides). */
 import type { Db } from "./game/finalize.js";
 import type { PlayerMods } from "./game/game_logic.js";

@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /* Brigagame service worker: offline shell fallback without stale deploys. */
 const RELEASE = "22-smart-bots";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;

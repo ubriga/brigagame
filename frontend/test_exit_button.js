@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Guards the unified exit/logout control (option ג, 2026-09-16):
 // one inline SVG power icon on every device - never a unicode glyph that
 // Android/PWA fonts swap for an X-like fallback - plus an in-match exit

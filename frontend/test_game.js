@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Deterministic presentation-physics checks. Run with: node frontend/test_game.js
 const fs = require("fs");
 const vm = require("vm");

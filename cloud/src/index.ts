@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Brigagame 2.0 - Cloudflare Worker entry.
  * Routes API requests, upgrades match WebSockets to the MatchRoom DO,

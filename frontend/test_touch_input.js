@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 const fs = require("fs"), vm = require("vm");
 const src = fs.readFileSync(__dirname + "/js/game.js", "utf8").replace("const GameView =", "globalThis.GameView =");
 const handlers = {};

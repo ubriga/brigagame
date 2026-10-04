@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Static PWA regression checks. Run with: node frontend/test_pwa.js
 const fs = require("fs");
 const path = require("path");

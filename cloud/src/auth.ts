@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Auth port: Google ID-token verification (JWKS, RS256, Web Crypto),
  * session issuance and lookup against D1. Mirrors backend/auth.py.

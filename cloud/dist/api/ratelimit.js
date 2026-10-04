@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * Rate limiting - port of backend/security.py (fixed-window buckets).
  * Same buckets/windows, same 429 payload. Identity = user id when authed,

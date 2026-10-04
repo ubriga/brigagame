@@ -1,3 +1,4 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Thin API client. The server is authoritative for everything.
 const API = {
   // Remember-me: "זכור אותי" stores the session in localStorage (persists
