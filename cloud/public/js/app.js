@@ -581,7 +581,7 @@ const App = {
     else if (hash.startsWith("#/custom")) this.vCustom(view, seq);
     else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view, seq);
     else if (hash.startsWith("#/messages")) this.vMessages(view, seq);
-    else if (hash.startsWith("#/war")) this.vWar(view, seq);
+    else if (hash.startsWith("#/war")) { if (typeof this.vWar !== "function") { window.addEventListener("load", () => this.route(), { once: true }); return; } this.vWar(view, seq); }
     else if (hash.startsWith("#/tags")) this.vTags(view, seq);
     else if (hash.startsWith("#/contact")) this.vContact(view, seq);
     else if (hash.startsWith("#/invite/")) { this.vInvite(view, hash.split("/")[2] || ""); view.removeAttribute("aria-busy"); }
