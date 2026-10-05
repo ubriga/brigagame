@@ -5,7 +5,7 @@ import { json } from "./routes.js";
 import { validateNick } from "../nickname.js";
 import type { Env } from "../do/MatchRoom";
 
-export const ALLIANCE_DEFAULTS = { enabled: false, max_members: 4, name_change_locked: true };
+export const ALLIANCE_DEFAULTS = { enabled: true, max_members: 4, name_change_locked: true };
 export function allianceCfg(controls: any) { return { ...ALLIANCE_DEFAULTS, ...((controls ?? {}).alliances ?? {}) } as typeof ALLIANCE_DEFAULTS; }
 const nowIso = () => new Date().toISOString();
 
