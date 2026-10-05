@@ -66,12 +66,12 @@ const App = {
       window.addEventListener(ev, () => { this._lastActiveAt = Date.now(); }, { passive: true, capture: true }));
     Sfx.preload();
     // Shabbat/holiday lockdown: the server is authoritative and refuses every
-    // non-admin API call while active; this check only picks the first screen.
+    // regular API call while active; this check only picks the first screen.
     try {
       const lockRes = await API.get("/api/lockdown");
       if (lockRes.status === 200 && lockRes.data && lockRes.data.active) {
-        // Admin sessions pass the server gate: skip the lock screen so the
-        // admin can manage and lift the lockdown from the panel.
+        // owner sessions pass the server gate: skip the lock screen so the
+        // owner can manage and lift the lockdown from the panel.
         let isAdmin = false;
         if (API.token) {
           const { status, data } = await API.get("/api/me");
@@ -79,7 +79,7 @@ const App = {
         }
         if (!isAdmin) {
           // His design (25.9): visitors get the normal Google login screen
-          // carrying the Shabbat notice; only the admin email receives a
+          // carrying the Shabbat notice; only the owner receives a
           // session. A denied attempt lands on the full candle lock screen.
           this._locked = true;
           if (typeof Sfx !== "undefined") Sfx.stopMusic();
@@ -269,7 +269,7 @@ const App = {
       document.querySelectorAll(".guest-prompt-overlay").forEach(o => o.remove());
     }
     // A successful /api/me proves a valid session; during lockdown that can
-    // only be the admin, so any boot-time lock flag must clear or the route
+    // only be the owner, so any boot-time lock flag must clear or the route
     // guard would slam the lock screen over the lobby right after login.
     this._locked = false;
     window.__BG_LOCKED__ = false;
@@ -314,8 +314,8 @@ const App = {
     const pic = document.getElementById("user-pic");
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
     else { pic.removeAttribute("src"); pic.classList.add("hidden"); }
-    // Permanent rule: non-admins must not see any trace that an admin area
-    // exists - remove a stale panel button left by a previous admin session
+    // Rule: regular players must not see any trace of owner tools
+    // exists - remove a stale panel button left by a previous owner session
     // in this tab (logout/login does not clear injected DOM).
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
@@ -326,9 +326,9 @@ const App = {
   },
 
   // Full-site Shabbat/holiday lock screen. The server enforces the lockdown
-  // (every non-admin API call returns 503 lockdown); this is only the display.
+  // (every regular API call returns 503 lockdown); this is only the display.
   // Persistent guest warning: the account deletes itself at expires_at
-  // (TTL from FIRST entry, admin-controlled). The countdown banner is the
+  // (TTL from FIRST entry, server-controlled). The countdown banner is the
   // visible pre-deletion warning the spec requires, with a register CTA
   // that keeps every bit of progress (server converts the same row).
   showGuestBanner() {
@@ -467,7 +467,7 @@ const App = {
     if (GameView.canvas) GameView.destroy();
     const seq = ++this._routeSeq;
     const hash = location.hash || "#/lobby";
-    // Admin preview of the lock screen (no activation, no login needed):
+    // Owner preview of the lock screen (no activation, no login needed):
     // #/shabbat-preview?title=...&body=...
     if (hash.startsWith("#/shabbat-preview")) {
       const q = new URLSearchParams(hash.split("?")[1] || "");
@@ -535,7 +535,7 @@ const App = {
     document.getElementById("topbar").classList.add("hidden");
     const hashParams = new URLSearchParams((location.hash.split("?")[1] || ""));
     const incomingError = hashParams.get("auth_error") || "";
-    // Non-admin whose Google sign-in was refused during lockdown: full lock screen.
+    // Regular player whose Google sign-in was refused during lockdown: full lock screen.
     if (this._locked && hashParams.get("lockdenied")) {
       this.showLockdown(this._lockTitle, this._lockBody, this._lockEnds);
       return;
@@ -1111,7 +1111,7 @@ const App = {
         window.refreshMe?.();
       } else toast(apiError(result, "שגיאה באיסוף הבונוס היומי"));
     };
-    // Guest register prompt: after the admin-set number of games, offer once
+    // Guest register prompt: after the server-set number of games, offer once
     // per session to keep everything via a free sign-up.
     if (guest && Number(guest.games_until_register_prompt) > 0
         && Number(u.matches_played || 0) >= Number(guest.games_until_register_prompt)

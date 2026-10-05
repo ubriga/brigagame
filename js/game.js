@@ -122,7 +122,7 @@ const GameView = {
       location.hash = "#/lobby";
     };
     // Item ו: control tooltips are native title attributes; strip them when
-    // the admin turns the feature off.
+    // the owner turns the feature off.
     if (window.App && (App.ux || {}).control_tooltips === false) {
       document.querySelectorAll("#ability-bar [title], #weapon-bar [title]").forEach(b => b.removeAttribute("title"));
       this._noTooltips = true;

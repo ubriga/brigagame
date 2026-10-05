@@ -82,7 +82,7 @@ const Clockwork = {
       c.drawImage(I.bg_far, -off, GR - 196, fw, 200);
       c.drawImage(I.bg_far, fw - off, GR - 196, fw, 200);
     }
-    // airship drifts slowly (admin can freeze it)
+    // airship drifts slowly (owner can freeze it)
     if (I.airship) {
       const gcfg = Clockwork.cfg() || {};
       if (!low && gcfg.airship_motion !== false) {
