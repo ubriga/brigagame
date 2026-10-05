@@ -704,7 +704,7 @@ const Render3D = {
     }
     if (Render3D._composer) Render3D._composer.render(); else Render3D._r.render(Render3D._scene, Render3D._cam);
 
-    // Adaptive pixel ratio + fallback request (admin-tunable floor).
+    // Adaptive pixel ratio + fallback request (tunable floor).
     // First window is 1s so an overloaded device reacts fast; later windows
     // are 2s. Steps multiply by 0.75 (2.0 → 1.5 → 1.13 …) instead of small
     // fixed subtractions, so relief lands within a few seconds, not half a
