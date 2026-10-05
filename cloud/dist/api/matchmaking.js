@@ -164,7 +164,7 @@ function botProfile(controls, tier) {
 }
 /** Create an active match vs the bot for `user` (port of POST /api/matches/ai;
  * shared by the lobby AI button and the quick-match bot fallback). */
-export async function createAiMatch(env, user, tierRaw) {
+export async function createAiMatch(env, user, tierRaw, extra) {
     // app.py parity: the client sends { difficulty }; the server privately
     // maps the tier to a bot rank at or above the player's rank.
     const controls = await getControls(env);
@@ -205,6 +205,8 @@ export async function createAiMatch(env, user, tierRaw) {
     state.ai_difficulty = difficulty;
     state.ai_tier = aiTier;
     state.ai_rank_level = aiRankLevel;
+    if (extra)
+        Object.assign(state, extra);
     // v23 item A (mirror): bot tower parity - scale the stock bot tower to
     // the tier's percentage of the player's tower max HP; mirror coating.
     const parity = controls.bot_tower_parity ?? {};
@@ -259,7 +261,7 @@ export async function createAiMatch(env, user, tierRaw) {
 }
 /** Courtyard defense: the attacker fights the owner's tower, skins and coating, steered by the owner's persona.
  * Practice mode (state.courtyard.practice) is unranked: it reuses the "easy" practice rule in finalize. */
-export async function createCourtyardMatch(env, attacker, ownerId, practice) {
+export async function createCourtyardMatch(env, attacker, ownerId, practice, extra) {
     const controls = await getControls(env);
     const row = await env.DB.prepare("SELECT aggression, accuracy, boldness FROM user_persona WHERE user_id = ?").bind(ownerId).first();
     const persona = row ? { aggression: Number(row.aggression), accuracy: Number(row.accuracy), boldness: Number(row.boldness) } : DEFAULT_PERSONA;
@@ -273,6 +275,8 @@ export async function createCourtyardMatch(env, attacker, ownerId, practice) {
     state.ai_rank_level = Number(rankPayload(Number(attacker.rank_points ?? 0)).level);
     state.courtyard = { owner_id: ownerId, nickname: nick ? String(nick.nickname) : "", practice, persona };
     state.ready = { p1: false, p2: true };
+    if (extra)
+        Object.assign(state, extra);
     state.bot_controls = controls.bot_system;
     state.bot_ammo = {
         double_bomb: Number(state.ai_profile.double_ammo ?? 0),

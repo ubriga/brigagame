@@ -11,6 +11,7 @@ import {
   winRewardCoins, eloDelta,
 } from "./economy.js";
 import { MAX_LEVEL, rankPayload, rankUpInfo } from "./ranks.js";
+import { resolveTerritoryBattle } from "./territory.js";
 
 export interface Db {
   run(sql: string, params: unknown[]): Promise<{ changes: number }>;
@@ -44,6 +45,7 @@ interface XpConfig { human_win: number; bot_win: number; per_damage: number; }
  * Defaults preserve legacy behavior: easy bot = practice, everything else ranked. */
 export function resolvePractice(m: any, state: any, controls: any): boolean {
   const rr = (controls ?? {}).rating_rules ?? {};
+  if (state?.territory || state?.courtyard) return true;   // territory/courtyard fights: no rating, no coins
   if (m.p2_ai) {
     const tier = String(state?.ai_tier ?? (state?.ai_difficulty === "easy" ? "easy" : "medium"));
     const ranked = rr["bot_" + tier + "_ranked"] ?? (tier !== "easy");
@@ -117,6 +119,7 @@ export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpCo
     if (up) results[side].rank_up = up;
   }
   m.state.results = results;
+  if (m.state.territory) await resolveTerritoryBattle(db, m, winnerSide, controls ?? {});
 }
 
 export function finalizeDraw(m: any, reason = "time_limit"): void {

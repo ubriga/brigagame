@@ -2154,6 +2154,11 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "cube_price": 180,
         "cube_hp": 18
     },
+    "territory": {
+        "enabled": true, "map_size": 20, "base_yield_per_hour": 6, "store_cap": 500, "accrual_cap_hours": 24,
+        "start_grant": 60, "attack_cost_per_rarity": 15, "maintenance_per_extra_tile": 1,
+        "daily_attack_cap": 6, "grace_hours": 24, "ongoing_battle_minutes": 10
+    },
     "courtyard": {
         "enabled": true,
         "persona_budget": 180

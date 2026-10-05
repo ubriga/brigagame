@@ -8,6 +8,7 @@
 import { towerHp } from "./game_logic.js";
 import { COINS_PER_LOSS, COINS_PER_DAMAGE, MAX_HIT_COINS_PER_MATCH, MAX_COINS_PER_WIN, winRewardCoins, eloDelta, } from "./economy.js";
 import { MAX_LEVEL, rankPayload, rankUpInfo } from "./ranks.js";
+import { resolveTerritoryBattle } from "./territory.js";
 export const MATCH_DURATION_SECONDS = 240;
 function nowIso() { return new Date().toISOString(); }
 /** Single place where coins move; writes the ledger row too. */
@@ -30,6 +31,8 @@ export function rankLossPoints(currentPoints, versusAi = false, aiRankLevel) {
  * Defaults preserve legacy behavior: easy bot = practice, everything else ranked. */
 export function resolvePractice(m, state, controls) {
     const rr = (controls ?? {}).rating_rules ?? {};
+    if (state?.territory || state?.courtyard)
+        return true; // territory/courtyard fights: no rating, no coins
     if (m.p2_ai) {
         const tier = String(state?.ai_tier ?? (state?.ai_difficulty === "easy" ? "easy" : "medium"));
         const ranked = rr["bot_" + tier + "_ranked"] ?? (tier !== "easy");
@@ -110,6 +113,8 @@ export async function finalizeMatch(db, m, winnerSide, xp, controls) {
             results[side].rank_up = up;
     }
     m.state.results = results;
+    if (m.state.territory)
+        await resolveTerritoryBattle(db, m, winnerSide, controls ?? {});
 }
 export function finalizeDraw(m, reason = "time_limit") {
     m.status = "finished";
