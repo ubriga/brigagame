@@ -12,6 +12,7 @@ import {
 } from "./economy.js";
 import { MAX_LEVEL, rankPayload, rankUpInfo } from "./ranks.js";
 import { resolveTerritoryBattle } from "./territory.js";
+import { resolveBets } from "./bets.js";
 
 export interface Db {
   run(sql: string, params: unknown[]): Promise<{ changes: number }>;
@@ -119,7 +120,7 @@ export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpCo
     if (up) results[side].rank_up = up;
   }
   m.state.results = results;
-  if (m.state.territory) await resolveTerritoryBattle(db, m, winnerSide, controls ?? {});
+  if (m.state.territory) { await resolveTerritoryBattle(db, m, winnerSide, controls ?? {}); await resolveBets(db, String(m.id), winnerSide, controls ?? {}); }
 }
 
 export function finalizeDraw(m: any, reason = "time_limit"): void {
@@ -138,7 +139,7 @@ export function finalizeDraw(m: any, reason = "time_limit"): void {
  * single-writer, so no claim UPDATE is needed (that guard exists only for
  * PythonAnywhere's concurrent polls).
  */
-export async function resolveTimeLimit(db: Db, m: any, xp: XpConfig, now?: number): Promise<any[]> {
+export async function resolveTimeLimit(db: Db, m: any, xp: XpConfig, now?: number, controls?: any): Promise<any[]> {
   if (!m || m.status !== "active" || !m.state.towers) return [];
   const t = now ?? Date.now() / 1000;
   const started = Number(m.state.started_at ?? t);
@@ -158,10 +159,11 @@ export async function resolveTimeLimit(db: Db, m: any, xp: XpConfig, now?: numbe
   let event: any;
   if (Math.abs(integrity.p1 - integrity.p2) <= 1e-9) {
     finalizeDraw(m);
+    if (m.state.territory) { await resolveTerritoryBattle(db, m, "draw", controls ?? {}); await resolveBets(db, String(m.id), null, controls ?? {}); }
     event = { type: "match_end", winner_side: null, reason: "time_limit", draw: true };
   } else {
     const winner = integrity.p1 > integrity.p2 ? "p1" : "p2";
-    await finalizeMatch(db, m, winner, xp);
+    await finalizeMatch(db, m, winner, xp, controls);
     m.state.finish_reason = "time_limit";
     event = { type: "match_end", winner_side: winner, reason: "time_limit" };
   }

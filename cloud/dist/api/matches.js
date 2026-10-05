@@ -10,6 +10,7 @@ import { handleMatchmaking, sweepStaleMatches, offerToPresentPlayer, nowIso } fr
 import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
 import { resolvePractice } from "../game/finalize.js";
+import { reapDanglingBattles } from "../game/territory.js";
 import { towerHp, obstacleAt, cooldownFor, shotClockFor } from "../game/game_logic.js";
 import { rankFor } from "../game/economy.js";
 import { rankPayload, rankForLevel } from "../game/ranks.js";
@@ -86,6 +87,7 @@ async function matchSnapshot(env, m, userId, since) {
     return {
         id: m.id, code: m.code ?? null, mode: m.mode, status: m.status, version: m.version,
         you: side, players,
+        territory: state.territory ? { live: Boolean(state.territory.live) } : null,
         towers: state.towers ?? null,
         tower_x: state.tower_x ?? null,
         tower_dims: towerDims,
@@ -238,11 +240,18 @@ export async function handleMatchApi(env, request, path) {
         if (m.status === "waiting" && Number(m.p1) === uid) {
             await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(matchId).run();
             await env.DB.prepare("DELETE FROM matches WHERE id = ? AND status = 'waiting' AND p2 IS NULL").bind(matchId).run();
+            if (m.mode === "territory")
+                await reapDanglingBattles(d1(env.DB), uid);
             return json({ ok: true });
         }
         const out = await doFetch(env, matchId, "/leave", {
             method: "POST", body: JSON.stringify({ userId: uid })
         });
+        if (m.mode === "territory") {
+            const owner = await env.DB.prepare("SELECT attacker_id FROM territory_battles WHERE match_id = ?").bind(matchId).first();
+            if (owner)
+                await reapDanglingBattles(d1(env.DB), Number(owner.attacker_id));
+        }
         return json(out);
     }
     return json({ error: "method_not_allowed" }, 405);

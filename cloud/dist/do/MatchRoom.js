@@ -263,7 +263,7 @@ export class MatchRoom {
         // HvH matches get an explicit clock alarm from initMatch/scheduleClock).
         if (this.env.DB) {
             const controls = await getControls(this.env);
-            const tlEvents = await resolveTimeLimit(d1(this.env.DB), m, controls.xp);
+            const tlEvents = await resolveTimeLimit(d1(this.env.DB), m, controls.xp, undefined, controls);
             if (tlEvents.length) {
                 await this.persist();
                 await this.recordEvents(tlEvents);

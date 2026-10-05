@@ -1,0 +1,23 @@
+import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
+import { resolveBets, refundBets } from "../dist/game/bets.js";
+const sql = new DatabaseSync(":memory:");
+sql.exec("CREATE TABLE users(id INTEGER PRIMARY KEY, coins INTEGER DEFAULT 0);CREATE TABLE transactions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INT,delta INT,reason TEXT,ref TEXT,created_at TEXT);INSERT INTO users VALUES(1,0),(2,0),(3,0),(4,0);");
+const schema = fs.readFileSync(new URL("../schema.sql", import.meta.url), "utf8");
+sql.exec(schema.slice(schema.indexOf("-- 0007")));
+const db = { async run(s,p){const r=sql.prepare(s).run(...p);return{changes:Number(r.changes)}}, async get(s,p){return sql.prepare(s).get(...p)??null} };
+let fails = 0; const ok = (c, m) => { console.log(c ? "PASS" : "FAIL", m); if (!c) fails++; };
+const bet = (u, side, amt, fee = 10, mid = "m1") => sql.prepare("insert into spectator_bets(battle_id,match_id,user_id,side,amount,fee_pct,created_at) values(1,?,?,?,?,?,'x')").run(mid, u, side, amt, fee);
+bet(1, "attacker", 100); bet(2, "attacker", 100); bet(3, "defender", 100);
+await resolveBets(db, "m1", "p1", {});
+const c = id => sql.prepare("select coins from users where id=?").get(id).coins;
+// pool 300, fee 30, 270 shared by two equal winners = 135 each
+ok(c(1) === 135 && c(2) === 135 && c(3) === 0, "parimutuel payout 135/135/0");
+await resolveBets(db, "m1", "p1", {}); ok(c(1) === 135, "idempotent");
+sql.prepare("insert into spectator_bets(battle_id,match_id,user_id,side,amount,fee_pct,created_at) values(2,'m2',1,'attacker',50,10,'x')").run();
+await resolveBets(db, "m2", "p1", {}); ok(c(1) === 185, "one-sided pool refunded in full");
+sql.prepare("insert into spectator_bets(battle_id,match_id,user_id,side,amount,fee_pct,created_at) values(3,'m3',4,'defender',40,10,'x')").run();
+await resolveBets(db, "m3", null, {}); ok(c(4) === 40, "draw refunds");
+sql.prepare("insert into spectator_bets(battle_id,match_id,user_id,side,amount,fee_pct,created_at) values(4,'m4',4,'defender',10,10,'x')").run();
+await refundBets(db, "m4"); await refundBets(db, "m4"); ok(c(4) === 50, "refund once");
+console.log(fails ? "FAILED " + fails : "ALL OK"); process.exit(fails ? 1 : 0);

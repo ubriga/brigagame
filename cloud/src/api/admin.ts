@@ -127,7 +127,10 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       store_cap: [10, 100000, "int"], accrual_cap_hours: [1, 168, "float"], start_grant: [0, 10000, "int"],
       attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"],
       daily_attack_cap: [0, 100, "int"], grace_hours: [0, 336, "float"], ongoing_battle_minutes: [1, 120, "int"],
-      live_defense: [null, null, "bool"], live_offer_seconds: [10, 120, "int"] },
+      live_defense: [null, null, "bool"], live_offer_seconds: [10, 120, "int"],
+      rebellion_enabled: [null, null, "bool"], rebellion_inactive_days: [1, 365, "float"], rebellion_max_per_run: [1, 500, "int"] },
+    spectator_bets: { enabled: [null, null, "bool"], min_stake: [1, 10000, "int"], max_stake: [1, 100000, "int"],
+      max_bettors_per_match: [2, 500, "int"], house_fee_pct: [0, 50, "float"], close_after_shots: [0, 50, "int"], daily_cap_coins: [1, 1000000, "int"] },
     courtyard: { enabled: [null, null, "bool"], persona_budget: [30, 300, "int"] },
     weapon_cooldowns: {
       standard: [0.5, 60, "float"], double_bomb: [0.5, 60, "float"],

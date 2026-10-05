@@ -274,3 +274,25 @@ CREATE TABLE IF NOT EXISTS territory_battles (
   created_at TEXT NOT NULL, resolved_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tbat_att ON territory_battles(attacker_id, created_at);
+
+-- 0005: live defense. Cost is kept on the battle so a cancelled live wait can be refunded exactly.
+ALTER TABLE territory_battles ADD COLUMN cost INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE territory_battles ADD COLUMN live INTEGER NOT NULL DEFAULT 0;
+
+-- 0006: notifications feed + auto-defense switch (new table, one added column on a table created in 0003).
+CREATE TABLE IF NOT EXISTS territory_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL, kind TEXT NOT NULL, tile_id INTEGER, battle_id INTEGER, other_id INTEGER,
+  created_at TEXT NOT NULL, seen INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tev_user ON territory_events(user_id, id);
+ALTER TABLE user_persona ADD COLUMN live_invite INTEGER NOT NULL DEFAULT 1;
+
+-- 0007: spectator bets (in-game coins only; disabled until the admin turns it on).
+CREATE TABLE IF NOT EXISTS spectator_bets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  battle_id INTEGER NOT NULL, match_id TEXT NOT NULL, user_id INTEGER NOT NULL,
+  side TEXT NOT NULL, amount INTEGER NOT NULL, fee_pct REAL NOT NULL DEFAULT 10, status TEXT NOT NULL DEFAULT 'open', payout INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, UNIQUE(battle_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sbet_match ON spectator_bets(match_id);

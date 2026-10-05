@@ -1,6 +1,7 @@
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /** Territory war: map, lazy material economy, battles. All balance numbers come from admin controls. */
 import type { Db } from "./finalize.js";
+import { refundBets } from "./bets.js";
 
 export const KINDS = ["forest", "mine", "quarry", "plains", "fortress"] as const;
 export const YIELD_KIND: Record<string, "wood" | "iron" | "stone" | null> = { forest: "wood", mine: "iron", quarry: "stone", plains: null, fortress: null };
@@ -9,6 +10,7 @@ export const TERRITORY_DEFAULTS = {
   start_grant: 60, attack_cost_per_rarity: 15, maintenance_per_extra_tile: 1,
   daily_attack_cap: 6, grace_hours: 24, ongoing_battle_minutes: 10,
   live_defense: true, live_offer_seconds: 30,
+  rebellion_enabled: true, rebellion_inactive_days: 14, rebellion_max_per_run: 25,
 };
 export function cfgOf(controls: any) { return { ...TERRITORY_DEFAULTS, ...((controls ?? {}).territory ?? {}) } as typeof TERRITORY_DEFAULTS; }
 const nowIso = () => new Date().toISOString();
@@ -110,6 +112,8 @@ export async function resolveTerritoryBattle(db: Db, m: any, winnerSide: string,
   if (!won) {
     await db.run("UPDATE territory_battles SET status='lost', resolved_at=? WHERE id=?", [nowIso(), b.id]);
     m.state.results = { ...(m.state.results ?? {}), territory: { outcome: "lost", tile_id: b.tile_id } };
+    await addEvent(db, Number(b.attacker_id), "attack_failed", Number(b.tile_id), Number(b.id), b.defender_id ?? null);
+    if (b.defender_id != null) await addEvent(db, Number(b.defender_id), "defended", Number(b.tile_id), Number(b.id), Number(b.attacker_id));
     return;
   }
   const tile = await db.get("SELECT * FROM territory_tiles WHERE id = ?", [b.tile_id]);
@@ -125,6 +129,8 @@ export async function resolveTerritoryBattle(db: Db, m: any, winnerSide: string,
     if (Number(left?.n ?? 0) === 0) newHome = await ensureHome(db, Number(prev), controls);   // full loss: only tiles, new home
     else if (tile.is_home) await db.run("UPDATE territory_tiles SET is_home=1 WHERE id = (SELECT id FROM territory_tiles WHERE owner_id=? ORDER BY id LIMIT 1)", [prev]);
   }
+  await addEvent(db, Number(b.attacker_id), "conquered", Number(b.tile_id), Number(b.id), prev !== null ? Number(prev) : null);
+  if (prev !== null) await addEvent(db, Number(prev), "tile_lost", Number(b.tile_id), Number(b.id), Number(b.attacker_id));
   m.state.results = { ...(m.state.results ?? {}), territory: { outcome: "won", tile_id: b.tile_id, protected_until: until, previous_owner_new_home: newHome?.id ?? null } };
 }
 
@@ -134,17 +140,59 @@ export async function cancelBattle(db: Db, battleId: number, why: string): Promi
   if (!b) return false;
   const res = await db.run("UPDATE territory_battles SET status = ?, resolved_at = ? WHERE id = ? AND status = 'open'", [why, nowIso(), battleId]);
   if (!res.changes) return false;
+  if (b.match_id) await refundBets(db, String(b.match_id));
   const v = Number(b.cost ?? 0);
   if (v > 0) await db.run("UPDATE user_materials SET wood = wood + ?, iron = iron + ?, stone = stone + ? WHERE user_id = ?", [v, v, v, b.attacker_id]);
   return true;
+}
+export async function cancelBattleForMatch(db: Db, matchId: string): Promise<void> {
+  const b: any = await db.get("SELECT id FROM territory_battles WHERE match_id = ? AND status = 'open'", [matchId]);
+  if (!b) return;
+  const shots: any = await db.get("SELECT COUNT(*) AS n FROM match_events WHERE match_id = ? AND type = 'shot'", [matchId]);
+  if (Number(shots?.n ?? 0) > 0) {   // a real fight was abandoned: the tile stays, the materials stay spent, bets are returned
+    await db.run("UPDATE territory_battles SET status = 'lost', resolved_at = ? WHERE id = ? AND status = 'open'", [nowIso(), b.id]);
+    await refundBets(db, matchId);
+  } else await cancelBattle(db, Number(b.id), "cancelled");
 }
 /** Refund this attacker's open battles whose match vanished or was aborted before a result. */
 export async function reapDanglingBattles(db: Db, uid: number): Promise<void> {
   for (let i = 0; i < 5; i++) {
     const r: any = await db.get(
-      "SELECT b.id FROM territory_battles b WHERE b.attacker_id = ? AND b.status = 'open'"
+      "SELECT b.id, b.match_id, (SELECT 1 FROM matches m WHERE m.id = b.match_id) AS has_match FROM territory_battles b WHERE b.attacker_id = ? AND b.status = 'open'"
       + " AND ((b.live = 1 AND b.match_id IS NULL) OR (b.match_id IS NOT NULL AND (NOT EXISTS (SELECT 1 FROM matches m WHERE m.id = b.match_id)"
       + " OR EXISTS (SELECT 1 FROM matches m2 WHERE m2.id = b.match_id AND m2.status = 'aborted')))) LIMIT 1", [uid]);
-    if (!r || !(await cancelBattle(db, Number(r.id), "cancelled"))) return;
+    if (!r) return;
+    if (r.has_match) await cancelBattleForMatch(db, String(r.match_id));
+    else if (!(await cancelBattle(db, Number(r.id), "cancelled"))) return;
   }
+}
+
+export async function addEvent(db: Db, userId: number, kind: string, tileId: number | null, battleId: number | null, otherId: number | null): Promise<void> {
+  await db.run("INSERT INTO territory_events (user_id, kind, tile_id, battle_id, other_id, created_at) VALUES (?,?,?,?,?,?)",
+    [userId, kind, tileId, battleId, otherId, nowIso()]);
+}
+
+let lastRebellionRun = 0;
+/** Rebellion: tiles (never homes) of owners absent for rebellion_inactive_days revert to the free bot-defended state.
+ * Lazy and throttled (at most one scan per 10 min per isolate); the owner's accrual is locked in first. */
+export async function applyRebellions(db: Db, controls: any): Promise<number> {
+  const c = cfgOf(controls);
+  if (c.rebellion_enabled === false) return 0;
+  if (Date.now() - lastRebellionRun < 600000) return 0;
+  lastRebellionRun = Date.now();
+  const cutoff = new Date(Date.now() - c.rebellion_inactive_days * 86400000).toISOString();
+  let n = 0;
+  for (let i = 0; i < c.rebellion_max_per_run; i++) {
+    const r: any = await db.get(
+      "SELECT t.id, t.owner_id FROM territory_tiles t JOIN users u ON u.id = t.owner_id"
+      + " WHERE t.is_home = 0 AND (t.protected_until IS NULL OR t.protected_until < ?)"
+      + " AND (u.last_seen IS NULL OR u.last_seen < ?) LIMIT 1", [nowIso(), cutoff]);
+    if (!r) break;
+    await settle(db, Number(r.owner_id), controls);
+    const res = await db.run("UPDATE territory_tiles SET owner_id = NULL, conquered_at = NULL, protected_until = NULL WHERE id = ? AND owner_id = ? AND is_home = 0", [r.id, r.owner_id]);
+    if (!res.changes) break;
+    await addEvent(db, Number(r.owner_id), "rebellion", Number(r.id), null, null);
+    n++;
+  }
+  return n;
 }

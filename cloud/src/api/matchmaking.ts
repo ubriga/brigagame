@@ -10,6 +10,7 @@ import { d1, getControls, userMods } from "../util.js";
 import { newState, cooldownsFromControls } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { personaToProfile, DEFAULT_PERSONA, type Persona } from "../game/persona.js";
+import { cancelBattleForMatch } from "../game/territory.js";
 import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
 import { getGuestCfg } from "./guest.js";
@@ -96,6 +97,7 @@ export async function sweepStaleMatches(env: Env): Promise<void> {
       .bind(m.id, m.version, "match_abort",
         JSON.stringify({ type: "match_abort", reason: "stale_inactivity" }), nowIso()).run();
     aborted += 1;
+    if (m.state?.territory) await cancelBattleForMatch(d1(env.DB), String(m.id));
   }
   await env.DB.prepare(
     "DELETE FROM match_offers WHERE match_id IN"
