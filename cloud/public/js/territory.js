@@ -44,7 +44,8 @@
       view.innerHTML = `<h1>🗺️ מלחמת טריטוריות</h1><div class="card" style="text-align:center;padding:32px 18px"><div style="font-size:42px">🔒</div><p class="sub">המפה זמינה לשחקנים רשומים בלבד.</p></div>`;
       return;
     }
-    const [mr, pr, mapr] = await Promise.all([API.get("/api/territory/me"), API.get("/api/persona"), API.get("/api/territory/map")]);
+    const mr = await API.get("/api/territory/me"); /* first: /me assigns a new player's home, the map must be read after it */
+    const [pr, mapr] = await Promise.all([API.get("/api/persona"), API.get("/api/territory/map")]);
     if (!this.routeCurrent(seq)) return;
     view.removeAttribute("aria-busy");
     if (mr.status !== 200 || mapr.status !== 200) {
