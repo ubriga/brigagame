@@ -7,7 +7,7 @@
  */
 import { currentUser } from "../auth.js";
 import { d1, getControls, userMods } from "../util.js";
-import { newState } from "../game/game_logic.js";
+import { newState, cooldownsFromControls } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
@@ -216,6 +216,7 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string): Promi
   const mods = await userMods(env, Number(user.id));
   const id = newMatchId();
   const state = newState(mods, { armor: 0, hp: 0, skin: null });
+  state.cooldowns = cooldownsFromControls(controls);
   state.ai_profile = botProfile(controls, aiTier);
   state.ai_difficulty = difficulty;
   state.ai_tier = aiTier;
@@ -412,6 +413,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     }
     const mm = await loadMatch(env, m.id);
     mm.state = newState(await userMods(env, Number(mm.p1)), await userMods(env, uid));
+    mm.state.cooldowns = cooldownsFromControls(await getControls(env));
     mm.version = Number(mm.version) + 1;
     await env.DB.prepare("UPDATE matches SET state = ?, version = ?, updated_at = ? WHERE id = ?")
       .bind(JSON.stringify(mm.state), mm.version, nowIso(), mm.id).run();
@@ -459,6 +461,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
       return json({ error: "unavailable", error_he: "המשחק כבר לא זמין." }, 409);
     }
     const state = newState(await userMods(env, Number(m.p1)), await userMods(env, uid));
+    state.cooldowns = cooldownsFromControls(await getControls(env));
     const cur = await env.DB.prepare(
       "UPDATE matches SET p2 = ?, status = 'active', state = ?,"
       + " version = version + 1, updated_at = ? WHERE id = ?"

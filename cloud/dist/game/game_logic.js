@@ -407,8 +407,27 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
     }
     return [events, !towerAlive(state.towers[enemy])];
 }
-export function cooldownFor(weapon) {
+export function cooldownFor(weapon, state) {
+    const o = Number(state?.cooldowns?.[weapon]);
+    if (Number.isFinite(o) && o >= 0.5)
+        return o;
     return (WEAPONS[weapon] ?? WEAPONS.standard).cooldown;
+}
+/** Server shot clock (seconds); admin-controlled via weapon_cooldowns.shot_clock, stored per match. */
+export function shotClockFor(state) {
+    const v = Number(state?.cooldowns?.shot_clock);
+    return Number.isFinite(v) && v >= 3 ? v : 10;
+}
+/** Snapshot of the admin cooldown controls, frozen into a new match state. */
+export function cooldownsFromControls(controls) {
+    const c = controls?.weapon_cooldowns ?? {};
+    const out = {};
+    for (const k of ["standard", "double_bomb", "homing_missile", "cluster_shell", "shot_clock"]) {
+        const v = Number(c[k]);
+        if (Number.isFinite(v))
+            out[k] = v;
+    }
+    return out;
 }
 /**
  * v23 item B (mirror of game_logic.py): base-row aimpoints - the lowest live

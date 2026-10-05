@@ -406,7 +406,8 @@ const GameView = {
   },
 
   cooldown() {
-    return { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6 }[this.weapon] || 4;
+    const cd = (this.snap && this.snap.cooldowns) || {};
+    return Number(cd[this.weapon]) || { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6 }[this.weapon] || 4;
   },
 
   reloadFrac() {

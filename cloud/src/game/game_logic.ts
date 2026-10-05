@@ -410,8 +410,25 @@ export function fireWeapon(state: any, side: string, angle: number, power: numbe
   return [events, !towerAlive(state.towers[enemy])];
 }
 
-export function cooldownFor(weapon: string): number {
+export function cooldownFor(weapon: string, state?: any): number {
+  const o = Number(state?.cooldowns?.[weapon]);
+  if (Number.isFinite(o) && o >= 0.5) return o;
   return (WEAPONS[weapon] ?? WEAPONS.standard).cooldown;
+}
+/** Server shot clock (seconds); admin-controlled via weapon_cooldowns.shot_clock, stored per match. */
+export function shotClockFor(state?: any): number {
+  const v = Number(state?.cooldowns?.shot_clock);
+  return Number.isFinite(v) && v >= 3 ? v : 10;
+}
+/** Snapshot of the admin cooldown controls, frozen into a new match state. */
+export function cooldownsFromControls(controls: any): Record<string, number> {
+  const c = controls?.weapon_cooldowns ?? {};
+  const out: Record<string, number> = {};
+  for (const k of ["standard", "double_bomb", "homing_missile", "cluster_shell", "shot_clock"]) {
+    const v = Number(c[k]);
+    if (Number.isFinite(v)) out[k] = v;
+  }
+  return out;
 }
 
 export interface AiProfile {

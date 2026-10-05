@@ -92,7 +92,7 @@ export function executeShot(m, side, angle, power, weapon = "standard", mega = f
         return [null, { status: 400, body: { error: "bad_weapon" } }];
     const state = m.state;
     const last = state.last_shot_at[side];
-    const remaining = cooldownFor(weapon) - (t - last);
+    const remaining = cooldownFor(weapon, state) - (t - last);
     if (remaining > 0.05)
         return [null, { status: 429, body: { error: "reloading", remaining: Math.round(remaining * 100) / 100, error_he: "התותח בטעינה." } }];
     if (weapon !== "standard") {

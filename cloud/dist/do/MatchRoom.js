@@ -7,7 +7,7 @@
  * (profile.reaction seconds), and state is checkpointed to D1 so a cold DO
  * can resume. All combat math runs through src/game/* (parity-tested ports).
  */
-import { TOWER_X_RANGE, aiChooseShot, defaultRng, } from "../game/game_logic";
+import { TOWER_X_RANGE, aiChooseShot, shotClockFor, defaultRng, } from "../game/game_logic";
 import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot";
 import { finalizeMatch, resolveTimeLimit, MATCH_DURATION_SECONDS } from "../game/finalize.js";
 import { d1, getControls } from "../util.js";
@@ -138,7 +138,7 @@ export class MatchRoom {
             // get the deadline for display but cannot bypass it by hiding JS.
             const now = Date.now() / 1000;
             const lastTurn = (m.state.last_turn_at ??= {});
-            const deadline = Number(lastTurn[sess.side] ?? m.state.started_at ?? now) + 10;
+            const deadline = Number(lastTurn[sess.side] ?? m.state.started_at ?? now) + shotClockFor(m.state);
             if (now > deadline + 1.5) {
                 lastTurn[sess.side] = now;
                 await this.persist();

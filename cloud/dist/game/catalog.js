@@ -2154,11 +2154,18 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "cube_price": 180,
         "cube_hp": 18
     },
+    "weapon_cooldowns": {
+        "standard": 4,
+        "double_bomb": 5,
+        "homing_missile": 5,
+        "cluster_shell": 6,
+        "shot_clock": 10
+    },
     "dynamic_obstacle": {
         "enabled": true,
         "speed": 20,
         "warning_seconds": 1.5,
-        "v_enabled": false,
+        "v_enabled": true,
         "v_speed": 14,
         "v_min_lift": 0,
         "v_max_lift": 90
