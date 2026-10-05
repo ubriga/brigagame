@@ -579,3 +579,9 @@ body.fs-mode.game-active #fs-float { top: auto; bottom: 6px; left: 8px; right: a
 @media (max-width: 640px) { .lobby-title { display: block; } }
 .brand { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 #night-fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 40; display: none; }
+
+/* home hero: three big entry buttons */
+.home-hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 6px 0 16px; }
+.hero-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px; font-size: 1.05rem; }
+.hero-btn span { font-size: 1.9rem; line-height: 1; }
+@media (max-width: 560px) { .home-hero { gap: 8px; } .hero-btn { min-height: 78px; font-size: .9rem; padding: 8px 4px; } .hero-btn span { font-size: 1.5rem; } }

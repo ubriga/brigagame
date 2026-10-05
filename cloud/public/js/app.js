@@ -1037,6 +1037,11 @@ const App = {
       ${this._loginRewardData ? `<div class="card ux-welcome"><b>🔥 יום ${this._loginRewardData.streak} ברצף!</b> ${this._loginRewardData.amount > 0 ? `קיבלת היום 🪙 ${this._loginRewardData.amount} מטבעות על הרצף` : "הרצף נמשך!"}</div>` : ""}
       ${(!u.is_guest && localStorage.getItem("bg_mailtip_dismissed") !== "1") ? `<div class="card ux-welcome" id="mailtip"><b>✉️ מקבל מאיתנו עדכונים במייל?</b> אם המייל הגיע לספאם, סמן "לא ספאם" והוסף את brigagame2026@gmail.com לאנשי הקשר, כדי שלא תפספס עדכונים. <button class="btn secondary" id="mailtip-ok" style="margin-inline-start:8px;padding:4px 10px;font-size:13px">הבנתי</button></div>` : ""}
       ${(this.ux.lobby_labels !== false && Number(u.matches_played || 0) === 0) ? `<div class="card ux-welcome"><b>🎓 משחק ראשון?</b> מומלץ להתחיל מול בוט קל - משחק תרגול בלי דירוג ובלי לחץ. אפשר גם לפתוח את "איך משחקים?" למטה.</div>` : ""}
+      <div class="home-hero" id="home-hero">
+        ${!guest || guest.ranked_allowed ? `<button class="btn hero-btn" id="hero-quick"><span>⚡</span>משחק מהיר</button>` : `<button class="btn hero-btn" id="hero-ai"><span>🤖</span>מול הבוט</button>`}
+        ${!u.is_guest ? `<button class="btn hero-btn secondary" id="hero-war"><span>🗺️</span>מלחמת טריטוריות</button>` : `${!guest || guest.ranked_allowed ? `<button class="btn hero-btn secondary" id="hero-ai2"><span>🤖</span>מול הבוט</button>` : `<button class="btn hero-btn secondary" id="hero-howto"><span>❓</span>איך משחקים</button>`}`}
+        <button class="btn hero-btn secondary" id="hero-store"><span>🛒</span>חנות וסדנה</button>
+      </div>
       <div class="grid cols2">
         <div class="card">
           <h2>🎮 משחק</h2>
@@ -1096,6 +1101,13 @@ const App = {
     const nickEdit = document.getElementById("nick-edit");
     if (nickEdit) nickEdit.onclick = () => this.showNickname(false);
     if (u.needs_nickname) this.showNickname(true);
+    const heroGo = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = () => { Sfx.play("click"); fn(); }; };
+    heroGo("hero-quick", () => document.getElementById("quick-btn")?.click());
+    heroGo("hero-ai", () => document.getElementById("ai-btn")?.click());
+    heroGo("hero-ai2", () => document.getElementById("ai-btn")?.click());
+    heroGo("hero-howto", () => document.getElementById("howto-btn")?.click());
+    heroGo("hero-war", () => { location.hash = "#/war"; });
+    heroGo("hero-store", () => { location.hash = "#/store"; });
     const quickBtn = document.getElementById("quick-btn");
     if (quickBtn) quickBtn.onclick = async () => {
       Sfx.play("click");

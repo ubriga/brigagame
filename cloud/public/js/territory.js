@@ -1,6 +1,17 @@
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 // Territory war screen: map, materials, attack, and the courtyard defender persona.
 (function () {
+  const EN = (typeof Lang !== "undefined" && Lang.current === "en");
+  const T = (he) => (EN && EN_MAP[he]) || he;
+  const EN_MAP = {"מלחמת טריטוריות":"Territory War","המפה זמינה לשחקנים רשומים בלבד.":"The map is for registered players only.","המפה אינה זמינה כרגע.":"The map is unavailable right now.","התקפות היום":"Attacks today","אריחים:":"Tiles:","בחר אריח במפה. אפשר לתקוף אריח שצמוד לטריטוריה שלך (מסומנת בצהוב).":"Pick a tile. You can attack a tile next to your territory (marked yellow).","האריח שלך":"Your tile","(הבית)":"(home)","מוגן בתקופת חסד.":"Protected (grace period).","לא צמוד לטריטוריה שלך.":"Not next to your territory.","עלות תקיפה:":"Attack cost:","מכל חומר.":"of each material.","⚔️ תקוף":"⚔️ Attack","בעלים:":"Owner:","פנוי (הגנת בוט)":"Free (bot defense)","אישיות המגן שלי":"My defender persona","כשתוקפים אותך, מגן החצר שלך נלחם לפי ההגדרות. תקציב":"When you are attacked, your courtyard defender fights by these settings. Budget","נקודות.":"points.","תוקפנות":"Aggression","דיוק":"Accuracy","אומץ":"Boldness","שמירה":"Save","תרגול מול החצר שלי":"Practice vs my courtyard","סה\"כ":"Total"," - חריגה מהתקציב":" - over budget","האישיות נשמרה":"Persona saved","השמירה נכשלה":"Save failed","לא ניתן לתקוף":"Cannot attack","שגיאה":"Error","יער":"Forest","מכרה":"Mine","מחצבה":"Quarry","מישור":"Plains","מצודה":"Fortress","רגיל":"Common","נדיר":"Rare","אפי":"Epic","אגדי":"Legendary","🪵 עץ":"🪵 Wood","⚙️ ברזל":"⚙️ Iron","🧱 אבן":"🧱 Stone"};
+  const localize = (root) => {
+    if (!EN) return;
+    const keys = Object.keys(EN_MAP).sort((a, b) => b.length - a.length);
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+    for (const n of nodes) { let v = n.nodeValue; for (const k of keys) if (v.includes(k)) v = v.split(k).join(EN_MAP[k]); n.nodeValue = v; }
+    root.querySelectorAll("[aria-label]").forEach(e => { let v = e.getAttribute("aria-label"); for (const k of keys) v = v.split(k).join(EN_MAP[k]); e.setAttribute("aria-label", v); });
+  };
   const KIND = { forest: ["🌲", "יער", "#2f6b3a"], mine: ["⛏️", "מכרה", "#6b5a45"], quarry: ["🪨", "מחצבה", "#5b6572"],
     plains: ["🌾", "מישור", "#7a8a3c"], fortress: ["🏰", "מצודה", "#7b3f6e"] };
   const RAR = ["", "רגיל", "נדיר", "אפי", "אגדי"];
@@ -72,6 +83,7 @@
           </div>
         </div>`;
       wire();
+      localize(view);
     };
     const detail = () => {
       if (!sel) return `<p class="sub">בחר אריח במפה. אפשר לתקוף אריח שצמוד לטריטוריה שלך (מסומנת בצהוב).</p>`;
@@ -90,7 +102,7 @@
         atk.disabled = true;
         const r = await API.post("/api/territory/attack", { tile_id: sel.id });
         if (r.data && r.data.match_id) location.hash = "#/game/" + r.data.match_id;
-        else { toast(apiError(r, "לא ניתן לתקוף")); atk.disabled = false; }
+        else { toast(apiError(r, T("לא ניתן לתקוף"))); atk.disabled = false; }
       };
       const upd = () => {
         const v = ["aggression", "accuracy", "boldness"].map(k => Number(document.getElementById("pr-" + k).value));
@@ -103,11 +115,11 @@
       upd();
       document.getElementById("persona-save").onclick = async () => {
         const v = upd(); const r = await API.post("/api/persona", { aggression: v[0], accuracy: v[1], boldness: v[2] });
-        if (r.status === 200) { persona.persona = { aggression: v[0], accuracy: v[1], boldness: v[2] }; toast("האישיות נשמרה"); } else toast(apiError(r, "השמירה נכשלה"));
+        if (r.status === 200) { persona.persona = { aggression: v[0], accuracy: v[1], boldness: v[2] }; toast(T("האישיות נשמרה")); } else toast(apiError(r, T("השמירה נכשלה")));
       };
       document.getElementById("persona-test").onclick = async () => {
         const r = await API.post("/api/courtyard/practice");
-        if (r.data && r.data.match_id) location.hash = "#/game/" + r.data.match_id; else toast(apiError(r, "שגיאה"));
+        if (r.data && r.data.match_id) location.hash = "#/game/" + r.data.match_id; else toast(apiError(r, T("שגיאה")));
       };
     };
     draw();
