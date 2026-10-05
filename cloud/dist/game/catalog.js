@@ -2200,9 +2200,10 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "rebellion_enabled": true, "rebellion_inactive_days": 14, "rebellion_max_per_run": 25
     },
     "spectator_bets": {
-        "enabled": false, "min_stake": 5, "max_stake": 100, "max_bettors_per_match": 20, "house_fee_pct": 10,
+        "enabled": true, "min_stake": 5, "max_stake": 100, "max_bettors_per_match": 20, "house_fee_pct": 10,
         "close_after_shots": 2, "daily_cap_coins": 300
     },
+    "alliances": { "enabled": true, "max_members": 4 },
     "courtyard": {
         "enabled": true,
         "persona_budget": 180
