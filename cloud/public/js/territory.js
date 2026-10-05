@@ -52,6 +52,7 @@
       return;
     }
     let me = mr.data, map = mapr.data, persona = pr.data || {}, sel = null;
+    const wctx = { me, map, persona };
     const byXY = new Map(map.tiles.map(t => [t.x + "," + t.y, t]));
     const adjacent = (t) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const n = byXY.get((t.x + dx) + "," + (t.y + dy)); return n && n.mine; });
     const cfg = me.cfg || {};
@@ -95,9 +96,11 @@
           <div class="war-side">
             <div class="card" id="war-detail">${detail()}</div>
             ${legend()}
+            <div id="war-extra"></div>
             <div class="card war-persona"><h3>🛡️ אישיות המגן שלי</h3>
               <p class="sub">כשתוקפים אותך, מגן החצר שלך נלחם לפי ההגדרות. תקציב ${persona.budget} נקודות.</p>
               ${["aggression:תוקפנות", "accuracy:דיוק", "boldness:אומץ"].map(s => { const [k, l] = s.split(":"); return `<label><span>${l}</span><b id="pv-${k}">${persona.persona[k]}</b></label><input type="range" id="pr-${k}" min="0" max="100" value="${persona.persona[k]}">`; }).join("")}
+              <label style="display:flex;gap:8px;align-items:center;justify-content:flex-start;margin-top:10px"><input type="checkbox" id="pr-auto" ${persona.auto_defense ? "checked" : ""}><span>הגנה אוטומטית: הבוט מגן במקומי כשאני מחובר</span></label>
               <p class="sub" id="persona-total" aria-live="polite"></p>
               <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" id="persona-save">שמירה</button><button class="btn small secondary" id="persona-test">תרגול מול החצר שלי</button></div>
             </div>
@@ -105,19 +108,22 @@
         </div>`;
       wire();
       localize(view);
+      if (App.warExtras) App.warExtras(view, wctx);
     };
     const detail = () => {
       if (!sel) return `<p class="sub">בחר אריח במפה. אפשר לתקוף אריח שצמוד לטריטוריה שלך (מסומנת בצהוב).</p>`;
       const k = KIND[sel.kind]; const c = cost(sel);
       let act = "";
       if (sel.mine) act = `<p class="sub">האריח שלך${sel.home ? " (הבית)" : ""}.</p>`;
+      else if (sel.ally) act = `<p class="sub">🤝 בעל ברית.</p>`;
       else if (sel.protected) act = `<p class="sub">🔒 מוגן בתקופת חסד.</p>`;
       else if (!adjacent(sel)) act = `<p class="sub">לא צמוד לטריטוריה שלך.</p>`;
       else act = `<p class="sub">עלות תקיפה: ${c} מכל חומר.</p><button class="btn" id="war-attack">⚔️ תקוף</button>`;
-      return `<h3>${k[0]} ${k[1]} · ${RAR[sel.rarity]}</h3><p class="sub">בעלים: ${sel.owner ? esc(sel.owner) : "פנוי (הגנת בוט)"}</p>${act}`;
+      return `<h3>${k[0]} ${k[1]} · ${RAR[sel.rarity]}</h3><p class="sub">בעלים: ${sel.owner ? esc(sel.owner) : "פנוי (הגנת בוט)"}${sel.owner && !sel.mine && App.showProfile ? ` <button class="btn small secondary" id="war-prof">פרופיל</button>` : ""}</p>${act}`;
     };
     const wire = () => {
       view.querySelectorAll(".wt").forEach(b => b.onclick = () => { sel = map.tiles.find(t => t.id === Number(b.dataset.id)); const sc = document.getElementById("war-map").scrollTop; const sl = document.getElementById("war-map").scrollLeft; draw(); const mp = document.getElementById("war-map"); mp.scrollTop = sc; mp.scrollLeft = sl; });
+      const pf = document.getElementById("war-prof"); if (pf) pf.onclick = () => App.showProfile(sel.owner);
       const atk = document.getElementById("war-attack");
       if (atk) atk.onclick = async () => {
         atk.disabled = true;
@@ -135,7 +141,7 @@
       ["aggression", "accuracy", "boldness"].forEach(k => document.getElementById("pr-" + k).oninput = upd);
       upd();
       document.getElementById("persona-save").onclick = async () => {
-        const v = upd(); const r = await API.post("/api/persona", { aggression: v[0], accuracy: v[1], boldness: v[2] });
+        const v = upd(); const r = await API.post("/api/persona", { aggression: v[0], accuracy: v[1], boldness: v[2], auto_defense: document.getElementById("pr-auto").checked });
         if (r.status === 200) { persona.persona = { aggression: v[0], accuracy: v[1], boldness: v[2] }; toast(T("האישיות נשמרה")); } else toast(apiError(r, T("השמירה נכשלה")));
       };
       document.getElementById("persona-test").onclick = async () => {

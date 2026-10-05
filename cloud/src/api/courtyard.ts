@@ -144,7 +144,7 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
       + " LEFT JOIN user_nicknames na ON na.user_id = b.attacker_id AND na.status = 'ok'"
       + " LEFT JOIN user_nicknames nd ON nd.user_id = b.defender_id AND nd.status = 'ok'"
       + " WHERE b.status = 'open' ORDER BY b.id DESC LIMIT 20").bind(uid).all()).results as any[];
-    return json({ battles: rows.map(r => ({ ...r, mine: r.attacker_id === uid || r.defender_id === uid, attacker_id: undefined, defender_id: undefined,
+    return json({ battles: rows.map(r => ({ ...r, defender: r.defender || (r.defender_id != null ? "" : "בוט"), mine: r.attacker_id === uid || r.defender_id === uid, attacker_id: undefined, defender_id: undefined,
       can_bet: bc.enabled && r.attacker_id !== uid && r.defender_id !== uid && !r.my_side && Number(r.shots) <= bc.close_after_shots })),
       bets: bc.enabled ? { min: bc.min_stake, max: bc.max_stake, fee_pct: bc.house_fee_pct, close_after_shots: bc.close_after_shots } : null });
   }
