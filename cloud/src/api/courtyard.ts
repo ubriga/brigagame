@@ -7,6 +7,7 @@ import { limited } from "./ratelimit.js";
 import { createCourtyardMatch, createAiMatch, createLiveDefenseMatch } from "./matchmaking.js";
 import { validatePersona, DEFAULT_PERSONA, DEFAULT_BUDGET } from "../game/persona.js";
 import { cfgOf, ensureHome, ensureMap, applyRebellions, settle, ownedTiles, attackCost, cancelBattle, reapDanglingBattles } from "../game/territory.js";
+import { handleAlliance, areAllies, allianceCfg } from "./alliance.js";
 import { betsCfg } from "../game/bets.js";
 import type { Env } from "../do/MatchRoom";
 
@@ -64,6 +65,22 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
   const t = cfgOf(c);
   if (!t.enabled) return json({ error: "disabled", error_he: "מלחמת הטריטוריות כבויה כרגע." }, 403);
   const uid = Number(u.id);
+  // Public profile card by nickname (registered players only): stats and a flag colour, nothing private.
+  if (path === "/api/territory/profile" && request.method === "GET") {
+    const nick = String(new URL(request.url).searchParams.get("nick") ?? "").trim();
+    const t: any = await env.DB.prepare("SELECT user_id, nickname FROM user_nicknames WHERE status = 'ok' AND nickname = ? COLLATE NOCASE").bind(nick).first();
+    if (!t) return json({ error: "no_player", error_he: "לא נמצא שחקן עם הכינוי הזה." }, 404);
+    const pid = Number(t.user_id);
+    const q = async (sql: string) => Number(((await env.DB.prepare(sql).bind(pid).first()) as any)?.n ?? 0);
+    const al: any = await env.DB.prepare("SELECT a.name FROM alliance_members m JOIN alliances a ON a.id = m.alliance_id WHERE m.user_id = ?").bind(pid).first();
+    return json({ nickname: t.nickname, flag_hue: (pid * 47) % 360,
+      tiles: await q("SELECT COUNT(*) AS n FROM territory_tiles WHERE owner_id = ?"),
+      conquests: await q("SELECT COUNT(*) AS n FROM territory_battles WHERE attacker_id = ? AND status = 'won'"),
+      defenses: await q("SELECT COUNT(*) AS n FROM territory_battles WHERE defender_id = ? AND status = 'lost'"),
+      alliance: allianceCfg(c).enabled && al ? al.name : null });
+  }
+  const al = await handleAlliance(env, request, path, uid, c);
+  if (al) return al;
   if (path === "/api/territory/map" && request.method === "GET") {
     await ensureMap(db, c);
     await applyRebellions(db, c);
@@ -71,7 +88,13 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
       "SELECT json_group_array(json_array(t.id,t.x,t.y,t.kind,t.rarity,t.owner_id,t.is_home,t.protected_until,n.nickname)) AS j"
       + " FROM territory_tiles t LEFT JOIN user_nicknames n ON n.user_id = t.owner_id AND n.status = 'ok'", []);
     const now = Date.now();
+    const allyIds = new Set<number>();
+    if (allianceCfg(c).enabled) {
+      const mem = (await env.DB.prepare("SELECT user_id FROM alliance_members WHERE alliance_id = (SELECT alliance_id FROM alliance_members WHERE user_id = ?)").bind(uid).all()).results as any[];
+      for (const x of mem) if (Number(x.user_id) !== uid) allyIds.add(Number(x.user_id));
+    }
     const tiles = (JSON.parse(r?.j ?? "[]") as any[]).map((a) => ({
+      ally: allyIds.has(a[5]),
       id: a[0], x: a[1], y: a[2], kind: a[3], rarity: a[4],
       mine: a[5] === uid, owned: a[5] != null, home: !!a[6] && a[5] === uid,
       owner: a[5] == null ? null : (a[5] === uid ? "אני" : (a[8] || "שחקן " + a[5])),
@@ -167,6 +190,8 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
     const tile: any = await db.get("SELECT * FROM territory_tiles WHERE id = ?", [tileId]);
     if (!tile) return json({ error: "no_tile", error_he: "האריח לא נמצא." }, 404);
     if (tile.owner_id === uid) return json({ error: "own_tile", error_he: "האריח כבר שלך." }, 400);
+    if (tile.owner_id != null && allianceCfg(c).enabled && await areAllies(env, uid, Number(tile.owner_id)))
+      return json({ error: "ally_tile", error_he: "אי אפשר לתקוף אריח של בעל ברית." }, 409);
     if (tile.protected_until && Date.parse(tile.protected_until) > Date.now())
       return json({ error: "protected", error_he: "האריח מוגן בתקופת חסד אחרי כיבוש." }, 409);
     const adj: any = await db.get(
