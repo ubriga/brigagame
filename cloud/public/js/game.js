@@ -1477,6 +1477,7 @@ const GameView = {
     const isDraw = !s.winner_side && ((s.results || {})[s.you] || {}).outcome === "draw";
     const iWon = s.winner_side === s.you;
     const res = (s.results || {})[s.you] || {};
+    const terr = (s.results || {}).territory || (s.territory ? { outcome: iWon ? "won" : "lost" } : null);
     if (isDraw) Sfx.play("click");
     else if (iWon) { Sfx.play("win"); this.spawnConfetti(); } else Sfx.play("lose");
     const timed = s.finish_reason === "time_limit";
@@ -1492,17 +1493,21 @@ const GameView = {
       <p class="end-sub">${reason}</p>
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
-      ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
+      ${terr ? `<p class="practice-note">${terr.outcome === "won" ? "🏴 האריח נכבש! תקופת חסד של יום." : "האריח לא נכבש. החומרים נוצלו."}</p>` : ""}
+      ${res.practice && !terr ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
       ${!res.practice && res.rank_points_awarded > 0 ? `<p class="practice-note">⭐ +${res.rank_points_awarded} XP מנזק וניצחון</p>` : ""}
       ${!res.practice && res.damage_xp_awarded > 0 ? `<p class="practice-note">⭐ +${res.damage_xp_awarded} XP מנזק</p>` : ""}
       ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} XP</p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-        <button class="btn" id="again-btn">עוד משחק</button>
+        ${terr ? `<button class="btn" id="map-btn">🗺️ חזרה למפה</button>` : `<button class="btn" id="again-btn">עוד משחק</button>`}
         <button class="btn secondary" id="lobby-btn">חזרה ללובי</button>
         ${window.App && App.me && App.me.invite_enabled ? `<button class="btn secondary" id="invite-btn">📨 הזמן חבר</button>` : ""}
       </div>`;
-    document.getElementById("again-btn").onclick = () => {
+    const mapBtn = document.getElementById("map-btn");
+    if (mapBtn) mapBtn.onclick = () => { Sfx.play("click"); location.hash = "#/war"; };
+    const againBtn = document.getElementById("again-btn");
+    if (againBtn) againBtn.onclick = () => {
       Sfx.play("click");
       if (s.mode === "ai") this.showAiRematch();
       else location.hash = "#/lobby";

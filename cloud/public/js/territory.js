@@ -1,0 +1,117 @@
+/* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
+// Territory war screen: map, materials, attack, and the courtyard defender persona.
+(function () {
+  const KIND = { forest: ["🌲", "יער", "#2f6b3a"], mine: ["⛏️", "מכרה", "#6b5a45"], quarry: ["🪨", "מחצבה", "#5b6572"],
+    plains: ["🌾", "מישור", "#7a8a3c"], fortress: ["🏰", "מצודה", "#7b3f6e"] };
+  const RAR = ["", "רגיל", "נדיר", "אפי", "אגדי"];
+  const MAT = { wood: "🪵 עץ", iron: "⚙️ ברזל", stone: "🧱 אבן" };
+  const CSS = `
+  .war-top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+  .war-chip{background:rgba(255,255,255,.08);padding:6px 10px;border-radius:12px;font-weight:700}
+  .war-wrap{display:grid;grid-template-columns:minmax(0,2fr) minmax(220px,1fr);gap:12px}
+  @media (max-width:760px){.war-wrap{grid-template-columns:1fr}}
+  .war-map{overflow:auto;max-height:58vh;border-radius:12px;background:#0b2436;padding:6px}
+  .war-grid{display:grid;gap:2px;direction:ltr}
+  .wt{aspect-ratio:1;min-width:30px;border:0;border-radius:6px;font-size:15px;line-height:1;padding:0;color:#fff;cursor:pointer;position:relative;opacity:.92}
+  .wt.mine{outline:3px solid #ffd35c;opacity:1}
+  .wt.enemy{outline:3px solid #e0556b}
+  .wt.sel{outline:3px solid #fff;opacity:1}
+  .wt .r{position:absolute;bottom:1px;left:2px;font-size:9px;font-weight:700}
+  .war-side .card{margin-bottom:10px}
+  .war-persona label{display:flex;justify-content:space-between;margin-top:8px}
+  .war-persona input[type=range]{width:100%}`;
+  function css() { if (document.getElementById("war-css")) return; const s = document.createElement("style"); s.id = "war-css"; s.textContent = CSS; document.head.appendChild(s); }
+
+  App.vWar = async function (view, seq = this._routeSeq) {
+    if (!this.routeCurrent(seq)) return;
+    css();
+    if (!this.me) { location.hash = "#/login"; return; }
+    if (this.me.is_guest) {
+      view.removeAttribute("aria-busy");
+      view.innerHTML = `<h1>🗺️ מלחמת טריטוריות</h1><div class="card" style="text-align:center;padding:32px 18px"><div style="font-size:42px">🔒</div><p class="sub">המפה זמינה לשחקנים רשומים בלבד.</p></div>`;
+      return;
+    }
+    const [mr, pr, mapr] = await Promise.all([API.get("/api/territory/me"), API.get("/api/persona"), API.get("/api/territory/map")]);
+    if (!this.routeCurrent(seq)) return;
+    view.removeAttribute("aria-busy");
+    if (mr.status !== 200 || mapr.status !== 200) {
+      view.innerHTML = `<h1>🗺️ מלחמת טריטוריות</h1><div class="card"><p class="sub">${esc(apiError(mr.status !== 200 ? mr : mapr, "המפה אינה זמינה כרגע."))}</p></div>`;
+      return;
+    }
+    let me = mr.data, map = mapr.data, persona = pr.data || {}, sel = null;
+    const byXY = new Map(map.tiles.map(t => [t.x + "," + t.y, t]));
+    const adjacent = (t) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const n = byXY.get((t.x + dx) + "," + (t.y + dy)); return n && n.mine; });
+    const cost = (t) => 15 * t.rarity;
+
+    const draw = () => {
+      const size = map.size;
+      const grid = [];
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const t = byXY.get(x + "," + y); if (!t) { grid.push("<span></span>"); continue; }
+        const k = KIND[t.kind] || KIND.plains;
+        const cls = ["wt", t.mine ? "mine" : (t.owned ? "enemy" : ""), sel && sel.id === t.id ? "sel" : ""].join(" ");
+        grid.push(`<button class="${cls}" data-id="${t.id}" style="background:${k[2]}" aria-label="${k[1]} ${x},${y}">${t.home ? "🏠" : k[0]}<span class="r">${t.rarity > 1 ? "★".repeat(t.rarity - 1) : ""}</span></button>`);
+      }
+      const m = me.materials;
+      view.innerHTML = `<h1>🗺️ מלחמת טריטוריות</h1>
+        <div class="war-top">
+          <span class="war-chip">${MAT.wood} ${m.wood}</span><span class="war-chip">${MAT.iron} ${m.iron}</span><span class="war-chip">${MAT.stone} ${m.stone}</span>
+          <span class="war-chip">⚔️ התקפות היום ${me.attacks_today}/${me.attacks_cap}</span>
+          <span class="war-chip">🏴 אריחים: ${me.tiles.length}</span>
+        </div>
+        <div class="war-wrap">
+          <div class="war-map" id="war-map"><div class="war-grid" style="grid-template-columns:repeat(${size},minmax(30px,1fr))">${grid.join("")}</div></div>
+          <div class="war-side">
+            <div class="card" id="war-detail">${detail()}</div>
+            <div class="card war-persona"><h3>🛡️ אישיות המגן שלי</h3>
+              <p class="sub">כשתוקפים אותך, מגן החצר שלך נלחם לפי ההגדרות. תקציב ${persona.budget} נקודות.</p>
+              ${["aggression:תוקפנות", "accuracy:דיוק", "boldness:אומץ"].map(s => { const [k, l] = s.split(":"); return `<label><span>${l}</span><b id="pv-${k}">${persona.persona[k]}</b></label><input type="range" id="pr-${k}" min="0" max="100" value="${persona.persona[k]}">`; }).join("")}
+              <p class="sub" id="persona-total" aria-live="polite"></p>
+              <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" id="persona-save">שמירה</button><button class="btn small secondary" id="persona-test">תרגול מול החצר שלי</button></div>
+            </div>
+          </div>
+        </div>`;
+      wire();
+    };
+    const detail = () => {
+      if (!sel) return `<p class="sub">בחר אריח במפה. אפשר לתקוף אריח שצמוד לטריטוריה שלך (מסומנת בצהוב).</p>`;
+      const k = KIND[sel.kind]; const c = cost(sel);
+      let act = "";
+      if (sel.mine) act = `<p class="sub">האריח שלך${sel.home ? " (הבית)" : ""}.</p>`;
+      else if (sel.protected) act = `<p class="sub">🔒 מוגן בתקופת חסד.</p>`;
+      else if (!adjacent(sel)) act = `<p class="sub">לא צמוד לטריטוריה שלך.</p>`;
+      else act = `<p class="sub">עלות תקיפה: ${c} מכל חומר.</p><button class="btn" id="war-attack">⚔️ תקוף</button>`;
+      return `<h3>${k[0]} ${k[1]} · ${RAR[sel.rarity]}</h3><p class="sub">בעלים: ${sel.owner ? esc(sel.owner) : "פנוי (הגנת בוט)"}</p>${act}`;
+    };
+    const wire = () => {
+      view.querySelectorAll(".wt").forEach(b => b.onclick = () => { sel = map.tiles.find(t => t.id === Number(b.dataset.id)); const sc = document.getElementById("war-map").scrollTop; const sl = document.getElementById("war-map").scrollLeft; draw(); const mp = document.getElementById("war-map"); mp.scrollTop = sc; mp.scrollLeft = sl; });
+      const atk = document.getElementById("war-attack");
+      if (atk) atk.onclick = async () => {
+        atk.disabled = true;
+        const r = await API.post("/api/territory/attack", { tile_id: sel.id });
+        if (r.data && r.data.match_id) location.hash = "#/game/" + r.data.match_id;
+        else { toast(apiError(r, "לא ניתן לתקוף")); atk.disabled = false; }
+      };
+      const upd = () => {
+        const v = ["aggression", "accuracy", "boldness"].map(k => Number(document.getElementById("pr-" + k).value));
+        ["aggression", "accuracy", "boldness"].forEach((k, i) => document.getElementById("pv-" + k).textContent = v[i]);
+        const tot = v[0] + v[1] + v[2]; const over = tot > persona.budget;
+        const el = document.getElementById("persona-total"); el.textContent = `סה"כ ${tot}/${persona.budget}` + (over ? " - חריגה מהתקציב" : "");
+        document.getElementById("persona-save").disabled = over; return v;
+      };
+      ["aggression", "accuracy", "boldness"].forEach(k => document.getElementById("pr-" + k).oninput = upd);
+      upd();
+      document.getElementById("persona-save").onclick = async () => {
+        const v = upd(); const r = await API.post("/api/persona", { aggression: v[0], accuracy: v[1], boldness: v[2] });
+        if (r.status === 200) { persona.persona = { aggression: v[0], accuracy: v[1], boldness: v[2] }; toast("האישיות נשמרה"); } else toast(apiError(r, "השמירה נכשלה"));
+      };
+      document.getElementById("persona-test").onclick = async () => {
+        const r = await API.post("/api/courtyard/practice");
+        if (r.data && r.data.match_id) location.hash = "#/game/" + r.data.match_id; else toast(apiError(r, "שגיאה"));
+      };
+    };
+    draw();
+    const h = me.home && byXY.get(me.home.x + "," + me.home.y);
+    if (h) { const b = view.querySelector(`.wt[data-id="${h.id}"]`); if (b && b.scrollIntoView) b.scrollIntoView({ block: "center", inline: "center" }); }
+  };
+})();

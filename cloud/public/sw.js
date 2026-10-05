@@ -6,7 +6,7 @@ const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
   "./css/style.css", "./js/config.js", "./js/consent.js", "./js/i18n.js", "./js/api.js",
   "./js/audio.js", "./js/tower-skins.js", "./js/clockwork.js", "./js/render3d.js", "./js/game.js", "./js/app.js", "./js/pwa.js", "./js/screenmode.js", "./js/pesach.js",
-  "./js/panel.js",
+  "./js/panel.js", "./js/territory.js",
   "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3", "./assets/sfx/steam.mp3", "./assets/sfx/clank.mp3",
   "./assets/sfx/crumble.mp3", "./assets/sfx/click.mp3",
   "./assets/sfx/coin.mp3", "./assets/sfx/win.mp3", "./assets/sfx/lose.mp3",
