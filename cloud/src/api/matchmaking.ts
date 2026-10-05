@@ -311,6 +311,34 @@ export async function createCourtyardMatch(env: Env, attacker: any, ownerId: num
   return { ok: true, match_id: id };
 }
 
+/** Offer a territory attack to the tile owner if they are online right now and free. Returns the waiting match id, or null. */
+export async function createLiveDefenseMatch(env: Env, attacker: any, ownerId: number, extra: Record<string, unknown>, ttlSeconds: number): Promise<string | null> {
+  const now = Date.now() / 1000;
+  await sweepExpiredOffers(env);
+  const presenceCutoff = new Date((now - PRESENCE_WINDOW_SECONDS) * 1000).toISOString();
+  const owner: any = await env.DB.prepare(
+    "SELECT u.id FROM users u WHERE u.id = ? AND u.is_guest = 0 AND u.suspended = 0"
+    + " AND u.last_seen IS NOT NULL AND u.last_seen >= ?"
+    + " AND (u.banned_until IS NULL OR u.banned_until <= ?)"
+    + " AND NOT EXISTS (SELECT 1 FROM match_offers o WHERE o.invited_user_id = u.id AND o.expires_at > ?)"
+    + " AND NOT EXISTS (SELECT 1 FROM matches m WHERE m.status = 'active' AND (m.p1 = u.id OR m.p2 = u.id))")
+    .bind(ownerId, presenceCutoff, nowIso(), now).first();
+  if (!owner) return null;
+  const id = newMatchId();
+  const iso = nowIso();
+  await env.DB.prepare(
+    "INSERT INTO matches (id, code, mode, status, p1, state, version, created_at, updated_at) VALUES (?,?,?,?,?,?,0,?,?)")
+    .bind(id, null, "territory", "waiting", Number(attacker.id), JSON.stringify({ ...extra }), iso, iso).run();
+  try {
+    await env.DB.prepare("INSERT INTO match_offers (match_id, invited_user_id, expires_at, created_at) VALUES (?,?,?,?)")
+      .bind(id, ownerId, now + ttlSeconds, iso).run();
+  } catch {
+    await env.DB.prepare("DELETE FROM matches WHERE id = ?").bind(id).run();
+    return null;
+  }
+  return id;
+}
+
 export async function handleMatchmaking(env: Env, request: Request, path: string): Promise<Response | null> {
   const method = request.method;
 
@@ -502,6 +530,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     }
     const state = newState(await userMods(env, Number(m.p1)), await userMods(env, uid));
     state.cooldowns = cooldownsFromControls(await getControls(env));
+    if (m.state?.territory) state.territory = { ...m.state.territory, live: true };   // live territory defense keeps its battle link
     const cur = await env.DB.prepare(
       "UPDATE matches SET p2 = ?, status = 'active', state = ?,"
       + " version = version + 1, updated_at = ? WHERE id = ?"

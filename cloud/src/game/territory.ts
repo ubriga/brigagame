@@ -8,6 +8,7 @@ export const TERRITORY_DEFAULTS = {
   enabled: true, map_size: 20, base_yield_per_hour: 6, store_cap: 500, accrual_cap_hours: 24,
   start_grant: 60, attack_cost_per_rarity: 15, maintenance_per_extra_tile: 1,
   daily_attack_cap: 6, grace_hours: 24, ongoing_battle_minutes: 10,
+  live_defense: true, live_offer_seconds: 30,
 };
 export function cfgOf(controls: any) { return { ...TERRITORY_DEFAULTS, ...((controls ?? {}).territory ?? {}) } as typeof TERRITORY_DEFAULTS; }
 const nowIso = () => new Date().toISOString();
@@ -125,4 +126,25 @@ export async function resolveTerritoryBattle(db: Db, m: any, winnerSide: string,
     else if (tile.is_home) await db.run("UPDATE territory_tiles SET is_home=1 WHERE id = (SELECT id FROM territory_tiles WHERE owner_id=? ORDER BY id LIMIT 1)", [prev]);
   }
   m.state.results = { ...(m.state.results ?? {}), territory: { outcome: "won", tile_id: b.tile_id, protected_until: until, previous_owner_new_home: newHome?.id ?? null } };
+}
+
+/** Refund and close a battle whose live wait never became a fight (cancelled, expired, or its match row vanished). */
+export async function cancelBattle(db: Db, battleId: number, why: string): Promise<boolean> {
+  const b: any = await db.get("SELECT * FROM territory_battles WHERE id = ? AND status = 'open'", [battleId]);
+  if (!b) return false;
+  const res = await db.run("UPDATE territory_battles SET status = ?, resolved_at = ? WHERE id = ? AND status = 'open'", [why, nowIso(), battleId]);
+  if (!res.changes) return false;
+  const v = Number(b.cost ?? 0);
+  if (v > 0) await db.run("UPDATE user_materials SET wood = wood + ?, iron = iron + ?, stone = stone + ? WHERE user_id = ?", [v, v, v, b.attacker_id]);
+  return true;
+}
+/** Refund this attacker's open battles whose match vanished or was aborted before a result. */
+export async function reapDanglingBattles(db: Db, uid: number): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    const r: any = await db.get(
+      "SELECT b.id FROM territory_battles b WHERE b.attacker_id = ? AND b.status = 'open'"
+      + " AND ((b.live = 1 AND b.match_id IS NULL) OR (b.match_id IS NOT NULL AND (NOT EXISTS (SELECT 1 FROM matches m WHERE m.id = b.match_id)"
+      + " OR EXISTS (SELECT 1 FROM matches m2 WHERE m2.id = b.match_id AND m2.status = 'aborted')))) LIMIT 1", [uid]);
+    if (!r || !(await cancelBattle(db, Number(r.id), "cancelled"))) return;
+  }
 }

@@ -1512,7 +1512,7 @@ const GameView = {
       <p class="end-sub">${reason}</p>
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
-      ${terr ? `<p class="practice-note">${terr.outcome === "won" ? "🏴 האריח נכבש! תקופת חסד של יום." : "האריח לא נכבש. החומרים נוצלו."}</p>` : ""}
+      ${terr ? `<p class="practice-note">${s.you === "p2" ? (iWon ? "🛡️ הגנת על האריח!" : "🏴 האריח נכבש ממך. אפשר לכבוש אותו חזרה.") : (terr.outcome === "won" ? "🏴 האריח נכבש! תקופת חסד של יום." : "האריח לא נכבש. החומרים נוצלו.")}</p>` : ""}
       ${res.practice && !terr ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
       ${!res.practice && res.rank_points_awarded > 0 ? `<p class="practice-note">⭐ +${res.rank_points_awarded} XP מנזק וניצחון</p>` : ""}
       ${!res.practice && res.damage_xp_awarded > 0 ? `<p class="practice-note">⭐ +${res.damage_xp_awarded} XP מנזק</p>` : ""}

@@ -126,7 +126,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     territory: { enabled: [null, null, "bool"], map_size: [8, 60, "int"], base_yield_per_hour: [0, 1000, "float"],
       store_cap: [10, 100000, "int"], accrual_cap_hours: [1, 168, "float"], start_grant: [0, 10000, "int"],
       attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"],
-      daily_attack_cap: [0, 100, "int"], grace_hours: [0, 336, "float"], ongoing_battle_minutes: [1, 120, "int"] },
+      daily_attack_cap: [0, 100, "int"], grace_hours: [0, 336, "float"], ongoing_battle_minutes: [1, 120, "int"],
+      live_defense: [null, null, "bool"], live_offer_seconds: [10, 120, "int"] },
     courtyard: { enabled: [null, null, "bool"], persona_budget: [30, 300, "int"] },
     weapon_cooldowns: {
       standard: [0.5, 60, "float"], double_bomb: [0.5, 60, "float"],

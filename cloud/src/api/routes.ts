@@ -744,6 +744,12 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       server_version: env.SERVER_VERSION, maintenance };
     if (offer) {
       out.offer = { match_id: offer.match_id, expires_in: Math.max(1, Math.trunc(offer.expires_at - now)) };
+      const tb: any = await env.DB.prepare(
+        "SELECT b.tile_id, COALESCE(n.nickname, '') AS attacker FROM matches m"
+        + " JOIN territory_battles b ON b.match_id = m.id AND b.status = 'open'"
+        + " LEFT JOIN user_nicknames n ON n.user_id = b.attacker_id AND n.status = 'ok'"
+        + " WHERE m.id = ? AND m.mode = 'territory'").bind(offer.match_id).first();
+      if (tb) out.offer.territory = { tile_id: tb.tile_id, attacker: tb.attacker };
     }
     return json(out);
   }

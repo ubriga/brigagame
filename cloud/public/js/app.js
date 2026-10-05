@@ -150,7 +150,7 @@ const App = {
       }
       const offer = data.offer;
       if (offer && offer.match_id && this._offerMatchId !== offer.match_id)
-        this.showMatchOffer(offer.match_id, offer.expires_in || 20);
+        this.showMatchOffer(offer.match_id, offer.expires_in || 20, offer.territory || null);
       if (typeof data.unread_messages === "number")
         this.setUnread(data.unread_messages);
       if (data.maintenance) this.setMaintenance(data.maintenance);
@@ -1331,15 +1331,15 @@ const App = {
     document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
   },
 
-  showMatchOffer(matchId, seconds) {
+  showMatchOffer(matchId, seconds, terr) {
     if (this._offerBox) this._offerBox.remove();
     this._offerMatchId = matchId;
     const box = document.createElement("div");
     box.className = "match-offer";
     box.innerHTML = `<div class="card match-offer-card">
       <div class="match-offer-icon">⚔️</div>
-      <h2>נמצא יריב!</h2>
-      <p>להיכנס למשחק?</p>
+      <h2>${terr ? "🏴 תוקפים את החצר שלך!" : "נמצא יריב!"}</h2>
+      <p>${terr ? `${esc(terr.attacker || "שחקן")} תוקף אריח שלך. להגן בעצמך?` : "להיכנס למשחק?"}</p>
       <p class="sub">ההזמנה תיסגר בעוד <b id="offer-seconds">${seconds}</b> שניות</p>
       <div class="match-offer-actions">
         <button class="btn" id="offer-accept">כן, מתחילים</button>
@@ -1398,16 +1398,24 @@ const App = {
         if (ov && ov.classList.contains("hidden")) {
           waitStart = Date.now();
           ov.classList.remove("hidden");
-          ov.innerHTML = `<h2>⏳ מחכים ליריב...</h2>
+          ov.innerHTML = `<h2>${GameView.snap.mode === "territory" ? "🛡️ הבעלים מקבל הזמנה להגן..." : "⏳ מחכים ליריב..."}</h2>
             ${GameView.snap.code ? `<div class="code-box">${esc(GameView.snap.code)}</div>
             <p class="sub">שתף את הקוד עם חבר</p>
             ${(App.ux || {}).friend_share_button !== false ? `<a class="btn small secondary wa-share" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("בוא לקרב מולי ב-Brigagame 2.0! 🎯 הקוד: " + GameView.snap.code + " - נכנסים ל-" + location.origin + location.pathname + " ומזינים את הקוד בשדה 'קוד משחק' בלובי")}">🟢 שתף בוואטסאפ</a>
-            <p class="sub ux-hint">החבר נכנס לאתר, מתחבר, ומזין את הקוד בשדה "קוד משחק" בלובי</p>` : ""}` : "<p>משחק מהיר - מחפש יריב</p>"}
+            <p class="sub ux-hint">החבר נכנס לאתר, מתחבר, ומזין את הקוד בשדה "קוד משחק" בלובי</p>` : ""}` : (GameView.snap.mode === "territory" ? "<p>אם הבעלים לא מגיב, יגן עליו הבוט שלו.</p>" : "<p>משחק מהיר - מחפש יריב</p>")}
             <button class="btn secondary" id="cancel-wait">ביטול</button>`;
           document.getElementById("cancel-wait").onclick = async () => {
             await API.post(`/api/matches/${matchId}/leave`);
             location.hash = "#/lobby";
           };
+        }
+        // Territory attack waiting for the online owner: when the invite lapses, the owner's courtyard bot defends.
+        if (GameView.snap.mode === "territory" && waitStart && Date.now() - waitStart >= 8000
+            && Date.now() - (this._terrPoll || 0) >= 3000) {
+          this._terrPoll = Date.now();
+          API.post("/api/territory/live-fallback", { match_id: matchId }).then(({ status, data }) => {
+            if (status === 200 && data && data.match_id && data.match_id !== matchId) { clearInterval(waitCheck); location.hash = "#/game/" + data.match_id; }
+          });
         }
         // Bot fallback offer: a quick match with no human found in time gets a
         // one-tap switch to a bot game (also gated server-side).

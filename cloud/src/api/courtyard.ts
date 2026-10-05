@@ -4,9 +4,9 @@ import { currentUser } from "../auth.js";
 import { d1, getControls } from "../util.js";
 import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
-import { createCourtyardMatch, createAiMatch } from "./matchmaking.js";
+import { createCourtyardMatch, createAiMatch, createLiveDefenseMatch } from "./matchmaking.js";
 import { validatePersona, DEFAULT_PERSONA, DEFAULT_BUDGET } from "../game/persona.js";
-import { cfgOf, ensureHome, ensureMap, settle, ownedTiles, attackCost } from "../game/territory.js";
+import { cfgOf, ensureHome, ensureMap, settle, ownedTiles, attackCost, cancelBattle, reapDanglingBattles } from "../game/territory.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
@@ -108,6 +108,7 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
     const cnt: any = await db.get("SELECT COUNT(*) AS n FROM territory_battles WHERE attacker_id = ? AND created_at >= ?", [uid, since]);
     if (Number(cnt?.n ?? 0) >= t.daily_attack_cap)
       return json({ error: "daily_cap", error_he: "הגעת למכסת ההתקפות היומית." }, 429);
+    await reapDanglingBattles(db, uid);
     const stale = new Date(Date.now() - t.ongoing_battle_minutes * 60000).toISOString();
     const open: any = await db.get("SELECT id FROM territory_battles WHERE attacker_id = ? AND status = 'open' AND created_at >= ?", [uid, stale]);
     if (open) return json({ error: "battle_open", error_he: "יש לך קרב טריטוריה פתוח." }, 409);
@@ -121,10 +122,17 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
       [cost.wood, cost.iron, cost.stone, uid, cost.wood, cost.iron, cost.stone]);
     if (!spent.changes) return json({ error: "no_materials", error_he: "אין מספיק חומרים לתקיפה." }, 402);
     const ins: any = await env.DB.prepare(
-      "INSERT INTO territory_battles (attacker_id, defender_id, tile_id, status, created_at) VALUES (?,?,?, 'open', ?)")
-      .bind(uid, tile.owner_id ?? null, tileId, new Date().toISOString()).run();
+      "INSERT INTO territory_battles (attacker_id, defender_id, tile_id, status, created_at, cost) VALUES (?,?,?, 'open', ?, ?)")
+      .bind(uid, tile.owner_id ?? null, tileId, new Date().toISOString(), cost.wood).run();
     const battleId = Number(ins.meta?.last_row_id);
     const extra = { territory: { battle_id: battleId, tile_id: tileId } };
+    if (tile.owner_id != null && t.live_defense !== false) {
+      const liveId = await createLiveDefenseMatch(env, u, Number(tile.owner_id), extra, Number(t.live_offer_seconds));
+      if (liveId) {
+        await db.run("UPDATE territory_battles SET match_id = ?, live = 1 WHERE id = ?", [liveId, battleId]);
+        return json({ match_id: liveId, battle_id: battleId, cost, live: true, wait_seconds: Number(t.live_offer_seconds) });
+      }
+    }
     const r = tile.owner_id == null
       ? await createAiMatch(env, u, TIER_BY_RARITY[tile.rarity] ?? "medium", extra)
       : await createCourtyardMatch(env, u, Number(tile.owner_id), false, extra);
@@ -135,6 +143,32 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
     }
     await db.run("UPDATE territory_battles SET match_id = ? WHERE id = ?", [r.match_id, battleId]);
     return json({ match_id: r.match_id, battle_id: battleId, cost });
+  }
+  if (path === "/api/territory/live-fallback" && request.method === "POST") {
+    const body: any = await request.json().catch(() => ({}));
+    const mid = String(body?.match_id ?? "");
+    const m: any = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(mid).first();
+    if (!m || m.mode !== "territory" || Number(m.p1) !== uid) return json({ error: "not_found", error_he: "הקרב לא נמצא." }, 404);
+    if (m.status === "active" && m.p2 != null) return json({ match_id: mid, status: "active", human: true });
+    if (m.status !== "waiting" || m.p2 != null) return json({ error: "unavailable", error_he: "הקרב כבר לא ממתין." }, 409);
+    const nowS = Date.now() / 1000;
+    const offer: any = await env.DB.prepare("SELECT 1 AS ok FROM match_offers WHERE match_id = ? AND expires_at > ?").bind(mid, nowS).first();
+    if (offer) return json({ error: "too_soon", error_he: "הבעלים עדיין מחליט.", retry_in: 3 }, 400);
+    const b: any = await db.get("SELECT * FROM territory_battles WHERE match_id = ? AND attacker_id = ? AND status = 'open'", [mid, uid]);
+    if (!b) return json({ error: "not_found", error_he: "הקרב לא נמצא." }, 404);
+    await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(mid).run();   // first, so cascades cannot inflate the count below
+    const del = await env.DB.prepare("DELETE FROM matches WHERE id = ? AND status = 'waiting' AND p2 IS NULL").bind(mid).run();
+    if (Number(del.meta?.changes ?? 0) < 1) {
+      const cur: any = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(mid).first();
+      if (cur && cur.status === "active") return json({ match_id: mid, status: "active", human: true });
+      return json({ error: "unavailable", error_he: "הקרב כבר לא זמין." }, 409);
+    }
+    await env.DB.prepare("DELETE FROM match_offers WHERE match_id = ?").bind(mid).run();
+    const extra = { territory: { battle_id: Number(b.id), tile_id: Number(b.tile_id) } };
+    const r = await createCourtyardMatch(env, u, Number(b.defender_id), false, extra);
+    if (!r.ok) { await cancelBattle(db, Number(b.id), "cancelled"); return json({ error: r.error, error_he: r.error_he }, r.status); }
+    await db.run("UPDATE territory_battles SET match_id = ?, live = 0 WHERE id = ?", [r.match_id, Number(b.id)]);
+    return json({ match_id: r.match_id, status: "active", fallback: true });
   }
   return json({ error: "not_found" }, 404);
 }
