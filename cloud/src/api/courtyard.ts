@@ -83,7 +83,8 @@ async function handleTerritory(env: Env, request: Request, path: string, u: any,
     const since = new Date(Date.now() - 24 * 3600000).toISOString();
     const a: any = await db.get("SELECT COUNT(*) AS n FROM territory_battles WHERE attacker_id = ? AND created_at >= ?", [uid, since]);
     return json({ home: home ? { id: home.id, x: home.x, y: home.y } : null, tiles: mine, materials: mats,
-                  attacks_today: Number(a?.n ?? 0), attacks_cap: t.daily_attack_cap, store_cap: t.store_cap });
+                  attacks_today: Number(a?.n ?? 0), attacks_cap: t.daily_attack_cap, store_cap: t.store_cap,
+                  cfg: { cost_per_rarity: t.attack_cost_per_rarity, grace_hours: t.grace_hours, base_yield: t.base_yield_per_hour, accrual_cap_hours: t.accrual_cap_hours } });
   }
   if (path === "/api/territory/attack" && request.method === "POST") {
     const body: any = await request.json().catch(() => ({}));

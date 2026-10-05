@@ -6,7 +6,7 @@ const PANEL_CSS = `
 #admin-body .card{max-width:100%;overflow-x:auto}
 .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 .tabs button { background: var(--panel2); color: var(--muted); border: none; padding: 8px 14px; border-radius: 10px; cursor: pointer; }
-.tabs button.active { background: var(--accent); color: #0b1120; font-weight: 700; }
+.tabs button.active { background: var(--accent); color: #221309; font-weight: 700; }
 .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .stat-cards .card { text-align: center; padding: 12px; }
 .stat-cards b { font-size: 22px; display: block; color: var(--accent); }
