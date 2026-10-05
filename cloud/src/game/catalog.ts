@@ -396,6 +396,44 @@ export const CATALOG: Record<string, CatalogEntry> = {
     "desc_he": "מגדלי צד, שיניים ודגלי מלוכה מתנופפים.",
     "desc_en": "Side turrets, battlements and waving royal flags."
   },
+  "skin_aurora_orb": {
+    "kind": "skin",
+    "name": "Aurora Orb",
+    "name_he": "כדור זוהר",
+    "tier": "legendary",
+    "price": 2000,
+    "colors": ["#a5f3fc", "#7c3aed"],
+    "style": {
+      "fill": ["#e0f2fe", "#6d28d9"],
+      "frame": "#67e8f9",
+      "glow": "rgba(103,232,249,.5)",
+      "texture": "steel",
+      "emblem": "",
+      "geometry": "orb",
+      "debris": ["#a5f3fc", "#c4b5fd", "#6d28d9"],
+      "trail": {"kind": "ribbon", "colors": ["#22d3ee", "#a78bfa", "#f0abfc"]}
+    },
+    "desc_he": "כיפה חלקה עם טבעת מסתובבת ושובל זוהר בצבעי הזוהר הצפוני."
+  },
+  "skin_crystal_spire": {
+    "kind": "skin",
+    "name": "Crystal Spire",
+    "name_he": "צריח גביש",
+    "tier": "epic",
+    "price": 1500,
+    "colors": ["#bae6fd", "#0e7490"],
+    "style": {
+      "fill": ["#ecfeff", "#0e7490"],
+      "frame": "#a5f3fc",
+      "glow": "rgba(165,243,252,.45)",
+      "texture": "steel",
+      "emblem": "",
+      "geometry": "crystal",
+      "debris": ["#ecfeff", "#67e8f9", "#0e7490"],
+      "trail": {"kind": "sparkle", "colors": ["#ecfeff", "#67e8f9"]}
+    },
+    "desc_he": "צריח גביש מבריק עם פאות וניצוצות בשובל."
+  },
   "skin_ocean": {
     "kind": "skin",
     "name": "Ocean",
@@ -1194,8 +1232,6 @@ export const CATALOG: Record<string, CatalogEntry> = {
       "#fb923c",
       "#7f1d1d"
     ],
-    "available": false,
-    "coming_soon": true,
     "style": {
       "fill": [
         "#fb923c",
@@ -1204,15 +1240,17 @@ export const CATALOG: Record<string, CatalogEntry> = {
       "frame": "#fb923c",
       "glow": "#fb923c88",
       "texture": "flame",
-      "emblem": "♛",
+      "emblem": "",
+      "geometry": "phoenix",
+      "trail": {"kind": "ember", "colors": ["#fde047", "#f97316", "#ef4444"]},
       "debris": [
         "#fb923c",
         "#7f1d1d",
         "#f8fafc"
       ]
     },
-    "desc_he": "מראה קוסמטי חדש בדרגת אגדי.",
-    "desc_en": "Upcoming premium legendary cosmetic."
+    "desc_he": "כנפיים מעוגלות ותיבת להבות, ושובל גחלים בוער.",
+    "desc_en": "Curved wings, a flame crown and a burning ember trail."
   },
   "skin_diamond": {
     "kind": "skin",

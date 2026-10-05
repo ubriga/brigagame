@@ -43,6 +43,29 @@ const PremiumTowerArt = {
         ctx.beginPath(); ctx.roundRect(x-25,y+32,25,h-18,8); ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.roundRect(x+w,y+32,25,h-18,8); ctx.fill(); ctx.stroke();
         for(const sx of [x-12,x+w+12]){ctx.beginPath();ctx.arc(sx,y+25,18,0,7);ctx.fill();ctx.stroke();}
+      } else if (geometry === "orb") {
+        // smooth dome + glass halo around the tower
+        const g = ctx.createRadialGradient(x+w/2, y+h*.35, 8, x+w/2, y+h*.5, w*.95);
+        g.addColorStop(0, "rgba(224,242,254,.30)"); g.addColorStop(1, "rgba(109,40,217,.10)");
+        ctx.beginPath(); ctx.ellipse(x+w/2, y+h*.48, w*.78, h*.62, 0, 0, Math.PI*2); ctx.fillStyle = g; ctx.fill();
+        ctx.strokeStyle = frame; ctx.globalAlpha = .55; ctx.lineWidth = 2.5; ctx.stroke(); ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.ellipse(x+w/2, y-6, w*.34, 18, 0, Math.PI, 0); ctx.fillStyle = light; ctx.fill(); ctx.strokeStyle = frame; ctx.lineWidth = 2; ctx.stroke();
+      } else if (geometry === "crystal") {
+        for (const [dx, hh, ww] of [[-.34, 62, 20], [.34, 54, 18], [0, 92, 26]]) {
+          const cx = x + w/2 + w*dx;
+          poly([[cx, y+8-hh],[cx+ww*.7, y+14-hh*.25],[cx+ww*.45, y+12],[cx-ww*.45, y+12],[cx-ww*.7, y+14-hh*.25]]); fillStroke(light, frame, 1.5);
+          ctx.globalAlpha = .45; poly([[cx, y+8-hh],[cx+ww*.7, y+14-hh*.25],[cx, y+12]]); ctx.fillStyle = "#fff"; ctx.fill(); ctx.globalAlpha = 1;
+        }
+      } else if (geometry === "phoenix") {
+        for (const sg of [-1, 1]) {
+          const bx = x + w/2 + sg*w*.46, by = y + h*.34;
+          ctx.beginPath(); ctx.moveTo(bx, by + 46);
+          ctx.bezierCurveTo(bx + sg*46, by + 40, bx + sg*66, by - 6, bx + sg*58, by - 44);
+          ctx.bezierCurveTo(bx + sg*42, by - 18, bx + sg*26, by - 6, bx, by - 14);
+          ctx.closePath(); fillStroke(dark, frame, 2);
+          ctx.globalAlpha = .6; ctx.strokeStyle = light; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(bx + sg*6, by + 30); ctx.quadraticCurveTo(bx + sg*34, by + 8, bx + sg*46, by - 24); ctx.stroke(); ctx.globalAlpha = 1;
+        }
       } else if (geometry === "castle") {
         ctx.fillStyle=dark; ctx.strokeStyle=frame; ctx.lineWidth=3;
         for(const sx of [x-24,x+w]){ctx.beginPath();ctx.roundRect(sx,y+18,24,h-18,3);ctx.fill();ctx.stroke();
@@ -67,6 +90,20 @@ const PremiumTowerArt = {
         ctx.strokeStyle="#e0f2fe";ctx.lineWidth=3;ctx.globalAlpha=.55+.35*pulse;for(let i=0;i<5;i++){ctx.beginPath();ctx.moveTo(x+12+i*w/4,y+15);ctx.lineTo(x+6+i*w/4,y+75);ctx.stroke();}
       } else if (geometry === "mecha") {
         ctx.fillStyle="#67e8f9";ctx.globalAlpha=.7+.3*pulse;ctx.fillRect(x+w*.22,y+36,w*.56,8);ctx.strokeStyle=frame;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w/2,y-25);ctx.lineTo(x+w/2+12,y-34);ctx.stroke();
+      } else if (geometry === "orb") {
+        ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 3; ctx.globalAlpha = .7 + .25*pulse;
+        const a = t / 900;
+        ctx.beginPath(); ctx.ellipse(x+w/2, y+h*.5, w*.74, 14 + 6*Math.sin(a), -.35, 0, Math.PI*2); ctx.stroke();
+        ctx.fillStyle = "#f0abfc"; ctx.beginPath(); ctx.arc(x+w/2 + Math.cos(a)*w*.74, y+h*.5 + Math.sin(a)*14, 5, 0, 7); ctx.fill();
+      } else if (geometry === "crystal") {
+        ctx.fillStyle = "#fff"; ctx.globalAlpha = .5 + .5*pulse;
+        for (const [dx, dy] of [[.2, .1], [.75, .3], [.45, .55]]) { const cx = x + w*dx, cy = y + h*dy; poly([[cx,cy-5],[cx+2,cy-1],[cx+5,cy],[cx+2,cy+1],[cx,cy+5],[cx-2,cy+1],[cx-5,cy],[cx-2,cy-1]]); ctx.fill(); }
+      } else if (geometry === "phoenix") {
+        for (let i = 0; i < 5; i++) {
+          const fx = x + w*(.12 + i*.19), fh = 14 + 10*Math.sin(t/160 + i*1.7);
+          ctx.beginPath(); ctx.moveTo(fx-7, y+4); ctx.quadraticCurveTo(fx-3, y-fh*.6, fx, y-fh); ctx.quadraticCurveTo(fx+3, y-fh*.6, fx+7, y+4); ctx.closePath();
+          ctx.fillStyle = ["#fde047","#f97316","#ef4444","#f97316","#fde047"][i]; ctx.globalAlpha = .85; ctx.fill();
+        }
       } else if (geometry === "castle") {
         ctx.fillStyle="#facc15";ctx.globalAlpha=.8;for(const sx of [x-12,x+w+12]){ctx.beginPath();ctx.moveTo(sx,y+5);ctx.lineTo(sx+f*25,y+13);ctx.lineTo(sx,y+23);ctx.fill();}
       }
@@ -74,3 +111,4 @@ const PremiumTowerArt = {
     ctx.restore();
   }
 };
+

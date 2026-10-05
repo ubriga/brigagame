@@ -1109,13 +1109,32 @@ const GameView = {
     const fi = Math.min(n - 1, eased * n), i = Math.floor(fi), f = fi - i;
     const p0 = a.points[i], p1 = a.points[Math.min(n - 1, i + 1)];
     const x = p0[0] + (p1[0] - p0[0]) * f, y = p0[1] + (p1[1] - p0[1]) * f;
-    // trail
-    c.strokeStyle = "rgba(251,191,36,.55)"; c.lineWidth = 3; c.lineCap = "round";
-    c.beginPath();
+    // trail (skin-specific when the firing player's skin defines one)
     const upto = Math.max(1, Math.floor(fi));
-    c.moveTo(a.points[0][0], a.points[0][1]);
-    for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
-    c.lineTo(x, y); c.stroke();
+    const skinTrail = a.side && this.snap && this.snap.skins && this.snap.skins[a.side] && this.snap.skins[a.side].trail;
+    if (skinTrail && skinTrail.colors && skinTrail.colors.length) {
+      const cols = skinTrail.colors, from = Math.max(0, upto - 36);
+      c.lineCap = "round"; c.lineJoin = "round";
+      for (let k = from + 1; k <= upto; k++) {
+        const age = (k - from) / Math.max(1, upto - from);       // 0 tail .. 1 head
+        const col = cols[Math.min(cols.length - 1, Math.floor((1 - age) * cols.length))];
+        c.globalAlpha = .15 + .75 * age; c.strokeStyle = col;
+        c.lineWidth = skinTrail.kind === "ember" ? 2 + 5 * age : 2 + 3.5 * age;
+        c.beginPath(); c.moveTo(a.points[k - 1][0], a.points[k - 1][1]); c.lineTo(a.points[k][0], a.points[k][1]); c.stroke();
+        if (skinTrail.kind !== "ribbon" && (k % 3 === 0)) {
+          const jx = Math.sin(k * 12.9898) * 6, jy = Math.cos(k * 78.233) * 6;
+          c.fillStyle = col; c.globalAlpha *= .9;
+          c.beginPath(); c.arc(a.points[k][0] + jx, a.points[k][1] + jy, skinTrail.kind === "sparkle" ? 1.8 : 2.6 * age + .8, 0, 7); c.fill();
+        }
+      }
+      c.globalAlpha = 1;
+    } else {
+      c.strokeStyle = "rgba(251,191,36,.55)"; c.lineWidth = 3; c.lineCap = "round";
+      c.beginPath();
+      c.moveTo(a.points[0][0], a.points[0][1]);
+      for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
+      c.lineTo(x, y); c.stroke();
+    }
     // shell with glow
     const r = a.weapon === "cluster_mini" ? 5 : 8;
     const glow = c.createRadialGradient(x, y, 1, x, y, r * 2.4);
