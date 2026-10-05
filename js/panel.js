@@ -6,7 +6,7 @@ const PANEL_CSS = `
 #admin-body .card{max-width:100%;overflow-x:auto}
 .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 .tabs button { background: var(--panel2); color: var(--muted); border: none; padding: 8px 14px; border-radius: 10px; cursor: pointer; }
-.tabs button.active { background: var(--accent); color: #0b1120; font-weight: 700; }
+.tabs button.active { background: var(--accent); color: #221309; font-weight: 700; }
 .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .stat-cards .card { text-align: center; padding: 12px; }
 .stat-cards b { font-size: 22px; display: block; color: var(--accent); }
@@ -79,10 +79,10 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
   view.innerHTML = `
     <h1>🛠️ ניהול</h1>
     <div class="tabs">
-      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail"].map(t =>
+      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail", "nicks"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
           stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
-          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל" }[t]}</button>`).join("")}
+          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל", nicks: "✏️ כינויים" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
   view.querySelectorAll(".tabs button").forEach(b =>
@@ -297,6 +297,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       ${feature("premium_skins", "סקינים מושקעים", [["asset_budget_kb", "תקציב משקל לסקין (KB)", 10, 500, 1]], "תקציב משקל = הגודל המרבי (ב-KB) של קובץ סקין שמותר להעלות. גבוה יותר = קבצים כבדים יותר שנטענים לאט יותר.")}
       ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]], "מחיר = עלות במטבעות. זמן = משך הבנייה בדקות. הגנה = כמה HP הציפוי סופג לפני שהמגדל נפגע. מספר שלבים = כמה רמות ציפוי אפשר לבנות ברצף (עץ ← פח ← ברזל).")}
       ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]], "קוביות נוספות = כמה קוביות אפשר להוסיף למגדל מעל הבסיס. זמן בנייה = דקות לכל קובייה (עולה עם כל קובייה). מחיר = עלות כל קובייה במטבעות. חיים = HP שכל קובייה מוסיפה למגדל.")}
+      <div class="card"><h2>⏱️ צינון נשקים ושעון ירייה</h2><p class="sub">זמן טעינה (בשניות) לכל נשק, ושעון הירייה הכללי של השרת. השינוי חל על משחקים חדשים בלבד; משחק שכבר התחיל שומר את הערכים שלו.</p>
+        ${[["standard","רגיל"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מונחה"],["cluster_shell","אשכול"]].map(([k,l]) => `<label>${l}</label><input type="number" min="0.5" max="60" step="0.1" value="${(c.weapon_cooldowns && c.weapon_cooldowns[k]) ?? ({standard:4,double_bomb:5,homing_missile:5,cluster_shell:6})[k]}" data-control="weapon_cooldowns.${k}">`).join("")}
+        <label>שעון ירייה (שניות)</label><input type="number" min="3" max="120" step="1" value="${(c.weapon_cooldowns && c.weapon_cooldowns.shot_clock) ?? 10}" data-control="weapon_cooldowns.shot_clock"></div>
       <div class="card"><h2>מכשול דינמי</h2><p class="sub">המכשול (לחיצת הקיטור) זז בזירה. מהירות = קצב תנועה אופקית (גבוה = מהיר יותר). התראה = כמה שניות מוצגת אזהרה לשחקנים לפני שהמכשול זז. תנועה אנכית = המכשול עולה ויורד בין ההרמה המינימלית למקסימלית (בפיקסלים מעל הקרקע) תוך כדי תנועה - יריות יכולות לעבור מתחתיו כשהוא באוויר. כיבוי התנועה האנכית מחזיר מיידית למכשול על הקרקע.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="dynamic_obstacle.enabled" ${c.dynamic_obstacle.enabled ? "checked" : ""} style="width:auto">מופעל</label>
         <label>מהירות אופקית</label><input type="number" min="1" max="200" step="1" value="${c.dynamic_obstacle.speed}" data-control="dynamic_obstacle.speed">
@@ -498,6 +501,49 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const b = document.getElementById("bc-body").value;
       const { status: s } = await API.post("/api/admin/broadcast", { title, body: b });
       toast(s === 200 ? "ההודעה שודרה לכל המשתמשים" : "שגיאה");
+    };
+  } else if (tab === "nicks") {
+    body.innerHTML = '<p class="sub">טוען...</p>';
+    const [cfg, list] = await Promise.all([API.get("/api/admin/nickname-config"), API.get("/api/admin/nicknames?q=")]);
+    const draw = (rows) => rows.map(r => `<tr data-uid="${r.id}">
+        <td>${r.id}</td><td>${esc(r.nickname || "-")}${r.status === "blocked" ? " 🚫" : ""}</td>
+        <td><span class="sub" style="margin:0">${esc(r.account_name || "")}</span></td>
+        <td><button class="btn" data-act="rename">שנה</button>
+            ${r.nickname ? (r.status === "blocked" ? '<button class="btn" data-act="unblock">שחרר</button>' : '<button class="btn" data-act="block">חסום</button>') : ""}
+            <button class="btn" data-act="msg">✉️</button></td></tr>`).join("");
+    body.innerHTML = `<div class="card"><h2>הגדרות כינויים</h2>
+      <p class="sub">הבחירה הראשונה חינם. מחיר שינוי כינוי (מטבעות) ומילים חסומות נוספות (מופרדות בפסיק). הרשימה הקבועה פעילה תמיד.</p>
+      <label>מחיר שינוי (מטבעות)</label><input id="nk-price" type="number" min="0" max="100000" value="${esc(String((cfg.data || {}).change_price ?? 100))}">
+      <label>מילים חסומות נוספות</label><input id="nk-words" dir="auto" value="${esc(((cfg.data || {}).blocked_words || []).join(", "))}">
+      <button class="btn" id="nk-save" style="margin-top:10px">שמור הגדרות</button></div>
+      <div class="card"><h2>שחקנים וכינויים</h2>
+      <input id="nk-q" placeholder="חיפוש כינוי / שם חשבון">
+      <table class="tbl"><thead><tr><th>#</th><th>כינוי</th><th>שם חשבון (לאדמין בלבד)</th><th></th></tr></thead><tbody id="nk-rows">${draw((list.data || {}).nicknames || [])}</tbody></table></div>`;
+    document.getElementById("nk-save").onclick = async () => {
+      const words = document.getElementById("nk-words").value.split(",").map(x => x.trim()).filter(Boolean);
+      const r = await API.post("/api/admin/nickname-config", { change_price: Number(document.getElementById("nk-price").value), blocked_words: words });
+      toast(r.status === 200 ? "נשמר" : "שגיאה");
+    };
+    const act = async (uid, action, extra) => {
+      const r = await API.post("/api/admin/nickname", { user_id: uid, action, ...extra });
+      toast(r.status === 200 ? "בוצע" : ((r.data && (r.data.error_he || r.data.error)) || "שגיאה"));
+      if (r.status === 200) vAdmin(App, view, "nicks");
+    };
+    body.onclick = async (e) => {
+      const btn = e.target.closest("button[data-act]"); if (!btn) return;
+      const uid = Number(btn.closest("tr").dataset.uid), a = btn.dataset.act;
+      if (a === "block") { if (confirm("לחסום את הכינוי? השחקן יתבקש לבחור חדש.")) act(uid, "block", { reason: prompt("סיבה (אופציונלי)") || "" }); }
+      else if (a === "unblock") act(uid, "unblock", {});
+      else if (a === "rename") { const n = prompt("כינוי חדש לשחקן:"); if (n) act(uid, "rename", { nickname: n }); }
+      else if (a === "msg") {
+        const t = prompt("כותרת ההודעה:"); if (!t) return; const b = prompt("תוכן:"); if (!b) return;
+        const r = await API.post("/api/admin/message", { user_id: uid, title: t, body: b });
+        toast(r.status === 200 ? "ההודעה נשלחה לשחקן" : "שגיאה");
+      }
+    };
+    document.getElementById("nk-q").oninput = async (e) => {
+      const r = await API.get("/api/admin/nicknames?q=" + encodeURIComponent(e.target.value.trim()));
+      document.getElementById("nk-rows").innerHTML = draw((r.data || {}).nicknames || []);
     };
   } else if (tab === "mail") {
     body.innerHTML = '<p class="sub">טוען...</p>';

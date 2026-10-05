@@ -150,7 +150,7 @@ const App = {
       }
       const offer = data.offer;
       if (offer && offer.match_id && this._offerMatchId !== offer.match_id)
-        this.showMatchOffer(offer.match_id, offer.expires_in || 20);
+        this.showMatchOffer(offer.match_id, offer.expires_in || 20, offer.territory || null);
       if (typeof data.unread_messages === "number")
         this.setUnread(data.unread_messages);
       if (data.maintenance) this.setMaintenance(data.maintenance);
@@ -178,6 +178,65 @@ const App = {
     document.body.appendChild(ov);
     ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
     document.getElementById("howto-close").onclick = () => { Sfx.play("click"); ov.remove(); };
+    Lang.apply(ov);
+  },
+
+  // Nickname picker: the only name other players ever see (never the Google name).
+  // forced = first login without a nickname (cannot be dismissed).
+  showNickname(forced) {
+    if (!this.me || this.me.is_guest) return;
+    let ov = document.getElementById("nick-ov");
+    if (ov) ov.remove();
+    const price = Number((this.nickCfg || {}).change_price || 0);
+    const hasNick = !!this.me.nickname;
+    ov = document.createElement("div");
+    ov.id = "nick-ov";
+    ov.className = "howto-ov-like";
+    ov.innerHTML = `<div class="howto-card">
+      <h2>✏️ ${hasNick ? "שינוי כינוי" : "בחר כינוי"}</h2>
+      <p class="sub">השחקנים האחרים יראו רק את הכינוי שלך, לא את השם בחשבון.
+        ${hasNick && !this.me.nickname_auto ? (price > 0 ? `שינוי עולה 🪙 ${price}.` : "השינוי חינם.") : "הבחירה הראשונה חינם."}</p>
+      <input id="nick-input" type="text" maxlength="16" autocomplete="off" placeholder="2-16 תווים" value="${esc(this.me.nickname || "")}" style="width:100%;box-sizing:border-box">
+      <p class="sub" id="nick-msg" aria-live="polite">&nbsp;</p>
+      <button class="btn" id="nick-save" disabled>שמור</button>
+      ${forced ? `<button class="btn ghost" id="nick-skip">דלג - תנו לי כינוי</button>` : `<button class="btn ghost" id="nick-cancel">ביטול</button>`}
+    </div>`;
+    document.body.appendChild(ov);
+    const input = document.getElementById("nick-input"), msg = document.getElementById("nick-msg"), save = document.getElementById("nick-save");
+    let timer = null, seq = 0;
+    const check = async () => {
+      const v = input.value.trim(), my = ++seq;
+      if (!v || v === this.me.nickname) { msg.textContent = " "; save.disabled = true; return; }
+      const r = await API.get("/api/nickname/check?n=" + encodeURIComponent(v));
+      if (my !== seq) return;
+      if (r.status === 200 && r.data.ok) { msg.textContent = "✅ פנוי"; save.disabled = false; }
+      else { msg.textContent = "❌ " + ((r.data && r.data.error_he) || "בדיקה נכשלה"); save.disabled = true; }
+    };
+    input.oninput = () => { save.disabled = true; clearTimeout(timer); timer = setTimeout(check, 350); };
+    save.onclick = async () => {
+      save.disabled = true;
+      const r = await API.post("/api/nickname", { nickname: input.value.trim() });
+      if (r.status === 200 && r.data.ok) {
+        this.me.nickname = r.data.nickname; this.me.name = r.data.nickname; this.me.needs_nickname = false; this.me.nickname_auto = false;
+        if (typeof r.data.coins === "number") this.me.coins = r.data.coins;
+        ov.remove(); toast("הכינוי נשמר: " + r.data.nickname);
+        if (location.hash === "#/lobby" || location.hash === "") this.route?.();
+      } else { msg.textContent = "❌ " + ((r.data && r.data.error_he) || "השמירה נכשלה"); save.disabled = false; }
+    };
+    const skip = document.getElementById("nick-skip");
+    if (skip) skip.onclick = async () => {
+      skip.disabled = true;
+      const r = await API.post("/api/nickname/auto", {});
+      if (r.status === 200 && r.data.ok) {
+        this.me.nickname = r.data.nickname; this.me.name = r.data.nickname; this.me.needs_nickname = false; this.me.nickname_auto = true;
+        ov.remove(); toast("הכינוי שלך: " + r.data.nickname + " - אפשר לשנות בחינם בלחיצה על ✏️");
+        if (location.hash === "#/lobby" || location.hash === "") this.route?.();
+      } else { skip.disabled = false; msg.textContent = "❌ " + ((r.data && r.data.error_he) || "נסה שוב"); }
+    };
+    const cancel = document.getElementById("nick-cancel");
+    if (cancel) cancel.onclick = () => ov.remove();
+    if (!forced) ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+    input.focus();
     Lang.apply(ov);
   },
 
@@ -263,6 +322,7 @@ const App = {
   },
 
   setMe(data) {
+    this.nickCfg = data.nickname_cfg || this.nickCfg || {};
     if (this.me && this.me.id !== data.user?.id) this.clearSessionState();
     if (!data.user?.is_guest) {
       this._guestUpgrade = false;
@@ -521,6 +581,7 @@ const App = {
     else if (hash.startsWith("#/custom")) this.vCustom(view, seq);
     else if (hash.startsWith("#/leaderboard")) this.vLeaderboard(view, seq);
     else if (hash.startsWith("#/messages")) this.vMessages(view, seq);
+    else if (hash.startsWith("#/war")) { if (typeof this.vWar !== "function") { window.addEventListener("load", () => this.route(), { once: true }); return; } this.vWar(view, seq); }
     else if (hash.startsWith("#/tags")) this.vTags(view, seq);
     else if (hash.startsWith("#/contact")) this.vContact(view, seq);
     else if (hash.startsWith("#/invite/")) { this.vInvite(view, hash.split("/")[2] || ""); view.removeAttribute("aria-busy"); }
@@ -971,11 +1032,16 @@ const App = {
     const guest = this._guest;
     view.removeAttribute("aria-busy");
     view.innerHTML = `
-      <h1>שלום, ${esc(u.name)} 👋</h1>
+      <h1>שלום, ${esc(u.name)} 👋 ${u.is_guest ? "" : `<button class="btn ghost" id="nick-edit" style="font-size:.7em;padding:2px 8px" aria-label="שינוי כינוי">✏️</button>`}</h1>
       <p class="sub">הפל את מגדל היריב לפני שהוא מפיל את שלך.</p>
       ${this._loginRewardData ? `<div class="card ux-welcome"><b>🔥 יום ${this._loginRewardData.streak} ברצף!</b> ${this._loginRewardData.amount > 0 ? `קיבלת היום 🪙 ${this._loginRewardData.amount} מטבעות על הרצף` : "הרצף נמשך!"}</div>` : ""}
       ${(!u.is_guest && localStorage.getItem("bg_mailtip_dismissed") !== "1") ? `<div class="card ux-welcome" id="mailtip"><b>✉️ מקבל מאיתנו עדכונים במייל?</b> אם המייל הגיע לספאם, סמן "לא ספאם" והוסף את brigagame2026@gmail.com לאנשי הקשר, כדי שלא תפספס עדכונים. <button class="btn secondary" id="mailtip-ok" style="margin-inline-start:8px;padding:4px 10px;font-size:13px">הבנתי</button></div>` : ""}
       ${(this.ux.lobby_labels !== false && Number(u.matches_played || 0) === 0) ? `<div class="card ux-welcome"><b>🎓 משחק ראשון?</b> מומלץ להתחיל מול בוט קל - משחק תרגול בלי דירוג ובלי לחץ. אפשר גם לפתוח את "איך משחקים?" למטה.</div>` : ""}
+      <div class="home-hero" id="home-hero">
+        ${!guest || guest.ranked_allowed ? `<button class="btn hero-btn" id="hero-quick"><span>⚡</span>משחק מהיר</button>` : `<button class="btn hero-btn" id="hero-ai"><span>🤖</span>מול הבוט</button>`}
+        ${!u.is_guest ? `<button class="btn hero-btn secondary" id="hero-war"><span>🗺️</span>מלחמת טריטוריות</button>` : `${!guest || guest.ranked_allowed ? `<button class="btn hero-btn secondary" id="hero-ai2"><span>🤖</span>מול הבוט</button>` : `<button class="btn hero-btn secondary" id="hero-howto"><span>❓</span>איך משחקים</button>`}`}
+        <button class="btn hero-btn secondary" id="hero-store"><span>🛒</span>חנות וסדנה</button>
+      </div>
       <div class="grid cols2">
         <div class="card">
           <h2>🎮 משחק</h2>
@@ -1032,6 +1098,16 @@ const App = {
         </div>
       </div>`;
     const go = (id) => { location.hash = "#/game/" + id; };
+    const nickEdit = document.getElementById("nick-edit");
+    if (nickEdit) nickEdit.onclick = () => this.showNickname(false);
+    if (u.needs_nickname) this.showNickname(true);
+    const heroGo = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = () => { Sfx.play("click"); fn(); }; };
+    heroGo("hero-quick", () => document.getElementById("quick-btn")?.click());
+    heroGo("hero-ai", () => document.getElementById("ai-btn")?.click());
+    heroGo("hero-ai2", () => document.getElementById("ai-btn")?.click());
+    heroGo("hero-howto", () => document.getElementById("howto-btn")?.click());
+    heroGo("hero-war", () => { location.hash = "#/war"; });
+    heroGo("hero-store", () => { location.hash = "#/store"; });
     const quickBtn = document.getElementById("quick-btn");
     if (quickBtn) quickBtn.onclick = async () => {
       Sfx.play("click");
@@ -1255,15 +1331,15 @@ const App = {
     document.getElementById("lr-ok").onclick = () => { box.remove(); if (this._lrBox === box) this._lrBox = null; };
   },
 
-  showMatchOffer(matchId, seconds) {
+  showMatchOffer(matchId, seconds, terr) {
     if (this._offerBox) this._offerBox.remove();
     this._offerMatchId = matchId;
     const box = document.createElement("div");
     box.className = "match-offer";
     box.innerHTML = `<div class="card match-offer-card">
       <div class="match-offer-icon">⚔️</div>
-      <h2>נמצא יריב!</h2>
-      <p>להיכנס למשחק?</p>
+      <h2>${terr ? "🏴 תוקפים את החצר שלך!" : "נמצא יריב!"}</h2>
+      <p>${terr ? `${esc(terr.attacker || "שחקן")} תוקף אריח שלך. להגן בעצמך?` : "להיכנס למשחק?"}</p>
       <p class="sub">ההזמנה תיסגר בעוד <b id="offer-seconds">${seconds}</b> שניות</p>
       <div class="match-offer-actions">
         <button class="btn" id="offer-accept">כן, מתחילים</button>
@@ -1322,16 +1398,24 @@ const App = {
         if (ov && ov.classList.contains("hidden")) {
           waitStart = Date.now();
           ov.classList.remove("hidden");
-          ov.innerHTML = `<h2>⏳ מחכים ליריב...</h2>
+          ov.innerHTML = `<h2>${GameView.snap.mode === "territory" ? "🛡️ הבעלים מקבל הזמנה להגן..." : "⏳ מחכים ליריב..."}</h2>
             ${GameView.snap.code ? `<div class="code-box">${esc(GameView.snap.code)}</div>
             <p class="sub">שתף את הקוד עם חבר</p>
             ${(App.ux || {}).friend_share_button !== false ? `<a class="btn small secondary wa-share" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("בוא לקרב מולי ב-Brigagame 2.0! 🎯 הקוד: " + GameView.snap.code + " - נכנסים ל-" + location.origin + location.pathname + " ומזינים את הקוד בשדה 'קוד משחק' בלובי")}">🟢 שתף בוואטסאפ</a>
-            <p class="sub ux-hint">החבר נכנס לאתר, מתחבר, ומזין את הקוד בשדה "קוד משחק" בלובי</p>` : ""}` : "<p>משחק מהיר - מחפש יריב</p>"}
+            <p class="sub ux-hint">החבר נכנס לאתר, מתחבר, ומזין את הקוד בשדה "קוד משחק" בלובי</p>` : ""}` : (GameView.snap.mode === "territory" ? "<p>אם הבעלים לא מגיב, יגן עליו הבוט שלו.</p>" : "<p>משחק מהיר - מחפש יריב</p>")}
             <button class="btn secondary" id="cancel-wait">ביטול</button>`;
           document.getElementById("cancel-wait").onclick = async () => {
             await API.post(`/api/matches/${matchId}/leave`);
             location.hash = "#/lobby";
           };
+        }
+        // Territory attack waiting for the online owner: when the invite lapses, the owner's courtyard bot defends.
+        if (GameView.snap.mode === "territory" && waitStart && Date.now() - waitStart >= 8000
+            && Date.now() - (this._terrPoll || 0) >= 3000) {
+          this._terrPoll = Date.now();
+          API.post("/api/territory/live-fallback", { match_id: matchId }).then(({ status, data }) => {
+            if (status === 200 && data && data.match_id && data.match_id !== matchId) { clearInterval(waitCheck); location.hash = "#/game/" + data.match_id; }
+          });
         }
         // Bot fallback offer: a quick match with no human found in time gets a
         // one-tap switch to a bot game (also gated server-side).

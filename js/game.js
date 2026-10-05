@@ -406,7 +406,8 @@ const GameView = {
   },
 
   cooldown() {
-    return { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6 }[this.weapon] || 4;
+    const cd = (this.snap && this.snap.cooldowns) || {};
+    return Number(cd[this.weapon]) || { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6 }[this.weapon] || 4;
   },
 
   reloadFrac() {
@@ -1108,13 +1109,32 @@ const GameView = {
     const fi = Math.min(n - 1, eased * n), i = Math.floor(fi), f = fi - i;
     const p0 = a.points[i], p1 = a.points[Math.min(n - 1, i + 1)];
     const x = p0[0] + (p1[0] - p0[0]) * f, y = p0[1] + (p1[1] - p0[1]) * f;
-    // trail
-    c.strokeStyle = "rgba(251,191,36,.55)"; c.lineWidth = 3; c.lineCap = "round";
-    c.beginPath();
+    // trail (skin-specific when the firing player's skin defines one)
     const upto = Math.max(1, Math.floor(fi));
-    c.moveTo(a.points[0][0], a.points[0][1]);
-    for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
-    c.lineTo(x, y); c.stroke();
+    const skinTrail = a.side && this.snap && this.snap.skins && this.snap.skins[a.side] && this.snap.skins[a.side].trail;
+    if (skinTrail && skinTrail.colors && skinTrail.colors.length) {
+      const cols = skinTrail.colors, from = Math.max(0, upto - 36);
+      c.lineCap = "round"; c.lineJoin = "round";
+      for (let k = from + 1; k <= upto; k++) {
+        const age = (k - from) / Math.max(1, upto - from);       // 0 tail .. 1 head
+        const col = cols[Math.min(cols.length - 1, Math.floor((1 - age) * cols.length))];
+        c.globalAlpha = .15 + .75 * age; c.strokeStyle = col;
+        c.lineWidth = skinTrail.kind === "ember" ? 2 + 5 * age : 2 + 3.5 * age;
+        c.beginPath(); c.moveTo(a.points[k - 1][0], a.points[k - 1][1]); c.lineTo(a.points[k][0], a.points[k][1]); c.stroke();
+        if (skinTrail.kind !== "ribbon" && (k % 3 === 0)) {
+          const jx = Math.sin(k * 12.9898) * 6, jy = Math.cos(k * 78.233) * 6;
+          c.fillStyle = col; c.globalAlpha *= .9;
+          c.beginPath(); c.arc(a.points[k][0] + jx, a.points[k][1] + jy, skinTrail.kind === "sparkle" ? 1.8 : 2.6 * age + .8, 0, 7); c.fill();
+        }
+      }
+      c.globalAlpha = 1;
+    } else {
+      c.strokeStyle = "rgba(251,191,36,.55)"; c.lineWidth = 3; c.lineCap = "round";
+      c.beginPath();
+      c.moveTo(a.points[0][0], a.points[0][1]);
+      for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
+      c.lineTo(x, y); c.stroke();
+    }
     // shell with glow
     const r = a.weapon === "cluster_mini" ? 5 : 8;
     const glow = c.createRadialGradient(x, y, 1, x, y, r * 2.4);
@@ -1476,6 +1496,7 @@ const GameView = {
     const isDraw = !s.winner_side && ((s.results || {})[s.you] || {}).outcome === "draw";
     const iWon = s.winner_side === s.you;
     const res = (s.results || {})[s.you] || {};
+    const terr = (s.results || {}).territory || (s.territory ? { outcome: iWon ? "won" : "lost" } : null);
     if (isDraw) Sfx.play("click");
     else if (iWon) { Sfx.play("win"); this.spawnConfetti(); } else Sfx.play("lose");
     const timed = s.finish_reason === "time_limit";
@@ -1491,17 +1512,21 @@ const GameView = {
       <p class="end-sub">${reason}</p>
       <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
          ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
-      ${res.practice ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
+      ${terr ? `<p class="practice-note">${s.you === "p2" ? (iWon ? "🛡️ הגנת על האריח!" : "🏴 האריח נכבש ממך. אפשר לכבוש אותו חזרה.") : (terr.outcome === "won" ? "🏴 האריח נכבש! תקופת חסד של יום." : "האריח לא נכבש. החומרים נוצלו.")}</p>` : ""}
+      ${res.practice && !terr ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
       ${!res.practice && res.rank_points_awarded > 0 ? `<p class="practice-note">⭐ +${res.rank_points_awarded} XP מנזק וניצחון</p>` : ""}
       ${!res.practice && res.damage_xp_awarded > 0 ? `<p class="practice-note">⭐ +${res.damage_xp_awarded} XP מנזק</p>` : ""}
       ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} XP</p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-        <button class="btn" id="again-btn">עוד משחק</button>
+        ${terr ? `<button class="btn" id="map-btn">🗺️ חזרה למפה</button>` : `<button class="btn" id="again-btn">עוד משחק</button>`}
         <button class="btn secondary" id="lobby-btn">חזרה ללובי</button>
         ${window.App && App.me && App.me.invite_enabled ? `<button class="btn secondary" id="invite-btn">📨 הזמן חבר</button>` : ""}
       </div>`;
-    document.getElementById("again-btn").onclick = () => {
+    const mapBtn = document.getElementById("map-btn");
+    if (mapBtn) mapBtn.onclick = () => { Sfx.play("click"); location.hash = "#/war"; };
+    const againBtn = document.getElementById("again-btn");
+    if (againBtn) againBtn.onclick = () => {
       Sfx.play("click");
       if (s.mode === "ai") this.showAiRematch();
       else location.hash = "#/lobby";
