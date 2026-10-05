@@ -79,10 +79,10 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
   view.innerHTML = `
     <h1>🛠️ ניהול</h1>
     <div class="tabs">
-      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail"].map(t =>
+      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail", "nicks"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
           stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
-          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל" }[t]}</button>`).join("")}
+          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל", nicks: "✏️ כינויים" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
   view.querySelectorAll(".tabs button").forEach(b =>
@@ -501,6 +501,49 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const b = document.getElementById("bc-body").value;
       const { status: s } = await API.post("/api/admin/broadcast", { title, body: b });
       toast(s === 200 ? "ההודעה שודרה לכל המשתמשים" : "שגיאה");
+    };
+  } else if (tab === "nicks") {
+    body.innerHTML = '<p class="sub">טוען...</p>';
+    const [cfg, list] = await Promise.all([API.get("/api/admin/nickname-config"), API.get("/api/admin/nicknames?q=")]);
+    const draw = (rows) => rows.map(r => `<tr data-uid="${r.id}">
+        <td>${r.id}</td><td>${esc(r.nickname || "-")}${r.status === "blocked" ? " 🚫" : ""}</td>
+        <td><span class="sub" style="margin:0">${esc(r.account_name || "")}</span></td>
+        <td><button class="btn" data-act="rename">שנה</button>
+            ${r.nickname ? (r.status === "blocked" ? '<button class="btn" data-act="unblock">שחרר</button>' : '<button class="btn" data-act="block">חסום</button>') : ""}
+            <button class="btn" data-act="msg">✉️</button></td></tr>`).join("");
+    body.innerHTML = `<div class="card"><h2>הגדרות כינויים</h2>
+      <p class="sub">הבחירה הראשונה חינם. מחיר שינוי כינוי (מטבעות) ומילים חסומות נוספות (מופרדות בפסיק). הרשימה הקבועה פעילה תמיד.</p>
+      <label>מחיר שינוי (מטבעות)</label><input id="nk-price" type="number" min="0" max="100000" value="${esc(String((cfg.data || {}).change_price ?? 100))}">
+      <label>מילים חסומות נוספות</label><input id="nk-words" dir="auto" value="${esc(((cfg.data || {}).blocked_words || []).join(", "))}">
+      <button class="btn" id="nk-save" style="margin-top:10px">שמור הגדרות</button></div>
+      <div class="card"><h2>שחקנים וכינויים</h2>
+      <input id="nk-q" placeholder="חיפוש כינוי / שם חשבון">
+      <table class="tbl"><thead><tr><th>#</th><th>כינוי</th><th>שם חשבון (לאדמין בלבד)</th><th></th></tr></thead><tbody id="nk-rows">${draw((list.data || {}).nicknames || [])}</tbody></table></div>`;
+    document.getElementById("nk-save").onclick = async () => {
+      const words = document.getElementById("nk-words").value.split(",").map(x => x.trim()).filter(Boolean);
+      const r = await API.post("/api/admin/nickname-config", { change_price: Number(document.getElementById("nk-price").value), blocked_words: words });
+      toast(r.status === 200 ? "נשמר" : "שגיאה");
+    };
+    const act = async (uid, action, extra) => {
+      const r = await API.post("/api/admin/nickname", { user_id: uid, action, ...extra });
+      toast(r.status === 200 ? "בוצע" : ((r.data && (r.data.error_he || r.data.error)) || "שגיאה"));
+      if (r.status === 200) vAdmin(App, view, "nicks");
+    };
+    body.onclick = async (e) => {
+      const btn = e.target.closest("button[data-act]"); if (!btn) return;
+      const uid = Number(btn.closest("tr").dataset.uid), a = btn.dataset.act;
+      if (a === "block") { if (confirm("לחסום את הכינוי? השחקן יתבקש לבחור חדש.")) act(uid, "block", { reason: prompt("סיבה (אופציונלי)") || "" }); }
+      else if (a === "unblock") act(uid, "unblock", {});
+      else if (a === "rename") { const n = prompt("כינוי חדש לשחקן:"); if (n) act(uid, "rename", { nickname: n }); }
+      else if (a === "msg") {
+        const t = prompt("כותרת ההודעה:"); if (!t) return; const b = prompt("תוכן:"); if (!b) return;
+        const r = await API.post("/api/admin/message", { user_id: uid, title: t, body: b });
+        toast(r.status === 200 ? "ההודעה נשלחה לשחקן" : "שגיאה");
+      }
+    };
+    document.getElementById("nk-q").oninput = async (e) => {
+      const r = await API.get("/api/admin/nicknames?q=" + encodeURIComponent(e.target.value.trim()));
+      document.getElementById("nk-rows").innerHTML = draw((r.data || {}).nicknames || []);
     };
   } else if (tab === "mail") {
     body.innerHTML = '<p class="sub">טוען...</p>';
