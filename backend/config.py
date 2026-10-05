@@ -18,7 +18,7 @@ class Config:
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
     # Hard-coded site owner / full admin (per product spec).
-    ADMIN_EMAIL = "brigagame2026@gmail.com"
+    ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
 
     # Frontend origin(s) allowed to call the API (GitHub Pages URL + local dev).
     ALLOWED_ORIGINS = [

@@ -41,7 +41,7 @@ the global messages badge.
   per request with atomic SQL updates (no race conditions).
 - Rate limiting per endpoint bucket; security headers; CORS restricted to the
   configured frontend origin; no-store API responses.
-- Admin endpoints restricted to the hard-coded owner email (brigagame2026@gmail.com).
+- Admin endpoints restricted to the owner email (set as the ADMIN_EMAIL secret, never stored in the repo).
 - Legal: privacy.html + terms.html (Israeli Privacy Protection Law aware,
   virtual-currency no-monetary-value clause).
 

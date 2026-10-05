@@ -28,8 +28,7 @@ database_id = "6e304f1a-295a-4ac0-83c8-9af6145e18e5"
 #   GOOGLE_CLIENT_ID, SESSION_SIGNING_KEY
 [vars]
 FRONTEND_ORIGIN = "https://ubriga.github.io/brigagame"
-SERVER_VERSION = "56"
-ADMIN_EMAIL = "brigagame2026@gmail.com"
+SERVER_VERSION = "57"
 ALLOWED_ORIGINS = "https://brigagame.ubriga.workers.dev"
 
 # Fixed-cadence mail drip: Sun-Thu 07:17 UTC (10:17 Israel). Sends only approved campaigns.
