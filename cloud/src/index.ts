@@ -12,6 +12,7 @@ import { limited } from "./api/ratelimit.js";
 import { handleMatchApi } from "./api/matches.js";
 import { createAiMatch } from "./api/matchmaking.js";
 import { handleAdminApi } from "./api/admin.js";
+import { handleCourtyard } from "./api/courtyard.js";
 import { mailDripTick, ensureMailSchema, handleMailPublic, recordSignupOptIn, mailSettings, sendGameMail } from "./api/mail.js";
 import { getGuestCfg, createGuest, upgradeGuestIfPresent, sweepExpiredGuests } from "./api/guest.js";
 import { d1, getControls, getShabbatLockdown } from "./util.js";
@@ -522,6 +523,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     // Admin and match REST routes, then the economy/me module, then assets.
     const adminHandled = await handleAdminApi(env, request, path);
     if (adminHandled) return adminHandled;
+    const yardHandled = await handleCourtyard(env, request, path);
+    if (yardHandled) return yardHandled;
     const matchHandled = await handleMatchApi(env, request, path);
     if (matchHandled) return matchHandled;
     const handled = await handleApi(env, request, path, ctx);

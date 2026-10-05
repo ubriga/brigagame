@@ -123,6 +123,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       enabled: [null, null, "bool"], max_extra_cubes: [0, 24, "int"],
       build_minutes: [0.01, 10080, "float"], cube_price: [0, 100000, "int"], cube_hp: [1, 10000, "float"],
     },
+    courtyard: { enabled: [null, null, "bool"], persona_budget: [30, 300, "int"] },
     weapon_cooldowns: {
       standard: [0.5, 60, "float"], double_bomb: [0.5, 60, "float"],
       homing_missile: [0.5, 60, "float"], cluster_shell: [0.5, 60, "float"],

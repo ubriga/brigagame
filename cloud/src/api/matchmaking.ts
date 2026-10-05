@@ -9,6 +9,7 @@ import { currentUser } from "../auth.js";
 import { d1, getControls, userMods } from "../util.js";
 import { newState, cooldownsFromControls } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
+import { personaToProfile, DEFAULT_PERSONA, type Persona } from "../game/persona.js";
 import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
 import { getGuestCfg } from "./guest.js";
@@ -267,6 +268,43 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string): Promi
   await stub.fetch("https://do/init", {
     method: "POST",
     body: JSON.stringify({ id, mode: "ai", status: "active", p1: Number(user.id), p2: null, p2_ai: true, state, version: 1 }),
+  });
+  return { ok: true, match_id: id };
+}
+
+/** Courtyard defense: the attacker fights the owner's tower, skins and coating, steered by the owner's persona.
+ * Practice mode (state.courtyard.practice) is unranked: it reuses the "easy" practice rule in finalize. */
+export async function createCourtyardMatch(env: Env, attacker: any, ownerId: number, practice: boolean): Promise<AiMatchResult> {
+  const controls = await getControls(env);
+  const row: any = await env.DB.prepare(
+    "SELECT aggression, accuracy, boldness FROM user_persona WHERE user_id = ?").bind(ownerId).first();
+  const persona: Persona = row ? { aggression: Number(row.aggression), accuracy: Number(row.accuracy), boldness: Number(row.boldness) } : DEFAULT_PERSONA;
+  const nick: any = await env.DB.prepare(
+    "SELECT nickname FROM user_nicknames WHERE user_id = ? AND status = 'ok'").bind(ownerId).first();
+  const id = newMatchId();
+  const state = newState(await userMods(env, Number(attacker.id)), await userMods(env, ownerId));
+  state.cooldowns = cooldownsFromControls(controls);
+  state.ai_profile = personaToProfile(controls, persona);
+  state.ai_difficulty = practice ? "easy" : "ranked";
+  state.ai_tier = "courtyard";
+  state.ai_rank_level = Number(rankPayload(Number(attacker.rank_points ?? 0)).level);
+  state.courtyard = { owner_id: ownerId, nickname: nick ? String(nick.nickname) : "", practice, persona };
+  state.ready = { p1: false, p2: true };
+  state.bot_controls = controls.bot_system;
+  state.bot_ammo = {
+    double_bomb: Number(state.ai_profile.double_ammo ?? 0),
+    homing_missile: Number(state.ai_profile.homing_ammo ?? 0),
+    cluster_shell: Number(state.ai_profile.cluster_ammo ?? 0),
+  };
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "INSERT INTO matches (id, mode, status, p1, p2_ai, state, version, created_at, updated_at)"
+    + " VALUES (?, 'ai', 'active', ?, 1, ?, 1, ?, ?)")
+    .bind(id, Number(attacker.id), JSON.stringify(state), now, now).run();
+  const stub = env.MATCH_ROOM.get(env.MATCH_ROOM.idFromName(id));
+  await stub.fetch("https://do/init", {
+    method: "POST",
+    body: JSON.stringify({ id, mode: "ai", status: "active", p1: Number(attacker.id), p2: null, p2_ai: true, state, version: 1 }),
   });
   return { ok: true, match_id: id };
 }

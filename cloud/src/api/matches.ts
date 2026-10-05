@@ -73,7 +73,7 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
         : { id: uid, name: "שחקן לשעבר", picture: "", rating: null, rank: null, idf_rank: null };
     } else if (side === "p2" && m.p2_ai) {
       const botRank = state.ai_rank_level ? rankForLevel(Number(state.ai_rank_level)) : null;
-      players[side] = { id: null, name: "OrelAI Bot", picture: "", rating: null,
+      players[side] = { id: null, name: state.courtyard ? `חצר של ${state.courtyard.nickname || "שחקן"}` : "OrelAI Bot", picture: "", rating: null,
         rank: botRank ? botRank.abbr_he : "AI", idf_rank: botRank };
     }
   }

@@ -2154,6 +2154,10 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "cube_price": 180,
         "cube_hp": 18
     },
+    "courtyard": {
+        "enabled": true,
+        "persona_budget": 180
+    },
     "weapon_cooldowns": {
         "standard": 4,
         "double_bomb": 5,
