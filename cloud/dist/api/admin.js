@@ -275,6 +275,96 @@ export async function handleAdminApi(env, request, path) {
         await audit(env, request, Number(u.id), "admin.streak_restore", "user", uid, { restored, reward });
         return json({ ok: true, streak: restored, reward });
     }
+    // GET /api/admin/nicknames?q=  |  POST /api/admin/nickname {user_id, action: block|unblock|rename, nickname?, reason?}
+    // GET|POST /api/admin/nickname-config {change_price, blocked_words[]}
+    if (path === "/api/admin/nicknames" && method === "GET") {
+        const q = `%${(new URL(request.url).searchParams.get("q") ?? "").trim()}%`;
+        const rows = await db.prepare("SELECT u.id, u.name AS account_name, u.is_guest, n.nickname, n.status, n.changes, n.updated_at"
+            + " FROM users u LEFT JOIN user_nicknames n ON n.user_id = u.id"
+            + " WHERE (n.nickname LIKE ? OR u.name LIKE ? OR ? = '%%') AND u.is_guest = 0 ORDER BY u.id DESC LIMIT 200")
+            .bind(q, q, q).all();
+        return json({ nicknames: rows.results });
+    }
+    if (path === "/api/admin/nickname" && method === "POST") {
+        const { validateNick, normalizeNick } = await import("../nickname.js");
+        const body = await request.json().catch(() => ({}));
+        const uid = Number(body.user_id);
+        const action = String(body.action ?? "");
+        const cur = await db.prepare("SELECT * FROM user_nicknames WHERE user_id = ?").bind(uid).first();
+        if (!Number.isInteger(uid) || uid < 1)
+            return json({ error: "bad_user" }, 400);
+        if (action === "block") {
+            if (!cur)
+                return json({ error: "no_nickname" }, 404);
+            await db.prepare("UPDATE user_nicknames SET status = 'blocked', updated_at = ? WHERE user_id = ?").bind(nowIso(), uid).run();
+            await db.prepare("INSERT OR REPLACE INTO nickname_blocked (norm, reason, created_at) VALUES (?,?,?)")
+                .bind(cur.nickname_norm, String(body.reason ?? "").slice(0, 200), nowIso()).run();
+            await db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
+                .bind(uid, "הכינוי שלך הוסר", "הכינוי שבחרת לא מתאים למשחק. בחר כינוי חדש - הבחירה הזו חינם.", nowIso()).run();
+            await audit(env, request, Number(u.id), "admin.nickname_block", "user", uid, { nickname: cur.nickname });
+            return json({ ok: true });
+        }
+        if (action === "unblock") {
+            if (!cur)
+                return json({ error: "no_nickname" }, 404);
+            await db.prepare("DELETE FROM nickname_blocked WHERE norm = ?").bind(cur.nickname_norm).run();
+            await db.prepare("UPDATE user_nicknames SET status = 'ok', updated_at = ? WHERE user_id = ?").bind(nowIso(), uid).run();
+            await audit(env, request, Number(u.id), "admin.nickname_unblock", "user", uid, {});
+            return json({ ok: true });
+        }
+        if (action === "rename") {
+            const v = validateNick(String(body.nickname ?? ""));
+            if (!v.ok && v.error !== "nick_reserved")
+                return json({ error: v.error, error_he: v.error_he }, 400);
+            const nick = v.ok ? v.nickname : String(body.nickname ?? "").trim().slice(0, 16);
+            const norm = v.ok ? v.norm : normalizeNick(nick);
+            try {
+                if (cur)
+                    await db.prepare("UPDATE user_nicknames SET nickname = ?, nickname_norm = ?, status = 'ok', updated_at = ? WHERE user_id = ?").bind(nick, norm, nowIso(), uid).run();
+                else
+                    await db.prepare("INSERT INTO user_nicknames (user_id, nickname, nickname_norm, status, changes, created_at, updated_at) VALUES (?,?,?,'ok',0,?,?)").bind(uid, nick, norm, nowIso(), nowIso()).run();
+            }
+            catch {
+                return json({ error: "nick_taken", error_he: "הכינוי תפוס." }, 409);
+            }
+            await audit(env, request, Number(u.id), "admin.nickname_rename", "user", uid, { nickname: nick });
+            return json({ ok: true, nickname: nick });
+        }
+        return json({ error: "bad_action" }, 400);
+    }
+    if (path === "/api/admin/nickname-config" && method === "GET") {
+        const r = await db.prepare("SELECT value FROM settings WHERE key = 'nickname_cfg'").first();
+        let d = {};
+        try {
+            d = JSON.parse(String(r?.value ?? "{}"));
+        }
+        catch { /* defaults */ }
+        return json({ change_price: Number(d.change_price ?? 100), blocked_words: d.blocked_words ?? [] });
+    }
+    if (path === "/api/admin/nickname-config" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const price = Math.max(0, Math.min(100000, Math.trunc(Number(body.change_price ?? 100))));
+        const words = (Array.isArray(body.blocked_words) ? body.blocked_words : []).map((w) => String(w).trim().slice(0, 30)).filter(Boolean).slice(0, 500);
+        await db.prepare("INSERT INTO settings (key, value) VALUES ('nickname_cfg', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+            .bind(JSON.stringify({ change_price: price, blocked_words: words })).run();
+        await audit(env, request, Number(u.id), "admin.nickname_config", "", "", { price, words: words.length });
+        return json({ ok: true, change_price: price, blocked_words: words });
+    }
+    // POST /api/admin/message {user_id, title, body}: private in-game message to one player (not email).
+    if (path === "/api/admin/message" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const uid = Number(body.user_id);
+        const title = String(body.title ?? "").trim().slice(0, 120);
+        const text = String(body.body ?? "").trim().slice(0, 2000);
+        if (!Number.isInteger(uid) || uid < 1 || !title || !text)
+            return json({ error: "missing_fields" }, 400);
+        const row = await db.prepare("SELECT id FROM users WHERE id = ?").bind(uid).first();
+        if (!row)
+            return json({ error: "not_found" }, 404);
+        await db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)").bind(uid, title, text, nowIso()).run();
+        await audit(env, request, Number(u.id), "admin.message_user", "user", uid, { title });
+        return json({ ok: true });
+    }
     // POST /api/admin/broadcast
     if (path === "/api/admin/broadcast" && method === "POST") {
         const body = await request.json().catch(() => ({}));

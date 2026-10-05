@@ -4,6 +4,7 @@
  * Port of app.py match_state / match_ready / match_leave. The MatchRoom DO
  * owns live state; D1 holds the checkpoint + event journal.
  */
+import { shownName } from "../nickname.js";
 import { currentUser } from "../auth.js";
 import { handleMatchmaking, sweepStaleMatches, offerToPresentPlayer, nowIso } from "./matchmaking.js";
 import { limited } from "./ratelimit.js";
@@ -53,7 +54,7 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
   // Latency: events, both player lookups and the catalog are independent.
   const userQ = (uid: any) => uid != null
     ? env.DB.prepare(
-        "SELECT id, name, picture, rating, wins, rank_points FROM users WHERE id = ?").bind(uid).first()
+        "SELECT id, name, is_guest, picture, (SELECT nickname FROM user_nicknames WHERE user_id = users.id AND status = 'ok') AS nick, rating, wins, rank_points FROM users WHERE id = ?").bind(uid).first()
     : null;
   const [rows, u1, u2, catalog, controls]: any[] = await Promise.all([
     env.DB.prepare(
@@ -67,7 +68,7 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
     const uid = m[side];
     if (uid != null) {
       players[side] = u
-        ? { id: u.id, name: u.name, picture: u.picture, rating: u.rating,
+        ? { id: u.id, name: shownName(u), picture: u.is_guest ? u.picture : "", rating: u.rating,
             rank: rankFor(Number(u.rating)), idf_rank: rankPayload(Number(u.rank_points)) }
         : { id: uid, name: "שחקן לשעבר", picture: "", rating: null, rank: null, idf_rank: null };
     } else if (side === "p2" && m.p2_ai) {

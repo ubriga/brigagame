@@ -14,6 +14,7 @@ import { addCoins } from "../game/finalize.js";
 import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStreakMilestone, ilDateDiff } from "../util.js";
 import { limited } from "./ratelimit.js";
 import { getGuestCfg, guestExpiresAt, guestExpired, sweepExpiredGuests } from "./guest.js";
+import { validateNick, shownName, DEFAULT_CHANGE_PRICE } from "../nickname.js";
 import type { Env } from "../do/MatchRoom";
 
 
@@ -49,9 +50,29 @@ async function getMaintenance(env: Env): Promise<{ on: boolean; message: string 
   } catch { return { on: false, message: "" }; }
 }
 
+
+const NICK_SQL = (col: string) => `(SELECT nickname FROM user_nicknames WHERE user_id = ${col} AND status = 'ok')`;
+async function nickAuto(env: Env, uid: number): Promise<boolean> {
+  const r: any = await env.DB.prepare("SELECT auto FROM user_nicknames WHERE user_id = ? AND status = 'ok'").bind(uid).first();
+  return !!r && Number(r.auto) === 1;
+}
+async function nickOf(env: Env, uid: number): Promise<string> {
+  const r: any = await env.DB.prepare("SELECT nickname FROM user_nicknames WHERE user_id = ? AND status = 'ok'").bind(uid).first();
+  return r ? String(r.nickname) : "";
+}
+async function nickCfg(env: Env): Promise<{ change_price: number; blocked_words: string[] }> {
+  const r: any = await env.DB.prepare("SELECT value FROM settings WHERE key = 'nickname_cfg'").first();
+  try {
+    const d = JSON.parse(String(r?.value ?? "{}"));
+    return { change_price: Math.max(0, Math.min(100000, Math.trunc(Number(d.change_price ?? DEFAULT_CHANGE_PRICE)))),
+             blocked_words: Array.isArray(d.blocked_words) ? d.blocked_words.map(String).slice(0, 500) : [] };
+  } catch { return { change_price: DEFAULT_CHANGE_PRICE, blocked_words: [] }; }
+}
+
 function publicUser(u: any, env: Env) {
   return {
-    id: u.id, name: u.name, picture: u.picture, coins: u.coins, rating: u.rating,
+    id: u.id, name: shownName(u), nickname: u.nick ?? "", nickname_auto: !!u.nick_auto, needs_nickname: !u.is_guest && !u.nick,
+    picture: u.is_guest ? u.picture : "", coins: u.coins, rating: u.rating,
     rank: rankFor(Number(u.rating)),
     idf_rank: rankPayload(Number(u.rank_points ?? 0)),
     wins: u.wins, losses: u.losses, matches_played: u.matches_played,
@@ -238,7 +259,11 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       expansionPayload(env, Number(u.id)),
     ]);
     const fbCtl = controls.bot_fallback ?? {};
+    u.nick = await nickOf(env, Number(u.id));
+    u.nick_auto = u.nick ? await nickAuto(env, Number(u.id)) : false;
+    const nCfg = await nickCfg(env);
     return json({
+      nickname_cfg: { change_price: nCfg.change_price, first_free: true },
       user: publicUser(u, env), server_version: env.SERVER_VERSION,
       bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
       maintenance, inventory: inv,
@@ -289,7 +314,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
     const ctl = (await getControls(env) as any).invite_system ?? {};
     if (ctl.enabled !== true) return json({ error: "invite_disabled", valid: false }, 403);
     const row: any = await env.DB.prepare(
-      "SELECT i.id, i.claimed_by, u.name AS inviter_name FROM invites i"
+      "SELECT i.id, i.claimed_by, COALESCE("+NICK_SQL("u.id")+", 'שחקן') AS inviter_name FROM invites i"
       + " JOIN users u ON u.id = i.inviter_id WHERE i.code = ?")
       .bind(invitePeek[1]).first();
     if (!row || row.claimed_by) return json({ valid: false });
@@ -322,7 +347,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       .bind(code, Number(u.id), nowIso()).run();
     await audit(env, request, Number(u.id), "invite.create", "invite", code);
     return json({ ok: true, code,
-      inviter_name: String(u.name ?? ""),
+      inviter_name: (await nickOf(env, Number(u.id))) || "שחקן",
       invite_text: String(ctl.invite_text ?? "") });
   }
 
@@ -341,7 +366,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       error_he: "הפעולה זמינה לשחקנים רשומים. נרשמים בחינם ושומרים את כל ההתקדמות." }, 403);
 
     const inv: any = await env.DB.prepare(
-      "SELECT i.*, u.name AS inviter_name FROM invites i"
+      "SELECT i.*, COALESCE(" + NICK_SQL("u.id") + ", 'שחקן') AS inviter_name FROM invites i"
       + " JOIN users u ON u.id = i.inviter_id WHERE i.code = ?").bind(code).first();
     if (!inv) return json({ error: "invite_invalid", error_he: "קישור ההזמנה לא תקף." }, 404);
     if (Number(inv.inviter_id) === Number(u.id))
@@ -366,7 +391,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       "INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
       .bind(Number(inv.inviter_id),
         `תג חדש: ${tagName}! 🎖️`,
-        `${String(u.name ?? "שחקן")} נכנס דרך ההזמנה שלך - קיבלת את התג '${tagName}'. אפשר לראות אותו בעמוד התגים.`,
+        `${(await nickOf(env, Number(u.id))) || "שחקן"} נכנס דרך ההזמנה שלך - קיבלת את התג '${tagName}'. אפשר לראות אותו בעמוד התגים.`,
         nowIso()).run();
     await audit(env, request, Number(u.id), "invite.claim", "invite", code,
       { inviter_id: Number(inv.inviter_id), tag: tagName });
@@ -779,18 +804,104 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
     return json({ ok: true, streak: newStreak, amount, coins: Number(after.coins) });
   }
 
+  // GET /api/nickname/check?n=...
+  if (path === "/api/nickname/check" && method === "GET") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "כינוי זמין לשחקנים רשומים." }, 403);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
+    const cfg = await nickCfg(env);
+    const v = validateNick(new URL(request.url).searchParams.get("n") ?? "", cfg.blocked_words);
+    if (!v.ok) return json({ ok: false, error: v.error, error_he: v.error_he });
+    const taken: any = await env.DB.prepare(
+      "SELECT user_id FROM user_nicknames WHERE nickname_norm = ?").bind(v.norm).first();
+    const banned: any = await env.DB.prepare("SELECT norm FROM nickname_blocked WHERE norm = ?").bind(v.norm).first();
+    if ((taken && Number(taken.user_id) !== Number(u.id)) || banned)
+      return json({ ok: false, error: "nick_taken", error_he: "הכינוי תפוס. בחר כינוי אחר." });
+    return json({ ok: true, nickname: v.nickname });
+  }
+
+  // POST /api/nickname {nickname}: first choice is free, later changes cost coins.
+  if (path === "/api/nickname" && method === "POST") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "כינוי זמין לשחקנים רשומים." }, 403);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
+    const body: any = await request.json().catch(() => ({}));
+    const cfg = await nickCfg(env);
+    const v = validateNick(String(body.nickname ?? ""), cfg.blocked_words);
+    if (!v.ok) return json({ error: v.error, error_he: v.error_he }, 400);
+    const uid = Number(u.id);
+    const banned: any = await env.DB.prepare("SELECT norm FROM nickname_blocked WHERE norm = ?").bind(v.norm).first();
+    if (banned) return json({ error: "nick_taken", error_he: "הכינוי תפוס. בחר כינוי אחר." }, 409);
+    const cur: any = await env.DB.prepare("SELECT status, nickname_norm, changes, auto FROM user_nicknames WHERE user_id = ?").bind(uid).first();
+    const hasOk = !!cur && cur.status === "ok";
+    if (hasOk && cur.nickname_norm === v.norm) return json({ ok: true, nickname: v.nickname, coins: Number(u.coins), charged: 0 });
+    const price = hasOk && Number(cur.auto) !== 1 ? cfg.change_price : 0;   // first self-chosen set (also after auto default or admin block) is free
+    if (price > 0) {
+      const dec = await env.DB.prepare("UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?")
+        .bind(price, uid, price).run();
+      if (Number((dec as any).meta?.changes ?? 0) !== 1)
+        return json({ error: "no_coins", error_he: `שינוי כינוי עולה ${price} מטבעות.` }, 400);
+    }
+    try {
+      if (cur) {
+        await env.DB.prepare("UPDATE user_nicknames SET nickname = ?, nickname_norm = ?, status = 'ok', auto = 0, changes = changes + ?, updated_at = ? WHERE user_id = ?")
+          .bind(v.nickname, v.norm, price > 0 ? 1 : 0, nowIso(), uid).run();
+      } else {
+        await env.DB.prepare("INSERT INTO user_nicknames (user_id, nickname, nickname_norm, status, changes, auto, created_at, updated_at) VALUES (?,?,?,'ok',0,0,?,?)")
+          .bind(uid, v.nickname, v.norm, nowIso(), nowIso()).run();
+      }
+    } catch (e) {
+      if (price > 0) await env.DB.prepare("UPDATE users SET coins = coins + ? WHERE id = ?").bind(price, uid).run();
+      return json({ error: "nick_taken", error_he: "הכינוי תפוס. בחר כינוי אחר." }, 409);
+    }
+    if (price > 0) await env.DB.prepare("INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)")
+      .bind(uid, -price, "nickname_change", v.norm.slice(0, 40), nowIso()).run();
+    await audit(env, request, uid, "user.nickname_set", "user", uid, { nickname: v.nickname, charged: price });
+    const after: any = await env.DB.prepare("SELECT coins FROM users WHERE id = ?").bind(uid).first();
+    return json({ ok: true, nickname: v.nickname, charged: price, coins: Number(after.coins) });
+  }
+
+  // POST /api/nickname/auto: player skips choosing; the system assigns a neutral unique default.
+  if (path === "/api/nickname/auto" && method === "POST") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    if (u.is_guest) return json({ error: "guest_forbidden", error_he: "כינוי זמין לשחקנים רשומים." }, 403);
+    const rl = await limited(env, request, "mutation", u);
+    if (rl) return rl;
+    const uid = Number(u.id);
+    const cur: any = await env.DB.prepare("SELECT nickname FROM user_nicknames WHERE user_id = ? AND status = 'ok'").bind(uid).first();
+    if (cur) return json({ ok: true, nickname: String(cur.nickname), auto: await nickAuto(env, uid) });
+    const base = ["לוחם", "תותחן", "צלף", "מגן", "נועז", "חכם", "זריז", "אמיץ"];
+    for (let i = 0; i < 8; i++) {
+      const nick = `${base[Math.floor(Math.random() * base.length)]}${1000 + Math.floor(Math.random() * 9000)}`;
+      const norm = nick.toLowerCase().replace(/[\s_.\-]+/g, "");
+      try {
+        const had: any = await env.DB.prepare("SELECT user_id FROM user_nicknames WHERE user_id = ?").bind(uid).first();
+        if (had) await env.DB.prepare("UPDATE user_nicknames SET nickname = ?, nickname_norm = ?, status = 'ok', auto = 1, updated_at = ? WHERE user_id = ?").bind(nick, norm, nowIso(), uid).run();
+        else await env.DB.prepare("INSERT INTO user_nicknames (user_id, nickname, nickname_norm, status, changes, auto, created_at, updated_at) VALUES (?,?,?,'ok',0,1,?,?)").bind(uid, nick, norm, nowIso(), nowIso()).run();
+        await audit(env, request, uid, "user.nickname_auto", "user", uid, { nickname: nick });
+        return json({ ok: true, nickname: nick, auto: true });
+      } catch { /* collision: retry */ }
+    }
+    return json({ error: "nick_busy", error_he: "נסה שוב." }, 503);
+  }
+
   // GET /api/leaderboard
   if (path === "/api/leaderboard" && method === "GET") {
     const u = await needAuth();
     if (!u) return json({ error: "unauthorized" }, 401);
     if (u.is_guest) return json({ error: "guest_forbidden", error_he: "הטבלה זמינה לשחקנים רשומים." }, 403);
     const rows = await env.DB.prepare(
-      "SELECT id, name, picture, rating, wins, losses, rank_points FROM users"
+      "SELECT id, name, is_guest, " + NICK_SQL("users.id") + " AS nick, rating, wins, losses, rank_points FROM users"
       + " WHERE matches_played > 0 AND is_guest = 0"
       + " ORDER BY rank_points DESC, wins DESC, rating DESC, id ASC LIMIT 100").all();
     return json({
       leaderboard: (rows.results as any[]).map((r) => ({
-        id: r.id, name: r.name, picture: r.picture, rating: r.rating,
+        id: r.id, name: shownName(r), picture: "", rating: r.rating,
         rank: rankFor(Number(r.rating)),
         idf_rank: rankPayload(Number(r.rank_points)),
         rank_points: Math.round(Number(r.rank_points) * 10) / 10,
