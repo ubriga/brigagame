@@ -22,13 +22,16 @@
   .war-chip{background:rgba(255,255,255,.08);padding:6px 10px;border-radius:12px;font-weight:700}
   .war-wrap{display:grid;grid-template-columns:minmax(0,2fr) minmax(220px,1fr);gap:12px}
   @media (max-width:760px){.war-wrap{grid-template-columns:1fr}}
-  .war-map{overflow:auto;max-height:58vh;border-radius:12px;background:#361c0b;padding:6px}
+  .war-map{overflow:auto;border-radius:12px;background:#361c0b;padding:6px;max-width:100%;touch-action:pan-x pan-y pinch-zoom}
+  .war-zoom{display:flex;gap:6px;margin:0 0 8px}
+  .war-zoom button{min-width:44px}
   .war-grid{display:grid;gap:2px;direction:ltr}
-  .wt{display:flex;align-items:center;justify-content:center;aspect-ratio:1;min-width:30px;border:0;border-radius:6px;font-size:15px;line-height:1;padding:0;color:#fff;cursor:pointer;position:relative;opacity:.92}
+  .wt{display:flex;align-items:center;justify-content:center;aspect-ratio:1;min-width:0;width:var(--cs,8px);height:var(--cs,8px);border:0;border-radius:4px;font-size:calc(var(--cs,8px)*.5);overflow:hidden;line-height:1;padding:0;color:#fff;cursor:pointer;position:relative;opacity:.92}
   .wt.mine{outline:3px solid #ffd35c;opacity:1}
   .wt.enemy{outline:3px solid #e0556b}
   .wt.sel{outline:3px solid #fff;opacity:1}
   .wt .r{position:absolute;bottom:1px;left:2px;font-size:9px;font-weight:700}
+  .war-small .wt .r{display:none}
   .war-side .card{margin-bottom:10px}
   .war-leg{margin:4px 18px 8px 0;padding:0 0 0 0;list-style:none;line-height:1.7}
   .war-legend summary{cursor:pointer}
@@ -77,6 +80,29 @@
         <li>החומרים נצברים לבד גם כשאינך מחובר, עד ${cfg.accrual_cap_hours || 24} שעות. לכל אריח נוסף יש תחזוקה קטנה.</li>
         <li>הפסד בקרב מאבד רק את האריח. המטבעות, הדירוג וההיסטוריה נשארים.</li>
       </ul></details>`;
+    let zoom = 1;
+    const fit = (scroll) => {
+      const g = document.getElementById("war-grid"), m = document.getElementById("war-map");
+      if (!g || !m) return false;
+      const size = map.size, land = window.innerWidth > window.innerHeight;
+      const availH = land ? window.innerHeight - 64 : 100000;
+      const box = Math.min(m.parentElement.clientWidth, window.innerWidth - 24, availH) - 14;
+      const fitCs = Math.max(8, Math.floor((box - 2 * (size - 1)) / size));
+      const cs = Math.max(8, Math.round(fitCs * zoom));
+      g.style.setProperty("--cs", cs + "px");
+      g.classList.toggle("war-small", cs < 18);
+      m.style.maxHeight = zoom > 1 ? (land ? Math.max(200, availH) + "px" : "75vh") : "none";
+      if (scroll && land && zoom === 1) { const z = document.querySelector(".war-zoom"); if (z && z.scrollIntoView) z.scrollIntoView({ block: "start" }); }
+      return true;
+    };
+    const wireZoom = () => {
+      const set = z => () => { zoom = Math.max(1, Math.min(4, z === 0 ? 1 : zoom * z)); fit(); };
+      const a = document.getElementById("war-zin"), b = document.getElementById("war-zout"), c = document.getElementById("war-zfit");
+      if (a) a.onclick = set(1.4); if (b) b.onclick = set(1 / 1.4); if (c) c.onclick = set(0);
+      fit(!wireZoom.done); wireZoom.done = true;
+    };
+    if (!window.__warFit) { window.__warFit = () => { if (window.__warFitFn && !window.__warFitFn(true)) window.__warFitFn = null; }; window.addEventListener("resize", window.__warFit); window.addEventListener("orientationchange", () => setTimeout(window.__warFit, 250)); }
+    window.__warFitFn = fit;
     const draw = () => {
       const size = map.size;
       const grid = [];
@@ -94,7 +120,7 @@
           <span class="war-chip">🏴 אריחים: ${me.tiles.length}</span>
         </div>
         <div class="war-wrap">
-          <div class="war-map" id="war-map"><div class="war-grid" style="grid-template-columns:repeat(${size},minmax(30px,1fr))">${grid.join("")}</div></div>
+          <div><div class="war-zoom"><button class="btn small secondary" id="war-zin" aria-label="zoom in">➕</button><button class="btn small secondary" id="war-zout" aria-label="zoom out">➖</button><button class="btn small secondary" id="war-zfit">⤢</button></div><div class="war-map" id="war-map"><div class="war-grid" id="war-grid" style="grid-template-columns:repeat(${size},var(--cs,8px))">${grid.join("")}</div></div></div>
           <div class="war-side">
             ${econCard()}
             <div class="card" id="war-detail">${detail()}</div>
@@ -173,9 +199,10 @@
         const r = await API.post("/api/courtyard/practice");
         if (r.data && r.data.match_id) location.hash = "#/game/" + r.data.match_id; else toast(apiError(r, T("שגיאה")));
       };
+      wireZoom();
     };
     draw();
     const h = me.home && byXY.get(me.home.x + "," + me.home.y);
-    if (h) { const b = view.querySelector(`.wt[data-id="${h.id}"]`); if (b && b.scrollIntoView) b.scrollIntoView({ block: "center", inline: "center" }); }
+    if (h && zoom > 1) { const b = view.querySelector(`.wt[data-id="${h.id}"]`); if (b && b.scrollIntoView) b.scrollIntoView({ block: "center", inline: "center" }); }
   };
 })();
