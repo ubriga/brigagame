@@ -38,6 +38,36 @@ export const defaultRng = Math.random;
 export function towerDims(tower) {
     return [tower.length, tower.length ? tower[0].length : 0];
 }
+const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== undefined && v !== "" ? Number(v) : d);
+/** Admin-controlled scaling of the vertical obstacle motion by bot tier, tile rarity and tile kind.
+ * Depth multiplies only the sunk part (negative lift); speed multiplies the vertical speed. */
+export function scaleObstacleMotion(dyn, ctx) {
+    const d = dyn || {};
+    let depthM = 1, speedM = 1;
+    if (ctx?.difficulty) {
+        depthM *= num(d[`v_depth_${ctx.difficulty}`], 1);
+        speedM *= num(d[`v_speed_${ctx.difficulty}`], 1);
+    }
+    if (ctx?.rarity && ctx.rarity > 1) {
+        depthM *= Math.max(0, 1 + num(d.v_rarity_depth_pct, 0) / 100 * (ctx.rarity - 1));
+        speedM *= Math.max(0.1, 1 + num(d.v_rarity_speed_pct, 0) / 100 * (ctx.rarity - 1));
+    }
+    if (ctx?.kind) {
+        depthM *= Math.max(0, 1 + num(d[`v_kind_depth_pct_${ctx.kind}`], 0) / 100);
+        speedM *= Math.max(0.1, 1 + num(d[`v_kind_speed_pct_${ctx.kind}`], 0) / 100);
+    }
+    const lo = num(d.v_min_lift, 0), hi = num(d.v_max_lift, 90);
+    const minLift = Math.max(-OBSTACLE_H, lo < 0 ? lo * depthM : lo);
+    const maxLift = Math.max(minLift, Math.max(-OBSTACLE_H, hi < 0 ? hi * depthM : hi));
+    return { min_lift: Math.round(minLift * 10) / 10, max_lift: Math.round(maxLift * 10) / 10,
+        v_speed: Math.round(Math.max(1, num(d.v_speed, 14) * speedM) * 10) / 10 };
+}
+/** Re-scale an already created state's obstacle motion (called by match creation once difficulty/tile are known). */
+export function applyObstacleCtx(state, dyn, ctx) {
+    if (!state?.obstacle_motion)
+        return;
+    Object.assign(state.obstacle_motion, scaleObstacleMotion(dyn, ctx));
+}
 export function obstacleAt(state, atTime) {
     const ob = { ...(state.obstacle || {}) };
     const motion = state.obstacle_motion || {};
@@ -59,7 +89,8 @@ export function obstacleAt(state, atTime) {
     const progress = warning || travel === 0 ? 0 : Math.min(1, (local - dwell) / travel);
     const x = reverse ? hi - progress * distance : lo + progress * distance;
     // Vertical raise/lower: same epoch, continuous ping-pong, no dwell. The
-    // whole box (and press render) floats up by `lift`; 0 = resting on ground.
+    // whole box (and press render) floats up by `lift`; 0 = resting on ground,
+    // negative = sunk below the ground line (only the part above the ground blocks shots).
     const vEnabled = !!motion.v_enabled;
     const vLo = Number(motion.min_lift ?? 0), vHi = Number(motion.max_lift ?? 0);
     const vDist = Math.max(0, vHi - vLo);
@@ -71,7 +102,9 @@ export function obstacleAt(state, atTime) {
         const vPhase = (((t - epoch) % vCycle) + vCycle) % vCycle;
         const vReverse = vPhase >= vTravel;
         const vProgress = vTravel === 0 ? 0 : Math.min(1, (vReverse ? vPhase - vTravel : vPhase) / vTravel);
-        lift = vReverse ? vHi - vProgress * vDist : vLo + vProgress * vDist;
+        // Smooth cosine ease: the press glides, slows at both ends, no sudden turn.
+        const eased = (1 - Math.cos(Math.PI * vProgress)) / 2;
+        lift = vReverse ? vHi - eased * vDist : vLo + eased * vDist;
     }
     lift = Math.round(lift * 100) / 100;
     const restY = Number(ob.y ?? (GROUND_Y - Number(ob.h ?? OBSTACLE_H)));
@@ -125,8 +158,7 @@ export function newState(p1Mods, p2Mods, rng = defaultRng, now) {
         obstacle: { x: obstacleX, y: GROUND_Y - OBSTACLE_H, w: OBSTACLE_W, h: OBSTACLE_H },
         obstacle_motion: { enabled: !!dyn.enabled, min_x: gapStart, max_x: Math.max(gapStart, gapEnd),
             speed: Number(dyn.speed ?? 20), warning_seconds: Number(dyn.warning_seconds ?? 1.5), epoch: t,
-            v_enabled: !!dyn.v_enabled, min_lift: Number(dyn.v_min_lift ?? 0),
-            max_lift: Number(dyn.v_max_lift ?? 90), v_speed: Number(dyn.v_speed ?? 14) },
+            v_enabled: !!dyn.v_enabled, ...scaleObstacleMotion(dyn) },
         towers: { p1: newTower(p1Mods.hp ?? 0, p1Mods.extra_cubes ?? 0, p1CubeHp),
             p2: newTower(p2Mods.hp ?? 0, p2Mods.extra_cubes ?? 0, p2CubeHp) },
         mods: { p1: p1Mods, p2: p2Mods },

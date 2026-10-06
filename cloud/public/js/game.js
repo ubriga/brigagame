@@ -277,8 +277,8 @@ const GameView = {
       const vt=vDist/Math.max(1,m.v_speed??14), vc=Math.max(.001,2*vt);
       let vp=((now-m.epoch)%vc+vc)%vc;
       const vr=vp>=vt; if(vr) vp-=vt;
-      const vpr=!vt?0:Math.min(1,vp/vt);
-      lift=vr?m.max_lift-vpr*vDist:m.min_lift+vpr*vDist;
+      const vpr=!vt?0:Math.min(1,vp/vt), ez=(1-Math.cos(Math.PI*vpr))/2;   // same cosine ease as the server
+      lift=vr?m.max_lift-ez*vDist:m.min_lift+ez*vDist;
     }
     const restY=ob.y+(ob.lift||0);
     return {...ob,x:reverse?m.max_x-progress*dist:m.min_x+progress*dist,
@@ -1012,6 +1012,7 @@ const GameView = {
     const ob = this.obstacleNow();
     if (ob && !r3dOn) {   // 3D mode draws the steam press instead; this box is the 2D fallback
       c.save();
+      c.beginPath(); c.rect(-20, 0, this.W + 40, this.GROUND); c.clip();   // a sunk press disappears into the ground
       if(ob.warning){c.shadowColor="#f59e0b";c.shadowBlur=10+7*Math.sin(now/120);}
       c.fillStyle = ob.warning ? "#6b4f32" : "#6b5433"; c.strokeStyle = "#1a130a"; c.lineWidth = 4;
       c.fillRect(ob.x, ob.y, ob.w, ob.h); c.strokeRect(ob.x, ob.y, ob.w, ob.h);

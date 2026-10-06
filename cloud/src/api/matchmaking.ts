@@ -7,7 +7,7 @@
  */
 import { currentUser } from "../auth.js";
 import { d1, getControls, userMods } from "../util.js";
-import { newState, cooldownsFromControls } from "../game/game_logic.js";
+import { newState, cooldownsFromControls, applyObstacleCtx } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { personaToProfile, DEFAULT_PERSONA, type Persona } from "../game/persona.js";
 import { cancelBattleForMatch } from "../game/territory.js";
@@ -188,6 +188,17 @@ export type AiMatchResult =
 
 /** Create an active match vs the bot for `user` (port of POST /api/matches/ai;
  * shared by the lobby AI button and the quick-match bot fallback). */
+/** Per-match obstacle scaling: bot tier + (for territory battles) the tile's rarity and kind. Admin-controlled. */
+async function scaleObstacle(env: Env, state: any, controls: any, difficulty?: string): Promise<void> {
+  const ctx: any = { difficulty };
+  const tid = Number(state?.territory?.tile_id);
+  if (tid) {
+    const t: any = await env.DB.prepare("SELECT kind, rarity FROM territory_tiles WHERE id = ?").bind(tid).first();
+    if (t) { ctx.kind = String(t.kind); ctx.rarity = Number(t.rarity); }
+  }
+  applyObstacleCtx(state, controls.dynamic_obstacle, ctx);
+}
+
 export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?: Record<string, unknown>): Promise<AiMatchResult> {
   // app.py parity: the client sends { difficulty }; the server privately
   // maps the tier to a bot rank at or above the player's rank.
@@ -225,6 +236,7 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?
   state.ai_tier = aiTier;
   state.ai_rank_level = aiRankLevel;
   if (extra) Object.assign(state, extra);
+  await scaleObstacle(env, state, controls, aiTier);
   // v23 item A (mirror): bot tower parity - scale the stock bot tower to
   // the tier's percentage of the player's tower max HP; mirror coating.
   const parity = (controls as any).bot_tower_parity ?? {};
@@ -294,6 +306,7 @@ export async function createCourtyardMatch(env: Env, attacker: any, ownerId: num
   state.courtyard = { owner_id: ownerId, nickname: nick ? String(nick.nickname) : "", practice, persona };
   state.ready = { p1: false, p2: true };
   if (extra) Object.assign(state, extra);
+  await scaleObstacle(env, state, controls);
   state.bot_controls = controls.bot_system;
   state.bot_ammo = {
     double_bomb: Number(state.ai_profile.double_ammo ?? 0),
@@ -533,6 +546,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     const state = newState(await userMods(env, Number(m.p1)), await userMods(env, uid));
     state.cooldowns = cooldownsFromControls(await getControls(env));
     if (m.state?.territory) state.territory = { ...m.state.territory, live: true };   // live territory defense keeps its battle link
+    if (state.territory) await scaleObstacle(env, state, await getControls(env));
     const cur = await env.DB.prepare(
       "UPDATE matches SET p2 = ?, status = 'active', state = ?,"
       + " version = version + 1, updated_at = ? WHERE id = ?"

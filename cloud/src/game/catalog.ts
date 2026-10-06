@@ -2227,8 +2227,13 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "warning_seconds": 1.5,
     "v_enabled": true,
     "v_speed": 14,
-    "v_min_lift": 0,
-    "v_max_lift": 90
+    "v_min_lift": -120,
+    "v_max_lift": 30,
+    "v_depth_easy": 1.3, "v_depth_medium": 1, "v_depth_hard": 0.8, "v_depth_ultra": 0.7, "v_depth_expert": 0.6,
+    "v_speed_easy": 0.8, "v_speed_medium": 1, "v_speed_hard": 1.2, "v_speed_ultra": 1.3, "v_speed_expert": 1.4,
+    "v_rarity_depth_pct": -10, "v_rarity_speed_pct": 10,
+    "v_kind_depth_pct_forest": 0, "v_kind_depth_pct_mine": 0, "v_kind_depth_pct_quarry": 0, "v_kind_depth_pct_plains": 0, "v_kind_depth_pct_fortress": -15,
+    "v_kind_speed_pct_forest": 0, "v_kind_speed_pct_mine": 0, "v_kind_speed_pct_quarry": 0, "v_kind_speed_pct_plains": 0, "v_kind_speed_pct_fortress": 10
   },
   "bot_system": {
     "enabled": true,

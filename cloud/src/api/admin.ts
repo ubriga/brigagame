@@ -141,8 +141,13 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     dynamic_obstacle: {
       enabled: [null, null, "bool"], speed: [1, 200, "float"], warning_seconds: [0, 10, "float"],
       v_enabled: [null, null, "bool"], v_speed: [1, 120, "float"],
-      v_min_lift: [0, 160, "float"], v_max_lift: [0, 200, "float"],
-    },
+      v_min_lift: [-184, 160, "float"], v_max_lift: [-184, 200, "float"],
+      ...Object.fromEntries(["easy", "medium", "hard", "ultra", "expert"].flatMap(t => [
+        [`v_depth_${t}`, [0, 3, "float"]], [`v_speed_${t}`, [0.1, 4, "float"]]])),
+      v_rarity_depth_pct: [-90, 200, "float"], v_rarity_speed_pct: [-90, 200, "float"],
+      ...Object.fromEntries(["forest", "mine", "quarry", "plains", "fortress"].flatMap(k => [
+        [`v_kind_depth_pct_${k}`, [-100, 300, "float"]], [`v_kind_speed_pct_${k}`, [-90, 300, "float"]]])),
+    } as Record<string, Spec>,
     bot_system: {
       enabled: [null, null, "bool"], special_weapons: [null, null, "bool"],
       double_bomb: [null, null, "bool"], homing_missile: [null, null, "bool"],
