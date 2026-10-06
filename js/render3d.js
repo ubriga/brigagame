@@ -630,6 +630,14 @@ const Render3D = {
         const frame = mdls.bg.pressFrame.scene.clone(true);
         frame.position.set(cx, 0, 0); sc.add(frame);
         const piston = mdls.bg.pressPiston.scene.clone(true);
+        // The press sinks below the ground line: clip everything under y=0 so only the part above ground shows.
+        const clipPlane = new T.Plane(new T.Vector3(0, 1, 0), 0);
+        for (const obj of [frame, piston]) obj.traverse(n => {
+          if (!n.material) return;
+          const mats = (Array.isArray(n.material) ? n.material : [n.material]).map(m => { const k = m.clone(); k.clippingPlanes = [clipPlane]; return k; });
+          n.material = Array.isArray(n.material) ? mats : mats[0];
+        });
+        if (Render3D._r) Render3D._r.localClippingEnabled = true;
         piston.position.set(cx, 2, 0); sc.add(piston);
         const lamp = new T.Sprite(new T.SpriteMaterial({
           map: Render3D._glowTex, color: 0xffb35c, transparent: true, opacity: 0.3,
@@ -686,9 +694,10 @@ const Render3D = {
       pr.piston.position.y = y + (pr._lift || 0);
       const holding = phase >= 0.35 && phase < 0.55;
       const warn = obL && obL.warning;
-      pr.lamp.material.opacity = (holding || warn) ? 0.55 + 0.35 * Math.sin(nowMs / 85) : 0.22;
+      const vis = Math.max(0, Math.min(1, ((pr._lift || 0) + 60) / 60));   // lamp and steam fade out as the press sinks
+      pr.lamp.material.opacity = ((holding || warn) ? 0.55 + 0.35 * Math.sin(nowMs / 85) : 0.22) * vis;
       if (pr.prevPhase < 0.63 && phase >= 0.63)   // slam landed → steam burst
-        for (const p of pr.puffs) { p.life = 1; p.sp.position.y = p.baseY ?? 178; }
+        for (const p of pr.puffs) { p.life = (pr._lift || 0) > -30 ? 1 : 0; p.sp.position.y = p.baseY ?? 178; }
       pr.prevPhase = phase;
       const dt2 = Math.min(0.25, Render3D._bgT2 ? (nowMs - Render3D._bgT2) / 1000 : 0.016);
       for (const p of pr.puffs) {
