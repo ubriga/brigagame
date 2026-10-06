@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
-import { ensureHome, settle, claimDailyGift, claimRefill, econStatus, giftAmount, cfgOf } from "../dist/game/territory.js";
+import { awardBotWin, ensureHome, settle, claimDailyGift, claimRefill, econStatus, giftAmount, cfgOf } from "../dist/game/territory.js";
 const sql = new DatabaseSync(":memory:");
 sql.exec("CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);INSERT INTO users VALUES(1,'a'),(2,'b');");
 const schema = fs.readFileSync(new URL("../schema.sql", import.meta.url), "utf8");
@@ -43,4 +43,21 @@ ok(a.wood + a.iron + a.stone > b.wood + b.iron + b.stone && a.wood <= 30 + 0, "s
 // switches
 ok((await claimDailyGift(db, 1, { territory: { gift_enabled: false } })).reason === "disabled", "gift switch");
 ok((await claimRefill(db, 1, { territory: { refill_enabled: false } })).reason === "disabled", "refill switch");
+// bot win rewards
+sql.exec("ALTER TABLE users ADD COLUMN is_guest INTEGER DEFAULT 0");
+sql.prepare("delete from user_econ").run();
+const big = { territory: { free_daily_cap: 1000 } };
+const rw = []; for (const t of ["easy","medium","hard","ultra","expert"]) { sql.prepare("delete from user_econ where user_id=1").run(); rw.push((await awardBotWin(db, 1, t, big))?.wood ?? 0); }
+ok(rw.join() === "0,6,10,15,20", "bot reward scales by tier: " + rw);
+sql.prepare("delete from user_econ where user_id=1").run();
+for (let i = 0; i < 10; i++) await awardBotWin(db, 1, "medium", big);
+ok((await awardBotWin(db, 1, "medium", big)) === null, "daily max wins (10) enforced");
+sql.prepare("delete from user_econ where user_id=1").run();
+ok((await awardBotWin(db, 1, "expert", { territory: { bot_reward_enabled: false } })) === null, "global off switch");
+sql.prepare("delete from user_econ where user_id=1").run();
+await awardBotWin(db, 1, "expert", {}); await awardBotWin(db, 1, "expert", {}); await awardBotWin(db, 1, "expert", {});
+const g4 = await awardBotWin(db, 1, "expert", {});
+ok(g4 === null, "total free cap 60 stops rewards (3x20)");
+sql.prepare("update users set is_guest=1 where id=2").run();
+ok((await awardBotWin(db, 2, "expert", big)) === null, "guest gets nothing");
 console.log(fails ? "FAILED " + fails : "ALL OK"); process.exit(fails ? 1 : 0);

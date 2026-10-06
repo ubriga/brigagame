@@ -19,6 +19,16 @@ const PANEL_CSS = `
 .cat-nav .chips button small{opacity:.7;margin-inline-start:4px}
 .cat-nav input[type=search]{width:100%;max-width:340px}
 .save-bar{position:sticky;bottom:0;z-index:6;background:var(--bg,#221309);padding:10px 0;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.1)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;align-items:start}
+.tile{background:var(--panel,#3a1f0d);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:0;overflow:hidden}
+.tile[open]{grid-column:1/-1}
+.tile > summary{cursor:pointer;list-style:none;padding:16px;display:flex;flex-direction:column;gap:6px;min-height:68px}
+.tile > summary::-webkit-details-marker{display:none}
+.tile > summary b{font-size:16px}
+.tile > summary .meta{font-size:12px;color:var(--muted)}
+.tile > summary .on{color:#8fd36b}.tile > summary .off{color:#d98a6a}
+.tile[open] > summary{border-bottom:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)}
+.tile > .card{padding:14px 16px 16px !important}
 .card.sub-card{border-inline-start:3px solid var(--accent)}
 .grid-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px}
 .grid-fields > .full{grid-column:1/-1}
@@ -328,15 +338,25 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         const T = c.territory || {};
         const nb = (f, l, mn, mx, st) => `<div><label>${l}</label><input type="number" min="${mn}" max="${mx}" step="${st}" value="${T[f]}" data-control="territory.${f}"></div>`;
         const cb = (f, l) => `<label class="full" style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="territory.${f}" ${T[f] ? "checked" : ""} style="width:auto">${l}</label>`;
-        return `<div class="card"><h2>🗺️ מלחמת טריטוריות - כללי בסיס</h2><p class="sub">מפה, הפקה, תקיפות והגנה. שינוי חל מיידית על כל השחקנים (הגדרות המפה עצמה חלות רק על מפה חדשה).</p><div class="grid-fields">
+        return `<div class="card"><h2>🗺️ טריטוריות: מפה והפקה</h2><p class="sub">גודל המפה חל רק על מפה חדשה; שאר הערכים חלים מיידית.</p><div class="grid-fields">
           ${cb("enabled", "המלחמה פעילה")}
           ${nb("map_size", "גודל מפה (צלעות)", 8, 60, 1)}${nb("base_yield_per_hour", "הפקה בסיסית לשעה לאריח", 0, 1000, 0.5)}
           ${nb("store_cap", "תקרת אגירה לכל חומר", 10, 100000, 10)}${nb("accrual_cap_hours", "שעות צבירה מרביות כשלא מחובר", 1, 168, 1)}
-          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("attack_cost_per_rarity", "עלות תקיפה לכל דרגת נדירות", 0, 10000, 1)}
-          ${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}${nb("daily_attack_cap", "תקיפות מרביות ביום", 0, 100, 1)}
+          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}
+        </div></div>
+        <div class="card"><h2>⚔️ טריטוריות: תקיפה והגנה</h2><div class="grid-fields">
+          ${nb("attack_cost_per_rarity", "עלות תקיפה לכל דרגת נדירות", 0, 10000, 1)}${nb("daily_attack_cap", "תקיפות מרביות ביום", 0, 100, 1)}
           ${nb("grace_hours", "שעות הגנה אחרי כיבוש", 0, 336, 1)}${nb("ongoing_battle_minutes", "דקות לקרב פתוח", 1, 120, 1)}
           ${cb("live_defense", "הגנה חיה (המגן מתבקש להצטרף)")}${nb("live_offer_seconds", "שניות להצעת הגנה חיה", 10, 120, 5)}
+        </div></div>
+        <div class="card"><h2>🏚️ טריטוריות: מרד על אריחים נטושים</h2><div class="grid-fields">
           ${cb("rebellion_enabled", "מרד על אריחים של שחקנים לא פעילים")}${nb("rebellion_inactive_days", "ימי אי-פעילות עד מרד", 1, 365, 1)}${nb("rebellion_max_per_run", "מרדות מרביים בכל ריצה", 1, 500, 1)}
+        </div></div>
+        <div class="card sub-card"><h2>🏆 פרסי ניצחון על בוטים (חומרים)</h2><p class="sub">שחקן רשום שמנצח בוט במשחק רגיל מקבל חומרים מכל סוג, לפי רמת הבוט. לא חל על קרבות טריטוריה. נספר בתקרה היומית הכוללת ובמכסת הניצחונות היומית.</p><div class="grid-fields">
+          ${cb("bot_reward_enabled", "פרסי ניצחון על בוטים פעילים (מתג כללי)")}
+          ${nb("bot_reward_easy", "בוט קל (מכל חומר)", 0, 1000, 1)}${nb("bot_reward_medium", "בוט בינוני", 0, 1000, 1)}${nb("bot_reward_hard", "בוט קשה", 0, 1000, 1)}
+          ${nb("bot_reward_ultra", "בוט אולטרה", 0, 1000, 1)}${nb("bot_reward_expert", "בוט מומחה", 0, 1000, 1)}
+          ${nb("bot_reward_max_wins_per_day", "ניצחונות מתוגמלים מרביים ביום", 1, 1000, 1)}
         </div></div>
         <div class="card sub-card"><h2>🎁 מתנה יומית (חומרים)</h2><p class="sub">כפתור "אסוף" בלוח המלחמה, פעם ביום (לפי תאריך ישראל). יום 1 נותן את הסכום הבסיסי, ועולה בהדרגה עד הסכום המרבי ביום האחרון של הרצף ונשאר שם. יום שמדלגים עליו מאפס את הרצף. סכום המתנה ניתן מכל חומר.</p><div class="grid-fields">
           ${cb("gift_enabled", "מתנה יומית פעילה")}
@@ -371,16 +391,39 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const CATS = [
         ["game", "⚔️ משחק וקרב", ["צינון נשקים", "מכשול דינמי", "חבילת גרפיקה", "WebGL", "הצעת מעבר למשחק נגד בוט", "מנוע הבוט החכם", "כוונון לפי רמה"]],
         ["eco", "💰 כלכלה והתקדמות", ["קצב התקדמות XP", "כללי דירוג", "רצף התחברות יומי", "סקינים מושקעים", "ציפויי מגדל", "הרחבת מגדל"]],
-        ["war", "🗺️ טריטוריות", ["מלחמת טריטוריות", "מתנה יומית", "רשת ביטחון", "תקרה יומית כוללת"]],
+        ["war", "🗺️ טריטוריות", ["טריטוריות:", "מתנה יומית", "רשת ביטחון", "תקרה יומית כוללת", "פרסי ניצחון"]],
         ["people", "👥 שחקנים וכניסה", ["דרכי התחברות", "הזמנת חבר", "מצב אורח", "הודעת הרשמה מתוזמנת", "טופס יצירת קשר"]],
         ["sys", "🔒 מערכת", ["מסך שבת"]],
       ];
-      const cards = [...body.children].filter(el => el.classList.contains("card"));
-      for (const el of cards) {
-        const h = (el.querySelector("h2")?.textContent || "").trim();
-        const hit = CATS.find(([, , keys]) => keys.some(k => h.includes(k)));
-        el.dataset.cat = hit ? hit[0] : "sys";
-      }
+      const rawCards = [...body.children].filter(el => el.classList.contains("card"));
+      const grid = document.createElement("div"); grid.className = "tiles";
+      body.insertBefore(grid, rawCards[0]);
+      const cards = rawCards.map(el => {
+        const h2 = el.querySelector(":scope > h2"); const title = (h2?.textContent || "").trim();
+        const hit = CATS.find(([, , keys]) => keys.some(k => title.includes(k)));
+        // Reflow plain label+input rows into a multi-column grid (skip cards that already have their own layout).
+        if (!el.classList.contains("bot-admin")) {
+          let run = null;
+          for (const ch of [...el.children]) {
+            const isPair = ch.tagName === "LABEL" && !ch.querySelector("input,select") && ch.nextElementSibling && /^(INPUT|SELECT|TEXTAREA)$/.test(ch.nextElementSibling.tagName);
+            const isChk = ch.tagName === "LABEL" && ch.querySelector("input[type=checkbox]");
+            if (isPair || isChk) {
+              if (!run) { run = document.createElement("div"); run.className = "grid-fields"; el.insertBefore(run, ch); }
+              if (isPair) { const w = document.createElement("div"); const inp = ch.nextElementSibling; el.insertBefore(w, ch); w.append(ch, inp); run.append(w); }
+              else { ch.classList.add("full"); run.append(ch); }
+            } else if (ch.tagName !== "INPUT" && ch.tagName !== "SELECT" && !ch.classList.contains("grid-fields")) run = null;
+          }
+        }
+        const n = el.querySelectorAll("[data-control]").length;
+        const en = el.querySelector('input[type=checkbox][data-control$=".enabled"]');
+        const d = document.createElement("details"); d.className = "tile"; d.dataset.cat = hit ? hit[0] : "sys";
+        const badge = () => en ? (en.checked ? '<span class="on">● פעיל</span>' : '<span class="off">○ כבוי</span>') : "";
+        const sum = document.createElement("summary");
+        const paint = () => { sum.innerHTML = `<b>${title}</b><span class="meta">${n ? n + " הגדרות" : "ניהול"} ${badge()}</span>`; };
+        paint(); if (en) en.addEventListener("change", paint);
+        el.style.cssText = "border:0;padding:0;margin:0;background:none"; if (h2) h2.style.display = "none";
+        d.append(sum, el); grid.append(d); return d;
+      });
       const count = (k) => cards.filter(el => el.dataset.cat === k).length;
       const nav = document.createElement("div"); nav.className = "cat-nav";
       nav.innerHTML = `<div class="chips">${CATS.map(([k, l]) => `<button data-cat="${k}">${l}<small>${count(k)}</small></button>`).join("")}<button data-cat="all">הכל<small>${cards.length}</small></button></div><input type="search" id="cat-q" placeholder="חיפוש הגדרה...">`;
@@ -388,7 +431,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       let cur = sessionStorage.getItem("adm_cat") || "game";
       const apply = () => {
         const q = nav.querySelector("#cat-q").value.trim();
-        cards.forEach(el => { el.style.display = (q ? el.textContent.includes(q) : (cur === "all" || el.dataset.cat === cur)) ? "" : "none"; });
+        cards.forEach(el => { const hitQ = q && el.textContent.includes(q); el.style.display = (q ? hitQ : (cur === "all" || el.dataset.cat === cur)) ? "" : "none"; if (q && hitQ) el.open = true; });
         nav.querySelectorAll(".chips button").forEach(b => b.classList.toggle("active", !q && b.dataset.cat === cur));
       };
       nav.querySelectorAll(".chips button").forEach(b => b.onclick = () => { cur = b.dataset.cat; sessionStorage.setItem("adm_cat", cur); nav.querySelector("#cat-q").value = ""; apply(); });

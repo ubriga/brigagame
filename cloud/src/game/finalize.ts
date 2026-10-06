@@ -11,7 +11,7 @@ import {
   winRewardCoins, eloDelta,
 } from "./economy.js";
 import { MAX_LEVEL, rankPayload, rankUpInfo } from "./ranks.js";
-import { resolveTerritoryBattle } from "./territory.js";
+import { resolveTerritoryBattle, awardBotWin } from "./territory.js";
 import { resolveBets } from "./bets.js";
 
 export interface Db {
@@ -116,6 +116,11 @@ export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpCo
     };
     if (outcome === "win") results[side].rank_points_awarded = pts;
     else { results[side].rank_points_lost = lossPts; results[side].damage_xp_awarded = damageXp; }
+    if (outcome === "win" && m.p2_ai && !m.state.territory && !m.state.courtyard && controls) {
+      const tier = String(m.state.ai_tier ?? (m.state.ai_difficulty === "easy" ? "easy" : "medium"));
+      const mat = await awardBotWin(db, uid, tier, controls).catch(() => null);
+      if (mat) results[side].materials = mat;
+    }
     if (practice) results[side].practice = true;
     if (up) results[side].rank_up = up;
   }

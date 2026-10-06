@@ -8,7 +8,7 @@
 import { towerHp } from "./game_logic.js";
 import { COINS_PER_LOSS, COINS_PER_DAMAGE, MAX_HIT_COINS_PER_MATCH, MAX_COINS_PER_WIN, winRewardCoins, eloDelta, } from "./economy.js";
 import { MAX_LEVEL, rankPayload, rankUpInfo } from "./ranks.js";
-import { resolveTerritoryBattle } from "./territory.js";
+import { resolveTerritoryBattle, awardBotWin } from "./territory.js";
 import { resolveBets } from "./bets.js";
 export const MATCH_DURATION_SECONDS = 240;
 function nowIso() { return new Date().toISOString(); }
@@ -107,6 +107,12 @@ export async function finalizeMatch(db, m, winnerSide, xp, controls) {
         else {
             results[side].rank_points_lost = lossPts;
             results[side].damage_xp_awarded = damageXp;
+        }
+        if (outcome === "win" && m.p2_ai && !m.state.territory && !m.state.courtyard && controls) {
+            const tier = String(m.state.ai_tier ?? (m.state.ai_difficulty === "easy" ? "easy" : "medium"));
+            const mat = await awardBotWin(db, uid, tier, controls).catch(() => null);
+            if (mat)
+                results[side].materials = mat;
         }
         if (practice)
             results[side].practice = true;

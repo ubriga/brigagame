@@ -19,6 +19,9 @@ export const TERRITORY_DEFAULTS = {
   refill_enabled: true, refill_target: 30,
   // Total free material (gift + refill) one player may receive per material per Israel day.
   free_daily_cap: 60,
+  // Reward for beating a bot in a regular match, per material, by bot difficulty. Counts inside free_daily_cap.
+  bot_reward_enabled: true, bot_reward_easy: 0, bot_reward_medium: 6, bot_reward_hard: 10, bot_reward_ultra: 15, bot_reward_expert: 20,
+  bot_reward_max_wins_per_day: 10,
 };
 export function cfgOf(controls: any) { return { ...TERRITORY_DEFAULTS, ...((controls ?? {}).territory ?? {}) } as typeof TERRITORY_DEFAULTS; }
 const nowIso = () => new Date().toISOString();
@@ -274,4 +277,19 @@ export async function claimRefill(db: Db, uid: number, controls: any): Promise<{
   if (!r.changes) return { ok: false, reason: "already" };
   const got = await addCapped(db, uid, e, c, today, want);
   return { ok: true, got };
+}
+
+/** Materials for a human win against a bot in a regular match. Returns null when nothing was granted. */
+export async function awardBotWin(db: Db, uid: number, tier: string, controls: any): Promise<{ wood: number; iron: number; stone: number } | null> {
+  const c = cfgOf(controls); if (!c.bot_reward_enabled) return null;
+  const amount = Math.max(0, Math.trunc(Number((c as any)["bot_reward_" + tier] ?? 0))); if (!amount) return null;
+  const u = await db.get("SELECT is_guest FROM users WHERE id = ?", [uid]); if (!u || u.is_guest) return null;
+  await settle(db, uid, controls);
+  const today = ilDay(), e = await econRow(db, uid);
+  const n = e.bot_wins_day === today ? Number(e.bot_wins_n) : 0;
+  if (n >= c.bot_reward_max_wins_per_day) return null;
+  const r = await db.run("UPDATE user_econ SET bot_wins_day=?, bot_wins_n=? WHERE user_id=? AND (bot_wins_day IS NOT ? OR bot_wins_n = ?)", [today, n + 1, uid, today, n]);
+  if (!r.changes) return null;
+  const got = await addCapped(db, uid, e, c, today, { wood: amount, iron: amount, stone: amount });
+  return got.wood + got.iron + got.stone > 0 ? got : null;
 }
