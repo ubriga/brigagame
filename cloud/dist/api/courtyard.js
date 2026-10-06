@@ -6,7 +6,7 @@ import { json } from "./routes.js";
 import { limited } from "./ratelimit.js";
 import { createCourtyardMatch, createAiMatch, createLiveDefenseMatch } from "./matchmaking.js";
 import { validatePersona, DEFAULT_PERSONA, DEFAULT_BUDGET } from "../game/persona.js";
-import { cfgOf, ensureHome, ensureMap, applyRebellions, settle, ownedTiles, attackCost, cancelBattle, reapDanglingBattles } from "../game/territory.js";
+import { econStatus, claimDailyGift, claimRefill, cfgOf, ensureHome, ensureMap, applyRebellions, settle, ownedTiles, attackCost, cancelBattle, reapDanglingBattles } from "../game/territory.js";
 import { handleAlliance, areAllies, allianceCfg } from "./alliance.js";
 import { betsCfg } from "../game/bets.js";
 const nowIso = () => new Date().toISOString();
@@ -115,8 +115,15 @@ async function handleTerritory(env, request, path, u, c) {
         return json({ home: home ? { id: home.id, x: home.x, y: home.y } : null, tiles: mine, materials: mats,
             events: (await env.DB.prepare("SELECT e.id, e.kind, e.tile_id, e.battle_id, e.created_at, e.seen, COALESCE(n.nickname,'') AS other FROM territory_events e"
                 + " LEFT JOIN user_nicknames n ON n.user_id = e.other_id AND n.status = 'ok' WHERE e.user_id = ? ORDER BY e.id DESC LIMIT 15").bind(uid).all()).results,
-            attacks_today: Number(a?.n ?? 0), attacks_cap: t.daily_attack_cap, store_cap: t.store_cap,
+            econ: await econStatus(db, uid, c, mats), attacks_today: Number(a?.n ?? 0), attacks_cap: t.daily_attack_cap, store_cap: t.store_cap,
             cfg: { cost_per_rarity: t.attack_cost_per_rarity, grace_hours: t.grace_hours, base_yield: t.base_yield_per_hour, accrual_cap_hours: t.accrual_cap_hours } });
+    }
+    if ((path === "/api/territory/daily-gift" || path === "/api/territory/refill") && request.method === "POST") {
+        await ensureHome(db, uid, c);
+        const r = path.endsWith("gift") ? await claimDailyGift(db, uid, c) : await claimRefill(db, uid, c);
+        if (!r.ok)
+            return json({ error: r.reason, error_he: r.reason === "already" ? "כבר נאסף היום." : r.reason === "not_needed" ? "יש לך מספיק חומרים." : "לא זמין כרגע." }, 409);
+        return json({ ok: true, got: r.got, streak: r.streak ?? null });
     }
     if (path === "/api/territory/events/seen" && request.method === "POST") {
         await db.run("UPDATE territory_events SET seen = 1 WHERE user_id = ? AND seen = 0", [uid]);

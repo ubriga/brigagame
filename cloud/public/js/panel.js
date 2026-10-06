@@ -12,6 +12,16 @@ const PANEL_CSS = `
 .stat-cards b { font-size: 22px; display: block; color: var(--accent); }
 .bot-admin { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: 14px; }
 .bot-admin > h2, .bot-admin > p { grid-column: 1 / -1; }
+.cat-nav{position:sticky;top:0;z-index:6;background:var(--bg,#221309);padding:8px 0 10px;margin-bottom:10px;border-bottom:1px solid rgba(255,255,255,.1)}
+.cat-nav .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.cat-nav .chips button{background:var(--panel2);color:var(--muted);border:none;padding:8px 14px;border-radius:999px;cursor:pointer;font-weight:600}
+.cat-nav .chips button.active{background:var(--accent);color:#221309}
+.cat-nav .chips button small{opacity:.7;margin-inline-start:4px}
+.cat-nav input[type=search]{width:100%;max-width:340px}
+.save-bar{position:sticky;bottom:0;z-index:6;background:var(--bg,#221309);padding:10px 0;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.1)}
+.card.sub-card{border-inline-start:3px solid var(--accent)}
+.grid-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px}
+.grid-fields > .full{grid-column:1/-1}
 `;
 
 const PANEL_STRINGS = {
@@ -314,6 +324,34 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label>נדירות - שינוי עומק (% לדרגה)</label><input type="number" min="-90" max="200" step="1" value="${c.dynamic_obstacle.v_rarity_depth_pct ?? 0}" data-control="dynamic_obstacle.v_rarity_depth_pct">
         <label>נדירות - שינוי מהירות (% לדרגה)</label><input type="number" min="-90" max="200" step="1" value="${c.dynamic_obstacle.v_rarity_speed_pct ?? 0}" data-control="dynamic_obstacle.v_rarity_speed_pct">
         ${[["forest","יער"],["mine","מכרה"],["quarry","מחצבה"],["plains","מישור"],["fortress","מבצר"]].map(([k,l]) => `<label>${l} - עומק (%)</label><input type="number" min="-100" max="300" step="1" value="${c.dynamic_obstacle["v_kind_depth_pct_"+k] ?? 0}" data-control="dynamic_obstacle.v_kind_depth_pct_${k}"><label>${l} - מהירות (%)</label><input type="number" min="-90" max="300" step="1" value="${c.dynamic_obstacle["v_kind_speed_pct_"+k] ?? 0}" data-control="dynamic_obstacle.v_kind_speed_pct_${k}">`).join("")}</div>
+      ${(() => {
+        const T = c.territory || {};
+        const nb = (f, l, mn, mx, st) => `<div><label>${l}</label><input type="number" min="${mn}" max="${mx}" step="${st}" value="${T[f]}" data-control="territory.${f}"></div>`;
+        const cb = (f, l) => `<label class="full" style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="territory.${f}" ${T[f] ? "checked" : ""} style="width:auto">${l}</label>`;
+        return `<div class="card"><h2>🗺️ מלחמת טריטוריות - כללי בסיס</h2><p class="sub">מפה, הפקה, תקיפות והגנה. שינוי חל מיידית על כל השחקנים (הגדרות המפה עצמה חלות רק על מפה חדשה).</p><div class="grid-fields">
+          ${cb("enabled", "המלחמה פעילה")}
+          ${nb("map_size", "גודל מפה (צלעות)", 8, 60, 1)}${nb("base_yield_per_hour", "הפקה בסיסית לשעה לאריח", 0, 1000, 0.5)}
+          ${nb("store_cap", "תקרת אגירה לכל חומר", 10, 100000, 10)}${nb("accrual_cap_hours", "שעות צבירה מרביות כשלא מחובר", 1, 168, 1)}
+          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("attack_cost_per_rarity", "עלות תקיפה לכל דרגת נדירות", 0, 10000, 1)}
+          ${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}${nb("daily_attack_cap", "תקיפות מרביות ביום", 0, 100, 1)}
+          ${nb("grace_hours", "שעות הגנה אחרי כיבוש", 0, 336, 1)}${nb("ongoing_battle_minutes", "דקות לקרב פתוח", 1, 120, 1)}
+          ${cb("live_defense", "הגנה חיה (המגן מתבקש להצטרף)")}${nb("live_offer_seconds", "שניות להצעת הגנה חיה", 10, 120, 5)}
+          ${cb("rebellion_enabled", "מרד על אריחים של שחקנים לא פעילים")}${nb("rebellion_inactive_days", "ימי אי-פעילות עד מרד", 1, 365, 1)}${nb("rebellion_max_per_run", "מרדות מרביים בכל ריצה", 1, 500, 1)}
+        </div></div>
+        <div class="card sub-card"><h2>🎁 מתנה יומית (חומרים)</h2><p class="sub">כפתור "אסוף" בלוח המלחמה, פעם ביום (לפי תאריך ישראל). יום 1 נותן את הסכום הבסיסי, ועולה בהדרגה עד הסכום המרבי ביום האחרון של הרצף ונשאר שם. יום שמדלגים עליו מאפס את הרצף. סכום המתנה ניתן מכל חומר.</p><div class="grid-fields">
+          ${cb("gift_enabled", "מתנה יומית פעילה")}
+          ${nb("gift_base", "סכום ביום 1 (מכל חומר)", 0, 1000, 1)}${nb("gift_max", "סכום מרבי (ביום האחרון של הרצף)", 0, 1000, 1)}${nb("gift_streak_days", "ימי הרצף עד הסכום המרבי", 1, 60, 1)}
+        </div></div>
+        <div class="card sub-card"><h2>🛟 רשת ביטחון לשחקן מרוושש</h2><p class="sub">חומר שנמוך מהסף: ההפקה שלו מוכפלת עד שמגיעים לסף. בנוסף כפתור "מילוי חירום" פעם ביום משלים כל חומר שמתחת ליעד עד היעד. מכוון כדי שאף שחקן לא יתקע בלי יכולת לתקוף (עלות תקיפה רגילה = 15 לכל דרגה).</p><div class="grid-fields">
+          ${cb("safety_enabled", "הכפלת הפקה לחומר נמוך פעילה")}
+          ${nb("safety_threshold", "סף חומר נמוך", 0, 10000, 1)}${nb("safety_yield_multiplier", "מכפיל הפקה (1 = בלי)", 1, 10, 0.5)}
+          ${cb("refill_enabled", "מילוי חירום יומי פעיל")}
+          ${nb("refill_target", "יעד מילוי חירום (מכל חומר)", 0, 10000, 1)}
+        </div></div>
+        <div class="card sub-card"><h2>🧮 תקרה יומית כוללת נגד אינפלציה</h2><p class="sub">סך החומר החינמי (מתנה יומית + מילוי חירום) שמותר לשחקן לקבל ביום, לכל חומר בנפרד. אם הסכום חורג, מקבלים רק את היתרה. הפקה רגילה מאריחים לא נספרת.</p><div class="grid-fields">
+          ${nb("free_daily_cap", "תקרה יומית לכל חומר", 0, 10000, 5)}
+        </div></div>`;
+      })()}
       <div class="card bot-admin"><h2>🤖 מנוע הבוט החכם</h2><p class="sub">כל שינוי חל על משחקי בוט חדשים בלבד. משחק שכבר התחיל שומר snapshot מלא.</p>
         <details class="sub" style="margin-bottom:8px"><summary>מה מפעיל כל מתג?</summary>
         מנוע חכם = כיבוי/הדלקה כוללת של הבוט החכם (בכיבוי: בוט בסיסי). נשקים מיוחדים = שולט בכולם ביחד או בכל אחד בנפרד. תנועה טקטית = הבוט זז לעמדה טובה יותר. מגן תגובתי = הבוט מפעיל מגן כשהוא בסכנה. Mega טקטי = הבוט שומר Mega לרגע הנכון. הסתגלות = הבוט לומד מהפספוסים שלו בתוך המשחק. תחמושת אינסופית = הבוט לא מוגבל במלאי נשקים מיוחדים.</details>
@@ -326,8 +364,37 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         ${[["easy","קל"],["medium","בינוני"],["hard","קשה"],["ultra","אולטרה קשה"],["expert","מומחה"]].map(([t,label]) => `<div class="bot-tier-controls"><h3>${label}</h3>
           ${[["angle_noise","סטיית זווית מרבית (°)",0,45,.05],["power_spread","סטיית עוצמה",0,.5,.001],["wind_skill","פיצוי רוח",0,1,.01],["reaction","זמן תגובה",0,10,.05],["rank_offset","תוספת דרגות",0,18,1],["double_ammo","תחמושת כפולה",0,99,1],["homing_ammo","תחמושת מתבייתת",0,99,1],["cluster_ammo","תחמושת מצרר",0,99,1],["weapon_skill","מיומנות בחירת נשק",0,1,.01],["shield_hp","סף HP למגן",0,1,.01],["shield_damage","סף נזק תגובתי",0,1000,1],["move_chance","נטייה לזוז",0,1,.01],["mega_chance","נטייה ל-Mega",0,1,.01],["memory","עומק זיכרון",0,20,1],["correction","חוזק תיקון",0,1,.01],["aggression","אגרסיביות",0,1,.01]].map(([k,l,min,max,step]) => `<label>${l}</label><input type="number" min="${min}" max="${max}" step="${step}" value="${c.bot_difficulty[t+"_"+k]}" data-control="bot_difficulty.${t+"_"+k}">`).join("")}
         </div>`).join("")}</div>
-      <button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>
-      <button class="btn secondary" id="gameplay-reset">איפוס לברירות מחדל</button>`;
+      <div class="save-bar"><button class="btn" id="gameplay-save">שמור את כל ההגדרות</button>
+      <button class="btn secondary" id="gameplay-reset">איפוס לברירות מחדל</button></div>`;
+    // Category navigation: group the cards, show one group at a time, with a search box.
+    (() => {
+      const CATS = [
+        ["game", "⚔️ משחק וקרב", ["צינון נשקים", "מכשול דינמי", "חבילת גרפיקה", "WebGL", "הצעת מעבר למשחק נגד בוט", "מנוע הבוט החכם", "כוונון לפי רמה"]],
+        ["eco", "💰 כלכלה והתקדמות", ["קצב התקדמות XP", "כללי דירוג", "רצף התחברות יומי", "סקינים מושקעים", "ציפויי מגדל", "הרחבת מגדל"]],
+        ["war", "🗺️ טריטוריות", ["מלחמת טריטוריות", "מתנה יומית", "רשת ביטחון", "תקרה יומית כוללת"]],
+        ["people", "👥 שחקנים וכניסה", ["דרכי התחברות", "הזמנת חבר", "מצב אורח", "הודעת הרשמה מתוזמנת", "טופס יצירת קשר"]],
+        ["sys", "🔒 מערכת", ["מסך שבת"]],
+      ];
+      const cards = [...body.children].filter(el => el.classList.contains("card"));
+      for (const el of cards) {
+        const h = (el.querySelector("h2")?.textContent || "").trim();
+        const hit = CATS.find(([, , keys]) => keys.some(k => h.includes(k)));
+        el.dataset.cat = hit ? hit[0] : "sys";
+      }
+      const count = (k) => cards.filter(el => el.dataset.cat === k).length;
+      const nav = document.createElement("div"); nav.className = "cat-nav";
+      nav.innerHTML = `<div class="chips">${CATS.map(([k, l]) => `<button data-cat="${k}">${l}<small>${count(k)}</small></button>`).join("")}<button data-cat="all">הכל<small>${cards.length}</small></button></div><input type="search" id="cat-q" placeholder="חיפוש הגדרה...">`;
+      body.insertBefore(nav, body.firstChild);
+      let cur = sessionStorage.getItem("adm_cat") || "game";
+      const apply = () => {
+        const q = nav.querySelector("#cat-q").value.trim();
+        cards.forEach(el => { el.style.display = (q ? el.textContent.includes(q) : (cur === "all" || el.dataset.cat === cur)) ? "" : "none"; });
+        nav.querySelectorAll(".chips button").forEach(b => b.classList.toggle("active", !q && b.dataset.cat === cur));
+      };
+      nav.querySelectorAll(".chips button").forEach(b => b.onclick = () => { cur = b.dataset.cat; sessionStorage.setItem("adm_cat", cur); nav.querySelector("#cat-q").value = ""; apply(); });
+      nav.querySelector("#cat-q").oninput = apply;
+      apply();
+    })();
     document.getElementById("gameplay-reset").onclick = async () => {
       if (!confirm("לאפס את כל הגדרות המשחק לברירות המחדל? השינוי יחול על משחקי בוט חדשים.")) return;
       const { status: reset } = await API.post("/api/admin/gameplay-controls", { reset: true });

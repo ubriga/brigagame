@@ -5,6 +5,7 @@
  */
 import { currentUser } from "../auth.js";
 import { limited } from "./ratelimit.js";
+import { TERRITORY_DEFAULTS } from "../game/territory.js";
 import { d1, getControls, getShabbatLockdown, getLoginStreak, sanitizeLoginStreak, nextStreakMilestone, streakRewardFor, israelDate, ilDateDiff } from "../util.js";
 import { addCoins } from "../game/finalize.js";
 import { rankPayload } from "../game/ranks.js";
@@ -128,7 +129,10 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"],
       daily_attack_cap: [0, 100, "int"], grace_hours: [0, 336, "float"], ongoing_battle_minutes: [1, 120, "int"],
       live_defense: [null, null, "bool"], live_offer_seconds: [10, 120, "int"],
-      rebellion_enabled: [null, null, "bool"], rebellion_inactive_days: [1, 365, "float"], rebellion_max_per_run: [1, 500, "int"] },
+      rebellion_enabled: [null, null, "bool"], rebellion_inactive_days: [1, 365, "float"], rebellion_max_per_run: [1, 500, "int"],
+      gift_enabled: [null, null, "bool"], gift_base: [0, 1000, "int"], gift_max: [0, 1000, "int"], gift_streak_days: [1, 60, "int"],
+      safety_enabled: [null, null, "bool"], safety_threshold: [0, 10000, "int"], safety_yield_multiplier: [1, 10, "float"],
+      refill_enabled: [null, null, "bool"], refill_target: [0, 10000, "int"], free_daily_cap: [0, 10000, "int"] },
     spectator_bets: { enabled: [null, null, "bool"], min_stake: [1, 10000, "int"], max_stake: [1, 100000, "int"],
       max_bettors_per_match: [2, 500, "int"], house_fee_pct: [0, 50, "float"], close_after_shots: [0, 50, "int"], daily_cap_coins: [1, 1000000, "int"] },
     alliances: { enabled: [null, null, "bool"], max_members: [2, 20, "int"] },
@@ -559,6 +563,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   // GET|POST /api/admin/gameplay-controls
   if (path === "/api/admin/gameplay-controls" && method === "GET") {
     const controls: any = await getControls(env);
+    controls.territory = { ...TERRITORY_DEFAULTS, ...(controls.territory ?? {}) };
     const af = controls.auth_flow ?? {};
     if (controls.mail_updates) {
       controls.mail_updates.gmail_app_password_set = Boolean(String(controls.mail_updates.gmail_app_password ?? ""));

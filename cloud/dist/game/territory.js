@@ -7,6 +7,14 @@ export const TERRITORY_DEFAULTS = {
     daily_attack_cap: 6, grace_hours: 24, ongoing_battle_minutes: 10,
     live_defense: true, live_offer_seconds: 30,
     rebellion_enabled: true, rebellion_inactive_days: 14, rebellion_max_per_run: 25,
+    // Daily gift: day 1 gives gift_base, rising linearly to gift_max on day gift_streak_days, then stays.
+    gift_enabled: true, gift_base: 20, gift_max: 50, gift_streak_days: 7,
+    // Safety net for a poor player: below the threshold production is multiplied until the threshold is reached,
+    // and once a day the missing amount is topped up to refill_target.
+    safety_enabled: true, safety_threshold: 30, safety_yield_multiplier: 2,
+    refill_enabled: true, refill_target: 30,
+    // Total free material (gift + refill) one player may receive per material per Israel day.
+    free_daily_cap: 60,
 };
 export function cfgOf(controls) { return { ...TERRITORY_DEFAULTS, ...((controls ?? {}).territory ?? {}) }; }
 const nowIso = () => new Date().toISOString();
@@ -70,11 +78,15 @@ export async function settle(db, uid, controls) {
     }
     const maint = Math.max(0, tiles.length - 1) * c.maintenance_per_extra_tile;
     const cap = c.store_cap;
-    const next = {
-        wood: Math.min(Math.max(cap, m.wood), m.wood + Math.floor(hours * Math.max(0, gross.wood - maint))),
-        iron: Math.min(Math.max(cap, m.iron), m.iron + Math.floor(hours * Math.max(0, gross.iron - maint))),
-        stone: Math.min(Math.max(cap, m.stone), m.stone + Math.floor(hours * Math.max(0, gross.stone - maint))),
+    const grow = (have, g) => {
+        const gain = Math.floor(hours * Math.max(0, g - maint));
+        let add = gain;
+        // Safety net: a poor player's production is multiplied only until the threshold is reached.
+        if (c.safety_enabled && have < c.safety_threshold && c.safety_yield_multiplier > 1)
+            add = Math.max(gain, Math.min(Math.floor(gain * c.safety_yield_multiplier), c.safety_threshold - have));
+        return Math.min(Math.max(cap, have), have + add);
     };
+    const next = { wood: grow(m.wood, gross.wood), iron: grow(m.iron, gross.iron), stone: grow(m.stone, gross.stone) };
     await db.run("UPDATE user_materials SET wood=?, iron=?, stone=?, last_settle=? WHERE user_id=?", [next.wood, next.iron, next.stone, nowIso(), uid]);
     return next;
 }
@@ -217,5 +229,80 @@ export async function applyRebellions(db, controls) {
         n++;
     }
     return n;
+}
+// ---- Daily gift and emergency refill (free material, capped per Israel day) ----
+const MATS = ["wood", "iron", "stone"];
+const ilDay = (offset = 0) => new Date(Date.now() + offset * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+export function giftAmount(streak, c) {
+    const days = Math.max(1, Math.trunc(c.gift_streak_days));
+    const d = Math.max(1, Math.min(days, streak));
+    if (days <= 1)
+        return Math.round(c.gift_base);
+    return Math.round(c.gift_base + (c.gift_max - c.gift_base) * (d - 1) / (days - 1));
+}
+async function econRow(db, uid) {
+    await db.run("INSERT OR IGNORE INTO user_econ (user_id) VALUES (?)", [uid]);
+    return await db.get("SELECT * FROM user_econ WHERE user_id = ?", [uid]);
+}
+function capLeft(e, c, today) {
+    const used = e.cap_day === today ? { wood: e.cap_wood, iron: e.cap_iron, stone: e.cap_stone } : { wood: 0, iron: 0, stone: 0 };
+    return { wood: Math.max(0, c.free_daily_cap - used.wood), iron: Math.max(0, c.free_daily_cap - used.iron), stone: Math.max(0, c.free_daily_cap - used.stone), used };
+}
+/** Status shown on the war screen. Read-only. */
+export async function econStatus(db, uid, controls, mats) {
+    const c = cfgOf(controls), today = ilDay(), e = await econRow(db, uid);
+    const claimedToday = e.last_claim_day === today;
+    const continues = e.last_claim_day === ilDay(-1);
+    const nextStreak = claimedToday ? e.streak : (continues ? e.streak + 1 : 1);
+    const left = capLeft(e, c, today);
+    const low = MATS.filter((k) => mats[k] < c.refill_target);
+    return {
+        gift: { enabled: c.gift_enabled, can_claim: c.gift_enabled && !claimedToday, streak: claimedToday ? e.streak : (continues ? e.streak : 0),
+            next_streak: nextStreak, amount: giftAmount(nextStreak, c), days: c.gift_streak_days },
+        refill: { enabled: c.refill_enabled, available: c.refill_enabled && e.refill_day !== today && low.length > 0, target: c.refill_target, used_today: e.refill_day === today },
+        cap_left: { wood: left.wood, iron: left.iron, stone: left.stone },
+    };
+}
+async function addCapped(db, uid, e, c, today, want) {
+    const left = capLeft(e, c, today), got = { wood: 0, iron: 0, stone: 0 };
+    for (const k of MATS)
+        got[k] = Math.max(0, Math.min(Math.trunc(want[k]), left[k]));
+    const used = left.used;
+    await db.run("UPDATE user_econ SET cap_day=?, cap_wood=?, cap_iron=?, cap_stone=? WHERE user_id=?", [today, used.wood + got.wood, used.iron + got.iron, used.stone + got.stone, uid]);
+    await db.run("UPDATE user_materials SET wood = wood + ?, iron = iron + ?, stone = stone + ? WHERE user_id = ?", [got.wood, got.iron, got.stone, uid]);
+    return got;
+}
+export async function claimDailyGift(db, uid, controls) {
+    const c = cfgOf(controls);
+    if (!c.gift_enabled)
+        return { ok: false, reason: "disabled" };
+    await settle(db, uid, controls);
+    const today = ilDay(), e = await econRow(db, uid);
+    if (e.last_claim_day === today)
+        return { ok: false, reason: "already" };
+    const streak = e.last_claim_day === ilDay(-1) ? e.streak + 1 : 1;
+    const r = await db.run("UPDATE user_econ SET last_claim_day=?, streak=? WHERE user_id=? AND (last_claim_day IS NULL OR last_claim_day <> ?)", [today, streak, uid, today]);
+    if (!r.changes)
+        return { ok: false, reason: "already" };
+    const a = giftAmount(streak, c);
+    const got = await addCapped(db, uid, e, c, today, { wood: a, iron: a, stone: a });
+    return { ok: true, got, streak };
+}
+export async function claimRefill(db, uid, controls) {
+    const c = cfgOf(controls);
+    if (!c.refill_enabled)
+        return { ok: false, reason: "disabled" };
+    const mats = await settle(db, uid, controls);
+    const today = ilDay(), e = await econRow(db, uid);
+    if (e.refill_day === today)
+        return { ok: false, reason: "already" };
+    const want = { wood: Math.max(0, c.refill_target - mats.wood), iron: Math.max(0, c.refill_target - mats.iron), stone: Math.max(0, c.refill_target - mats.stone) };
+    if (!want.wood && !want.iron && !want.stone)
+        return { ok: false, reason: "not_needed" };
+    const r = await db.run("UPDATE user_econ SET refill_day=? WHERE user_id=? AND (refill_day IS NULL OR refill_day <> ?)", [today, uid, today]);
+    if (!r.changes)
+        return { ok: false, reason: "already" };
+    const got = await addCapped(db, uid, e, c, today, want);
+    return { ok: true, got };
 }
 //# sourceMappingURL=territory.js.map
