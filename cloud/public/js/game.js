@@ -1518,6 +1518,7 @@ const GameView = {
       ${!res.practice && res.rank_points_awarded > 0 ? `<p class="practice-note">⭐ +${res.rank_points_awarded} XP מנזק וניצחון</p>` : ""}
       ${!res.practice && res.damage_xp_awarded > 0 ? `<p class="practice-note">⭐ +${res.damage_xp_awarded} XP מנזק</p>` : ""}
       ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} XP</p>` : ""}
+      ${res.materials ? `<p class="practice-note">🧰 קיבלת חומרים: 🪵 ${res.materials.wood} · ⚙️ ${res.materials.iron} · 🧱 ${res.materials.stone}</p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         ${terr ? `<button class="btn" id="map-btn">🗺️ חזרה למפה</button>` : `<button class="btn" id="again-btn">עוד משחק</button>`}
