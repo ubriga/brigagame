@@ -294,13 +294,12 @@ const Clockwork = {
       c.restore();
     }
     const n = a.points.length;
-    const eased = a.t * a.t * (3 - 2 * a.t);
-    const fi = Math.min(n - 1, eased * n), i = Math.floor(fi), f = fi - i;
+    const fi = g.shotIndex(a), i = Math.floor(fi), f = fi - i;
     const p0 = a.points[i], p1 = a.points[Math.min(n - 1, i + 1)];
     const x = p0[0] + (p1[0] - p0[0]) * f, y = p0[1] + (p1[1] - p0[1]) * f;
     c.strokeStyle = "rgba(232,160,92,.5)"; c.lineWidth = 3; c.lineCap = "round";
     c.beginPath();
-    const upto = Math.max(1, Math.floor(fi));
+    const upto = Math.max(0, Math.floor(fi));
     c.moveTo(a.points[0][0], a.points[0][1]);
     for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
     c.lineTo(x, y); c.stroke();
@@ -315,6 +314,9 @@ const Clockwork = {
       const sz = a.weapon === "cluster_mini" ? 14 : 20;
       c.drawImage(I.rivet, -sz / 2, -sz / 2, sz, sz);
       c.restore();
+    } else {
+      c.fillStyle = "#fff7a8"; c.shadowColor = "#fbbf24"; c.shadowBlur = 10;
+      c.beginPath(); c.arc(x, y, 6, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
     }
   },
 

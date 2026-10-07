@@ -33,7 +33,7 @@ const GameView = {
     document.documentElement.scrollLeft = 0;
     document.body.scrollLeft = 0;
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-    this.firing = false; this.localLastShot = 0;
+    this.firing = false; this.localLastShot = 0; this.localReloadUntil = 0;
     this.anims = []; this.particles = []; this.particlePool = [];
     this.weapon = "standard"; this.snap = null;
     this.displayTowers = null; this.displayHp = null; this.pendingTowers = null;
@@ -147,7 +147,11 @@ const GameView = {
     this.openSocket();
     this.pollDelay = CONFIG.POLL_MIN_MS || 900;
     this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
-    const loop = () => { this.draw(); this.raf = requestAnimationFrame(loop); };
+    const loop = () => {
+      if (!this.canvas) return;
+      try { this.draw(); } catch (err) { console.error("Frame failed", err); }
+      this.raf = requestAnimationFrame(loop);
+    };
     loop();
   },
 
@@ -332,7 +336,7 @@ const GameView = {
       if (!this.canFire()) return;
       const p = pos(e);
       const m = this.muzzle(this.mySide());
-      if (Math.hypot(p.x - m.x, p.y - m.y) > 145) return;
+      if (Math.hypot(p.x - m.x, p.y - m.y) > 180) return;
       this.aiming = true;
       this.aimPointerId = e.pointerId;
       this.aimStart = { clientX: e.clientX, clientY: e.clientY };
@@ -411,18 +415,18 @@ const GameView = {
     return Number(cd[this.weapon]) || { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6, piercing_shell: 8, emp_shell: 7 }[this.weapon] || 4;
   },
 
-  reloadFrac() {
-    if (!this.snap) return 0;
-    const serverLast = (this.snap.last_shot_at || {})[this.mySide()] || 0;
-    // localLastShot resets the reload bar the instant the player releases,
-    // before the server's last_shot_at catches up on the round trip.
-    const last = Math.max(serverLast, this.localLastShot || 0);
-    const nowSrv = Date.now() / 1000 + this.serverOffset;
-    const loaded = Number(this.snap.reload_until?.[this.mySide()] || 0);
-    if (loaded > nowSrv && serverLast >= (this.localLastShot || 0))
-      return Math.max(0, Math.min(1, (nowSrv - serverLast) / Math.max(0.5, loaded - serverLast)));
-    return Math.max(0, Math.min(1, (nowSrv - last) / this.cooldown()));
+  reloadState() {
+    if (!this.snap) return { remaining: 0, fraction: 0 };
+    const side = this.mySide(), serverLast = Number(this.snap.last_shot_at?.[side] || 0);
+    const local = Number(this.localLastShot || 0), now = Date.now() / 1000 + this.serverOffset;
+    const pending = this.firing && local > serverLast;
+    const last = pending ? local : serverLast;
+    const until = pending ? this.localReloadUntil : Number(this.snap.reload_until?.[side] || 0);
+    const end = until || (last ? last + this.cooldown() : 0);
+    return { remaining: Math.max(0, end - now), fraction: end > last ? Math.max(0, Math.min(1, (now - last) / (end - last))) : 1 };
   },
+
+  reloadFrac() { return this.reloadState().fraction; },
 
   async refresh(since) {
     const { status, data } = await API.get(
@@ -500,17 +504,9 @@ const GameView = {
       this.showAbort();
       return;
     }
-    // Reconcile my just-fired shot: the optimistic arc that left the barrel
-    // at release keeps flying; the authoritative arc is NOT replayed. A
-    // replay restarted the shell a network round trip after release and read
-    // as a delayed second shot ("the tower fired by itself"). Impact and
-    // damage events still apply, timed to the optimistic arc's remaining
-    // flight inside enqueue().
-    const skipMyArc = (events.some(e => e.type === "shot" && e.side === s.you)
-                       && this.anims.some(a => a.optimistic)) ? 1 : 0;
     const hasFx = s.version > prevV && events.length > 0;
     if (hasFx) {
-      const impactIn = this.enqueue(events, skipMyArc);  // seconds until the last impact
+      const impactIn = this.enqueue(events);  // seconds until the last impact
       // towers crumble on screen exactly when the shell lands, not before
       this.pendingTowers = { towers: s.towers, hp: s.tower_hp,
                              at: performance.now() / 1000 + impactIn };
@@ -613,7 +609,9 @@ const GameView = {
     if (shot && this.snap.turn_deadline) {
       const turn = Math.max(0, Math.ceil(this.snap.turn_deadline - (Date.now() / 1000 + this.serverOffset)));
       const reloading = !this.canFire();
-      shot.textContent = reloading ? (Lang.current === "en" ? "Reloading..." : "בטעינה...") : `⏳ ${turn}`;
+      const seconds = Math.ceil(this.reloadState().remaining);
+      shot.textContent = this.firing ? (Lang.current === "en" ? "Waiting for server..." : "ממתין לתשובת המשחק...")
+        : seconds > 0 ? (Lang.current === "en" ? `Reloading ${seconds}s` : `טעינה: ${seconds} שניות`) : `⏳ ${turn}`;
       shot.classList.toggle("urgent", !reloading && turn <= 3);
       // The ten-second clock is a real gameplay constraint: if the player is
       // still loaded and ready at zero, fire the current visual-gauge aim.
@@ -654,21 +652,23 @@ const GameView = {
     if (!this.canFire()) return;
     if (this._tutorialDoneFn) { this._tutorialDoneFn(); this._tutorialDoneFn = null; }
     this.firing = true;
+    this.firingStarted = Date.now();
     this.startRecoil(this.mySide());
     this.lastActionAt = performance.now();
     Sfx.play((typeof Clockwork !== "undefined" && Clockwork.mode()) ? "steam" : "shot");
-    // Optimistic launch: mirror the server's ballistics locally so the shell
-    // leaves the barrel the instant the finger/mouse releases instead of
-    // waiting for the network round trip. The authoritative server events
-    // replace it as soon as the response lands.
+    // Recoil is immediate. Draw only the authoritative timed trajectory.
     this.localLastShot = Date.now() / 1000 + this.serverOffset;
-    this.spawnOptimisticShot();
-    const { status, data } = await API.post(`/api/matches/${this.matchId}/fire`, {
-      angle: this.aimAngle, power: this.aimPower, weapon: this.weapon, mega: !!this.useMega,
-    });
+    this.localReloadUntil = this.localLastShot + this.cooldown();
+    let result;
+    try {
+      result = await API.post(`/api/matches/${this.matchId}/fire`, {
+        angle: this.aimAngle, power: this.aimPower, weapon: this.weapon, mega: !!this.useMega,
+      });
+    } catch (_) { result = { status: 0, data: {} }; }
+    finally { this.firing = false; this.firingStarted = 0; }
+    const { status, data } = result;
     this.useMega = false;
     const megaBtn = document.getElementById("mega-btn"); if (megaBtn) megaBtn.classList.remove("active");
-    this.firing = false;
     if (status === 200) {
       this.applySnap(data);
       if (this.weapon !== "standard" && this._inventory?.[this.weapon]) {
@@ -683,7 +683,7 @@ const GameView = {
         this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     } else {
       this.dropOptimistic();
-      this.localLastShot = 0;
+      this.localLastShot = 0; this.localReloadUntil = 0;
       if (data.error_he) toast(data.error_he);
     }
   },
@@ -692,48 +692,6 @@ const GameView = {
   // power x10, wind x0.75, dt 0.02). Multi-shell weapons get only their
   // primary arc predicted; the server's events take over within a round
   // trip either way. Tagged `optimistic` so it can be dropped on reconcile.
-  spawnOptimisticShot() {
-    if (!this.snap || !this.snap.towers) return;
-    const side = this.mySide(), f = this.facing();
-    const ang = Math.max(0, Math.min(90, this.aimAngle)) * Math.PI / 180;
-    const power = Math.max(5, Math.min(100, this.aimPower));
-    const m = this.muzzle(side);
-    let x = m.x, y = m.y;
-    let vx = f * power * 10 * Math.cos(ang), vy = -power * 10 * Math.sin(ang);
-    const wind = this.snap.wind || 0, DT = 0.02;
-    const points = [];
-    let step = 0, t = 0;
-    while (t < 20) {
-      t += DT; step++;
-      vx += wind * this.WIND_ACCEL * DT; vy += 700 * DT;
-      x += vx * DT; y += vy * DT;
-      if (step % 6 === 0) points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
-      if (y >= this.GROUND) { points.push([Math.round(x * 10) / 10, this.GROUND]); break; }
-      if (this.shellHitsTower(x, y)) { points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]); break; }
-      if (x < -80 || x > this.W + 80) break;
-    }
-    if (points.length > 1) {
-      const dur = Math.max(0.6, Math.min(2.2, points.length * 0.09));
-      this.anims.push({ kind: "shot", points, t: 0, dur,
-                        weapon: this.weapon, side, optimistic: true });
-    }
-  },
-
-  shellHitsTower(x, y) {
-    for (const s of ["p1", "p2"]) {
-      const tower = this.snap.towers[s];
-      for (let r = 0; r < tower.length; r++) {
-        for (let c = 0; c < tower[r].length; c++) {
-          if (tower[r][c] <= 0) continue;
-          const p = this.blockCenter(s, r, c);
-          if (Math.abs(x - p.x) <= this.BLOCK / 2 && Math.abs(y - p.y) <= this.BLOCK / 2)
-            return true;
-        }
-      }
-    }
-    return false;
-  },
-
   dropOptimistic() {
     this.anims = this.anims.filter(a => !a.optimistic);
   },
@@ -742,50 +700,42 @@ const GameView = {
   // Events arrive as one batch per version bump. We play them in order:
   // each shell flies its full arc first, then its explosion, damage number,
   // debris and screen shake land together at impact.
-  enqueue(events, skipMyArc = 0) {
+  enqueue(events) {
     let delay = 0, lastImpact = 0;
     for (const ev of events) {
       if (ev.type === "shot" && ev.points && ev.points.length > 1) {
-        const dur = Math.max(0.6, Math.min(2.2, ev.points.length * 0.09));
-        if (skipMyArc > 0 && ev.side === this.mySide()) {
-          skipMyArc -= 1;
-          // The optimistic arc covers this shell's flight. Reserve only its
-          // remaining time so the explosion lands when the shell does.
-          const elapsed = (Date.now() / 1000 + this.serverOffset) - (this.localLastShot || 0);
-          delay += Math.max(0, dur - elapsed);
-          continue;
-        }
-        this.anims.push({ kind: "shot", points: ev.points, t: -delay, dur,
+        const dur = Number(ev.points.at(-1)?.[2]) || Math.max(0.6, Math.min(2.2, ev.points.length * 0.09));
+        this.anims.push({ kind: "shot", points: ev.points, t: -delay / dur, dur,
                           weapon: ev.weapon, side: ev.side });
         // Remote shots recoil when their sequenced shell leaves the barrel.
         // The local optimistic launch already kicked, so do not double-trigger it.
         if (ev.side !== this.mySide())
-          this.anims.push({ kind: "recoil", side: ev.side, t: -delay, dur: 0.34 });
+          this.anims.push({ kind: "recoil", side: ev.side, t: -delay / 0.34, dur: 0.34 });
         delay += dur;
       } else if (ev.type === "explosion") {
         const dmg = ev.damage || 0;
         this.anims.push({ kind: "explosion", x: ev.x, y: ev.y, r: ev.radius,
-                          t: -delay, dur: 0.85, damage: dmg,
+                          t: -delay / 0.85, dur: 0.85, damage: dmg,
                           target: ev.target, cosmetic: !!ev.cosmetic,
                           particlesStarted: false });
         lastImpact = Math.max(lastImpact, delay);
         if (!ev.cosmetic) {
           // Separate impact animations let several cluster hits overlap
           // without one hit overwriting another's shake or tower flash.
-          this.anims.push({ kind: "impact", t: -delay, dur: 0.34,
+          this.anims.push({ kind: "impact", t: -delay / 0.34, dur: 0.34,
                             amp: Math.min(16, 3 + dmg / 8) });
           this.anims.push({ kind: "hitflash", target: ev.target,
-                            t: -delay, dur: 0.24 });
+                            t: -delay / 0.24, dur: 0.24 });
           this.anims.push({ kind: "dmgnum", x: ev.x, y: Math.max(60, ev.y - 46),
-                            t: -delay, dur: 1.3, damage: dmg });
+                            t: -delay / 1.3, dur: 1.3, damage: dmg });
           if (ev.destroyed) for (const b of ev.destroyed)
             this.spawnDebris(ev.target, b.r, b.c, delay);
           if (ev.destroyed && ev.destroyed.length)
             // Tower blocks break: rubble lands just after the boom starts.
             this.anims.push({ kind: "sound", name: "crumble",
-                              t: -(delay + 0.08), dur: 0.1 });
+                              t: -(delay + 0.08) / 0.1, dur: 0.1 });
         }
-        delay += ev.cosmetic ? 0.2 : 0.45;
+        if (!events.some(e => e.weapon === "piercing_pass")) delay += ev.cosmetic ? 0.2 : 0.45;
       } else if (ev.type === "critical") {
         toast("🎯 פגיעה קריטית בקנה התותח!");
       } else if (ev.type === "random_event") {
@@ -796,7 +746,7 @@ const GameView = {
       } else if (ev.type === "collapse" && ev.blocks) {
         for (const b of ev.blocks) this.spawnDebris(b.side, b.r, b.c, delay);
         if (ev.blocks.length)
-          this.anims.push({ kind: "sound", name: "crumble", t: -delay, dur: 0.1 });
+          this.anims.push({ kind: "sound", name: "crumble", t: -delay / 0.1, dur: 0.1 });
       }
     }
     return lastImpact;
@@ -864,7 +814,7 @@ const GameView = {
         vx: (Math.random() - 0.5) * 340, vy: -80 - Math.random() * 260,
         rot: Math.random() * 6.28, vrot: (Math.random() - 0.5) * 12,
         size: 7 + Math.random() * 8, color: cols[i % cols.length],
-        t: -delay, dur: 1.4 });
+        t: -delay / 1.4, dur: 1.4 });
     }
   },
 
@@ -952,7 +902,7 @@ const GameView = {
      * transparent overlay (HUD/aim/shots/particles), so clear it every
      * frame — the skipped 2D background was also the implicit clear. */
     if (r3dOn) c.clearRect(0, 0, this.W, this.H);
-    const dt = this._last ? (now - this._last) / 1000 : 0.016;
+    let dt = this._last ? (now - this._last) / 1000 : 0.016;
     this._last = now;
     if (this._hitStopUntil && now < this._hitStopUntil
         && typeof Clockwork !== "undefined" && Clockwork.mode() === "full") dt = 0;
@@ -1073,8 +1023,8 @@ const GameView = {
       for (const side of ["p1", "p2"]) this.drawCannon(side);
     }
     // aim arrow
-    if ((this.aiming || performance.now() < (this.showAimUntil || 0))
-        && this.canFire()) this.drawAim();
+    if ((this.aiming || performance.now() < (this.showAimUntil || 0) || this.snap?.aim_guide_active)
+        && (this.canFire() || this.snap?.aim_guide_active)) this.drawAim();
     // animations
     for (const a of this.anims) {
       if (a.t < 0) continue;  // sequenced for later
@@ -1124,6 +1074,17 @@ const GameView = {
     }
   },
 
+  shotIndex(a) {
+    const n = a.points.length, elapsed = Math.max(0, Math.min(1, a.t)) * a.dur;
+    if (a.points[n - 1]?.[2] !== undefined) {
+      let i = 0;
+      while (i < n - 2 && a.points[i + 1][2] <= elapsed) i++;
+      const dt = a.points[i + 1][2] - a.points[i][2];
+      return Math.min(n - 1, i + (dt > 0 ? Math.max(0, Math.min(1, (elapsed - a.points[i][2]) / dt)) : 0));
+    }
+    return Math.min(n - 1, Math.max(0, a.t) * (n - 1));
+  },
+
   drawShot(a) {
     if ((typeof Clockwork !== "undefined") && Clockwork.mode()) { Clockwork.shot(this, a); return; }
     const c = this.ctx;
@@ -1140,12 +1101,11 @@ const GameView = {
     const n = a.points.length;
     // Smoothstep removes the hard launch/landing snap while preserving the
     // authoritative path and impact point.
-    const eased = a.t * a.t * (3 - 2 * a.t);
-    const fi = Math.min(n - 1, eased * n), i = Math.floor(fi), f = fi - i;
+    const fi = this.shotIndex(a), i = Math.floor(fi), f = fi - i;
     const p0 = a.points[i], p1 = a.points[Math.min(n - 1, i + 1)];
     const x = p0[0] + (p1[0] - p0[0]) * f, y = p0[1] + (p1[1] - p0[1]) * f;
     // trail (skin-specific when the firing player's skin defines one)
-    const upto = Math.max(1, Math.floor(fi));
+    const upto = Math.max(0, Math.floor(fi));
     const skinTrail = a.side && this.snap && this.snap.skins && this.snap.skins[a.side] && this.snap.skins[a.side].trail;
     if (skinTrail && skinTrail.colors && skinTrail.colors.length) {
       const cols = skinTrail.colors, from = Math.max(0, upto - 36);

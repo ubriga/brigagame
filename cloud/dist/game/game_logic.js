@@ -298,7 +298,7 @@ export function explode(state, x, y, damage, radius, attacker, events, cosmetic 
         destroyed, damage: Math.round(dealt * 10) / 10, attacker, target: enemy, cosmetic });
     return dealt;
 }
-export function simulate(state, side, angleDeg, power, weapon, events, _targetSide, now) {
+export function simulate(state, side, angleDeg, power, weapon, events, _targetSide, now, timedPath = false) {
     const enemy = side === "p1" ? "p2" : "p1";
     const facing = side === "p1" ? 1 : -1;
     const angle = angleDeg * Math.PI / 180;
@@ -307,7 +307,7 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
     let vx = facing * speed * Math.cos(angle);
     let vy = -speed * Math.sin(angle);
     const w = WEAPONS[weapon];
-    const points = [];
+    const points = timedPath ? [[x, y, 0]] : [];
     let t = 0;
     const homing = weapon === "homing_missile";
     const [ex, ey] = muzzle(state, enemy);
@@ -327,15 +327,19 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
         }
         x += vx * DT;
         y += vy * DT;
-        if (step % 6 === 0)
-            points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+        if (timedPath || step % 6 === 0)
+            points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1000) / 1000]);
         if (y >= GROUND_Y) {
-            points.push([Math.round(x * 10) / 10, GROUND_Y]);
+            if (timedPath)
+                points.pop();
+            points.push([Math.round(x * 10) / 10, GROUND_Y, Math.round(t * 1000) / 1000]);
             return [x, GROUND_Y, points, false];
         }
         const ob = obstacleAt(state, t0 + t);
         if (ob && ob.x !== undefined && ob.x <= x && x <= ob.x + ob.w && ob.y <= y && y <= ob.y + ob.h) {
-            points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+            if (timedPath)
+                points.pop();
+            points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1000) / 1000]);
             return [x, y, points, false];
         }
         for (const s of [enemy, side]) {
@@ -343,7 +347,9 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
             for (const [r, c, cx, cy] of towerBlocks(state, s)) {
                 const hp = state.towers[s][r][c];
                 if (hp !== null && hp > 0 && Math.abs(x - cx) <= BLOCK / 2 && Math.abs(y - cy) <= BLOCK / 2) {
-                    points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+                    if (timedPath)
+                        points.pop();
+                    points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1000) / 1000]);
                     if (weapon === "piercing_shell")
                         events.push({ type: "piercing_impact", side: s, vx, vy, r, c });
                     if (weapon === "emp_shell")
@@ -357,7 +363,9 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
         if (x < -80 || x > WORLD_W + 80) {
             const cx2 = Math.max(10, Math.min(WORLD_W - 10, x));
             const cy2 = Math.max(40, Math.min(GROUND_Y, y));
-            points.push([Math.round(cx2 * 10) / 10, Math.round(cy2 * 10) / 10]);
+            if (timedPath)
+                points.pop();
+            points.push([Math.round(cx2 * 10) / 10, Math.round(cy2 * 10) / 10, Math.round(t * 1000) / 1000]);
             return [cx2, cy2, points, true];
         }
     }
@@ -396,7 +404,7 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
     if (weapon === "double_bomb") {
         [power, power * 0.85].forEach((p, i) => {
             const ev = [];
-            const [x, y, pts, off] = simulate(state, side, angle + i * 6, p, "standard", ev, enemy, now);
+            const [x, y, pts, off] = simulate(state, side, angle + i * 6, p, "standard", ev, enemy, now, true);
             events.push({ type: "shot", side, weapon, angle: angle + i * 6, power: p, points: pts });
             if (x !== null) {
                 if (off)
@@ -409,7 +417,7 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
     }
     else if (weapon === "piercing_shell" || weapon === "emp_shell") {
         const impacts = [];
-        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, impacts, enemy, now);
+        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, impacts, enemy, now, true);
         events.push({ type: "shot", side, weapon, angle, power, points: pts });
         const impact = impacts.find(e => e.side === enemy);
         if (x !== null && !off) {
@@ -431,8 +439,12 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
                         }
                     }
                 }
-                for (const [, , cx, cy] of cells)
+                for (let i = 0; i < cells.length; i++) {
+                    const [, , cx, cy] = cells[i];
+                    const start = i ? cells[i - 1].slice(2) : [x, y];
+                    events.push({ type: "shot", side, weapon: "piercing_pass", points: [[start[0], start[1], 0], [cx, cy, 0.12]] });
                     explode(state, cx, cy, w.damage, w.radius, side, events, false, 0.5);
+                }
                 events.push({ type: "piercing", side, target: enemy, cells: cells.map(([r, c]) => ({ r, c })) });
             }
             else {
@@ -446,21 +458,25 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
     }
     else if (weapon === "cluster_shell") {
         const ev = [];
-        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, ev, enemy, now);
+        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, ev, enemy, now, true);
         events.push({ type: "shot", side, weapon, angle, power, points: pts });
-        const apex = pts.length ? pts[Math.floor(pts.length / 2)] : [x ?? 500, 150];
+        // Preserve the historical cluster split point while exporting dense timed paths.
+        const legacyPts = pts.filter((p, i) => i > 0 && i % 6 === 0);
+        if (pts.length > 1)
+            legacyPts.push(pts[pts.length - 1]);
+        const apex = legacyPts.length ? legacyPts[Math.floor(legacyPts.length / 2)] : [x ?? 500, 150];
         for (let k = 0; k < 4; k++) {
             const sx = (x === null ? apex[0] : x) + (k - 1.5) * 38;
             const sy = y ?? GROUND_Y;
             const sub = [];
             explode(state, sx, sy, w.damage, w.radius, side, sub);
-            events.push({ type: "shot", side, weapon: "cluster_mini", points: [[apex[0], apex[1]], [Math.round(sx * 10) / 10, Math.round(sy * 10) / 10]] });
+            events.push({ type: "shot", side, weapon: "cluster_mini", points: [[apex[0], apex[1], 0], [Math.round(sx * 10) / 10, Math.round(sy * 10) / 10, 0.32]] });
             events.push(...sub);
         }
     }
     else {
         const ev = [];
-        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, ev, enemy, now);
+        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, ev, enemy, now, true);
         events.push({ type: "shot", side, weapon, angle, power, points: pts });
         if (x !== null) {
             if (off)

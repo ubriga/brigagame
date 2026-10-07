@@ -598,7 +598,7 @@ const Render3D = {
       // Cannon aim: my side follows the live aim, the other rests at 45°.
       const pivot = Render3D._cannons[side];
       const mine = side === game.mySide();
-      const deg = mine ? (game.aimAngle || 45) : 45;
+      const deg = mine ? (game.aimAngle ?? 45) : 45;
       const f = side === "p1" ? 1 : -1;
       pivot.rotation.z = f * deg * Math.PI / 180 * (side === "p1" ? 1 : 1);
       if (side === "p2") pivot.rotation.y = Math.PI; // mirror barrel direction

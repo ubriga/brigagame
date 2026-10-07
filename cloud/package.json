@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "test": "node test/run.mjs",
+    "test": "node test/flight67.mjs && node test/weapons66.mjs && node test/shot_clock.mjs && node test/territory_bot.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
