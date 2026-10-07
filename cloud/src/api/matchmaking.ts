@@ -8,6 +8,7 @@ import { applyTerritoryBotRules } from "../game/territory_bot.js";
  */
 import { currentUser } from "../auth.js";
 import { d1, getControls, userMods } from "../util.js";
+import { applyCombatPolicy } from "../util.js";
 import { newState, cooldownsFromControls, applyObstacleCtx } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { personaToProfile, DEFAULT_PERSONA, type Persona } from "../game/persona.js";
@@ -237,6 +238,7 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?
   state.ai_tier = aiTier;
   state.ai_rank_level = aiRankLevel;
   if (extra) Object.assign(state, extra);
+  applyCombatPolicy(state, controls, true);
   await scaleObstacle(env, state, controls, aiTier);
   // v23 item A (mirror): bot tower parity - scale the stock bot tower to
   // the tier's percentage of the player's tower max HP; mirror coating.
@@ -311,6 +313,7 @@ export async function createCourtyardMatch(env: Env, attacker: any, ownerId: num
   state.courtyard = { owner_id: ownerId, nickname: nick ? String(nick.nickname) : "", practice, persona };
   state.ready = { p1: false, p2: true };
   if (extra) Object.assign(state, extra);
+  applyCombatPolicy(state, controls, true);
   if (state.territory) state.cooldowns.shot_clock = 6;
   await scaleObstacle(env, state, controls);
   state.bot_controls = controls.bot_system;
@@ -503,6 +506,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     const mm = await loadMatch(env, m.id);
     mm.state = newState(await userMods(env, Number(mm.p1)), await userMods(env, uid));
     mm.state.cooldowns = cooldownsFromControls(await getControls(env));
+    applyCombatPolicy(mm.state, await getControls(env), false);
     mm.version = Number(mm.version) + 1;
     await env.DB.prepare("UPDATE matches SET state = ?, version = ?, updated_at = ? WHERE id = ?")
       .bind(JSON.stringify(mm.state), mm.version, nowIso(), mm.id).run();
@@ -553,6 +557,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     state.cooldowns = cooldownsFromControls(await getControls(env));
     if (m.state?.territory) state.territory = { ...m.state.territory, live: true };   // live territory defense keeps its battle link
     if (state.territory) { state.cooldowns.shot_clock = 6; await scaleObstacle(env, state, await getControls(env)); }
+    applyCombatPolicy(state, await getControls(env), false);
     const cur = await env.DB.prepare(
       "UPDATE matches SET p2 = ?, status = 'active', state = ?,"
       + " version = version + 1, updated_at = ? WHERE id = ?"

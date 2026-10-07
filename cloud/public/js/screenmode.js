@@ -17,8 +17,7 @@ const ScreenMode = {
         if (req) await req.call(el, { navigationUI: "hide" });
       }
     } catch (e) { /* needs a user gesture; layout still applies */ }
-    try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape"); }
-    catch (e) { /* not supported or not allowed here */ }
+
   },
   async release() {
     try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
@@ -32,7 +31,7 @@ const ScreenMode = {
   label(on) {
     const en = typeof Lang !== "undefined" && Lang.current === "en";
     return on ? (en ? "↩ Exit full screen" : "↩ יציאה ממסך מלא")
-              : (en ? "⛶ Full screen (landscape)" : "⛶ מסך מלא (לרוחב)");
+              : (en ? "⛶ Full screen" : "⛶ מסך מלא");
   },
   apply(on) {
     this.active = on;
@@ -63,6 +62,7 @@ const ScreenMode = {
   tickLobby() {
     const view = document.getElementById("view");
     if (!view || !/^#\/lobby/.test(location.hash) || document.getElementById("fs-inline")) return;
+    if (this.floatBtn) this.floatBtn.style.display = "none";
     const h1 = view.querySelector("h1");
     if (!h1 || h1.parentElement !== view) return;
     const b = document.createElement("button");
@@ -87,14 +87,14 @@ const ScreenMode = {
     this.floatBtn = fl;
 
     // Leaving real fullscreen with Esc / system back also leaves the mode.
-    const onFs = () => { if (this.active && !this.fsEl() && this.byUser && !this.isTouch()) this.apply(false); };
+    const onFs = () => { if (this.active && !this.fsEl() && this.byUser ) { this.byUser = false; this.apply(false); }; };
     document.addEventListener("fullscreenchange", onFs);
     document.addEventListener("webkitfullscreenchange", onFs);
 
     // No automatic entering/leaving: orientation and resize events (rotation
     // lock, Google sign-in redirects, address bar) made the mode flap on some
     // phones. The mode changes only when the user taps the button.
-    setInterval(() => this.tickLobby(), 1000);
+    setInterval(() => { if (this.floatBtn) this.floatBtn.style.display = /^#\/lobby/.test(location.hash) ? "none" : ""; this.tickLobby(); }, 500);
   }
 };
 ScreenMode.init();

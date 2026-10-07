@@ -33,6 +33,7 @@ const GameView = {
     document.documentElement.scrollLeft = 0;
     document.body.scrollLeft = 0;
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    this._seenCommands=new Set();this._shotMetrics=[];this._pointerUpAt=0;
     this.firing = false; this.localLastShot = 0; this.localReloadUntil = 0;
     this.anims = []; this.particles = []; this.particlePool = [];
     this.weapon = "standard"; this.snap = null;
@@ -82,7 +83,8 @@ const GameView = {
       document.getElementById("game-stage")?.scrollIntoView({ block: "start", inline: "center" });
     });
     this.ctx = this.canvas.getContext("2d");
-    this._r3dTryInit();
+    this._rendererLocked = false;
+    await this._r3dTryInit();
     try { window.__game = this; } catch (e) {}   // QA introspection
     // Exit control: one tap reveals the confirmation strip; only the
     // explicit "יציאה מהמשחק" button actually leaves (active match = loss,
@@ -158,13 +160,19 @@ const GameView = {
   /* Stage-1 WebGL: opt-in via admin config; every failure path silently
    * keeps the 2D renderer. See render3d.js. */
   async _r3dTryInit() {
+    if(this._rendererLocked)return;this._rendererLocked=true;
     try {
       const g = (window.App && App.graphics) || {};
       if (!g.webgl3d || g.webgl3d.enabled !== true) return;
-      if (typeof Render3D === "undefined" || !Render3D.capable()) return;
+      if (typeof Render3D === "undefined" || !Render3D.capable()) {toast("החומרה לא התאימה למצב 3D - תצוגת 2D מופעלת");return;}
       if (typeof Clockwork !== "undefined" && Clockwork.mode && Clockwork.mode() === "low") return;
-      this._r3d = await Render3D.init(this);
-    } catch (e) { this._r3d = false; }
+      const load=document.createElement("div");load.className="renderer-loading";load.textContent="טוען ממשק 3D...";document.getElementById("game-stage").append(load);
+      this._r3dCancelled=false;
+      let timer;
+      const result=await Promise.race([Render3D.init(this),new Promise(resolve=>timer=setTimeout(()=>{this._r3dCancelled=true;resolve(false);},8000))]);
+      clearTimeout(timer);load.remove();this._r3d=result;
+      if(!result){this._r3dCancelled=true;Render3D.disposeFull?.();toast("החומרה או הטעינה לא התאימו למצב 3D בזמן סביר - תצוגת 2D מופעלת");}
+    } catch (e) { this._r3d=false;this._r3dCancelled=true;document.querySelector(".renderer-loading")?.remove();toast("ממשק 3D לא נטען - תצוגת 2D מופעלת"); }
   },
 
   destroy() {
@@ -188,7 +196,7 @@ const GameView = {
     const base = (CONFIG.API_BASE || location.origin).replace(/^http/, "ws");
     let ws;
     try {
-      ws = new WebSocket(`${base}/api/matches/${this.matchId}/ws?uid=${me.id}&side=${this.snap.you}`);
+      ws = new WebSocket(`${base}/api/matches/${this.matchId}/ws?token=${encodeURIComponent(API.token || "")}`);
     } catch (e) { return; }
     this.ws = ws;
     ws.onmessage = (e) => {
@@ -196,8 +204,8 @@ const GameView = {
       try { msg = JSON.parse(e.data); } catch (err) { return; }
       if (msg.type === "events" && !this._destroyed) {
         // Something changed server-side: pull the authoritative snapshot now.
-        clearTimeout(this.pollTimer);
-        this.pollLoop();
+        if (msg.snapshot) this.applyAck(msg);
+        else { clearTimeout(this.pollTimer); this.pollLoop(); }
       } else if (msg.type === "error" && msg.error_he) {
         toast(msg.error_he);
       }
@@ -333,7 +341,7 @@ const GameView = {
       this.aimStart = null;
     };
     cv.addEventListener("pointerdown", (e) => {
-      if (!this.canFire()) return;
+      if (!this.canAim()) return;
       const p = pos(e);
       const m = this.muzzle(this.mySide());
       if (Math.hypot(p.x - m.x, p.y - m.y) > 180) return;
@@ -354,7 +362,8 @@ const GameView = {
       cancelAim();
       if (!dragged) return;
       updateAim(pos(e));
-      this.fire();
+      this._pointerUpAt = performance.now();
+      if (this.canFire()) this.fire(); else toast(this.firing ? "הכוונת נשמרה - ממתין לאישור הירייה" : "הכוונת נשמרה - התותח בטעינה");
     });
     cv.addEventListener("pointercancel", cancelAim);
     // Keyboard controls: arrows adjust angle/power, space fires, 1-6 picks a
@@ -404,6 +413,8 @@ const GameView = {
     if (p) p.style.width = `${Math.max(0, Math.min(100, this.aimPower))}%`;
   },
 
+  canAim() { return !!(this.snap && this.snap.status === "active"); },
+  canSubmit() { return this.canAim() && !this.firing && this.reloadFrac() >= 1; },
   canFire() {
     if (this.firing) return false;
     if (!this.snap || this.snap.status !== "active") return false;
@@ -411,6 +422,7 @@ const GameView = {
   },
 
   cooldown() {
+    if (this.snap?.combat_policy?.reload_enabled === false) return 0;
     const cd = (this.snap && this.snap.cooldowns) || {};
     return Number(cd[this.weapon]) || { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6, piercing_shell: 8, emp_shell: 7 }[this.weapon] || 4;
   },
@@ -422,7 +434,7 @@ const GameView = {
     const pending = this.firing && local > serverLast;
     const last = pending ? local : serverLast;
     const until = pending ? this.localReloadUntil : Number(this.snap.reload_until?.[side] || 0);
-    const end = until || (last ? last + this.cooldown() : 0);
+    const end = this.snap?.combat_policy?.reload_enabled === false ? (last ? last + .5 : 0) : (until || (last ? last + this.cooldown() : 0));
     return { remaining: Math.max(0, end - now), fraction: end > last ? Math.max(0, Math.min(1, (now - last) / (end - last))) : 1 };
   },
 
@@ -459,8 +471,9 @@ const GameView = {
 
   applySnap(s) {
     const prevV = this.snap ? this.snap.version : -1;
+    if (s.version < prevV) return;
     this.serverOffset = s.server_time - Date.now() / 1000;
-    const events = s.events || [];
+    const events = (s.events || []).filter(e => !e.command_id || !(this._seenCommands || new Set()).has(e.command_id));
     delete s.events;
     this.snap = s;
     // Waiting snapshots deliberately have no battlefield. Keep the waiting
@@ -564,7 +577,7 @@ const GameView = {
     if (gb) {
       const qty = Number(this._inventory?.aim_guide?.qty || 0), used = Number(s.aim_guide_uses || 0);
       gb.disabled = s.aim_guide_active || qty < 1 || used >= 3;
-      gb.textContent = s.aim_guide_active ? "קו פעיל עד הירייה · ללא רוח" : `קו הכוונה (${qty}) · ${used}/3 בקרב`;
+      gb.innerHTML = s.aim_guide_always ? "קו קבוע · ללא רוח" : s.aim_guide_active ? "קו פעיל עד הירייה · ללא רוח" : `קו הכוונה (<bdi dir="ltr">${qty}</bdi>) · <bdi dir="ltr">${used}/3</bdi> בקרב`;
     }
     const ab = s.abilities || {};
     this.renderEmp();
@@ -651,6 +664,10 @@ const GameView = {
   async fire() {
     if (!this.canFire()) return;
     if (this._tutorialDoneFn) { this._tutorialDoneFn(); this._tutorialDoneFn = null; }
+    const command = {command_id: crypto.randomUUID(), angle:this.aimAngle,power:this.aimPower,weapon:this.weapon,mega:!!this.useMega};
+    this._pendingCommand=command;
+    const metric={command_id:command.command_id,pointerup:this._pointerUpAt||performance.now(),send:performance.now(),firstframe:null,ack:null};
+    this._shotMetrics ??= [];this._shotMetrics.push(metric);if(this._shotMetrics.length>100)this._shotMetrics.shift();
     this.firing = true;
     this.firingStarted = Date.now();
     this.startRecoil(this.mySide());
@@ -659,20 +676,29 @@ const GameView = {
     // Recoil is immediate. Draw only the authoritative timed trajectory.
     this.localLastShot = Date.now() / 1000 + this.serverOffset;
     this.localReloadUntil = this.localLastShot + this.cooldown();
+    if (typeof BrigaPhysics !== "undefined" && this.snap.simulation_state) {
+      const shots=BrigaPhysics.predict(this.snap.simulation_state,this.mySide(),command.angle,command.power,command.weapon,command.mega,this.localLastShot);
+      let delay=0;
+      for(const ev of shots){const dur=Number(ev.points.at(-1)?.[2])||.1;this.anims.push({kind:"shot",points:ev.points,t:-delay/dur,dur,weapon:ev.weapon,side:ev.side,optimistic:true,command_id:command.command_id,predicted_index:delay,launch_at:performance.now()});delay+=dur;}
+      requestAnimationFrame(()=>{metric.firstframe=performance.now();});
+    }
     let result;
     try {
       result = await API.post(`/api/matches/${this.matchId}/fire`, {
-        angle: this.aimAngle, power: this.aimPower, weapon: this.weapon, mega: !!this.useMega,
+        ...command,
       });
     } catch (_) { result = { status: 0, data: {} }; }
     finally { this.firing = false; this.firingStarted = 0; }
+    metric.ack=performance.now();
     const { status, data } = result;
+    metric.accepted_at=data.accepted_at??null;
+    metric.rtt=metric.ack-metric.send;metric.input_to_shell=metric.firstframe==null?null:metric.firstframe-metric.pointerup;
     this.useMega = false;
     const megaBtn = document.getElementById("mega-btn"); if (megaBtn) megaBtn.classList.remove("active");
     if (status === 200) {
-      this.applySnap(data);
-      if (this.weapon !== "standard" && this._inventory?.[this.weapon]) {
-        this._inventory[this.weapon].qty--;
+      if (data.ack) this.applyAck(data); else this.applySnap(data);
+      if (command.weapon !== "standard" && this._inventory?.[command.weapon]) {
+        this._inventory[command.weapon].qty--;
         this.renderWeapons();
       }
       if (window.refreshMe) window.refreshMe();
@@ -682,7 +708,7 @@ const GameView = {
       if (!this._destroyed && this.snap.status !== "finished")
         this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     } else {
-      this.dropOptimistic();
+      this.anims=this.anims.filter(a=>a.command_id!==command.command_id);
       this.localLastShot = 0; this.localReloadUntil = 0;
       if (data.error_he) toast(data.error_he);
     }
@@ -696,22 +722,33 @@ const GameView = {
     this.anims = this.anims.filter(a => !a.optimistic);
   },
 
+  applyAck(msg) {
+    if(!this.snap || !msg.snapshot)return;
+    if(msg.version<=this.snap.version)return;
+    this._seenCommands ??= new Set();
+    const events=(msg.events||[]).map(e=>({...e,command_id:msg.command_id||e.command_id}));
+    this.applySnap({...this.snap,...msg.snapshot,events});
+    if(msg.command_id){this._seenCommands.add(msg.command_id);if(this._seenCommands.size>100)this._seenCommands.delete(this._seenCommands.values().next().value);}
+  },
   // ---------------- animations ----------------
   // Events arrive as one batch per version bump. We play them in order:
   // each shell flies its full arc first, then its explosion, damage number,
   // debris and screen shake land together at impact.
   enqueue(events) {
     let delay = 0, lastImpact = 0;
+    const cid=events.find(e=>e.command_id)?.command_id;
+    const predicted=cid?this.anims.filter(a=>a.optimistic&&a.command_id===cid):[];
+    let predictionIndex=0;
     for (const ev of events) {
       if (ev.type === "shot" && ev.points && ev.points.length > 1) {
         const dur = Number(ev.points.at(-1)?.[2]) || Math.max(0.6, Math.min(2.2, ev.points.length * 0.09));
-        this.anims.push({ kind: "shot", points: ev.points, t: -delay / dur, dur,
-                          weapon: ev.weapon, side: ev.side });
+        const existing=predicted[predictionIndex++];
+        if(existing){const elapsed=existing.t*existing.dur;existing.points=ev.points;existing.dur=dur;existing.t=Math.min(.999,elapsed/dur);existing.optimistic=false;delay+=dur; if(predictionIndex===1)delay=Math.max(0,delay-elapsed);}
+        else {this.anims.push({kind:"shot",points:ev.points,t:-delay/dur,dur,weapon:ev.weapon,side:ev.side});delay+=dur;}
         // Remote shots recoil when their sequenced shell leaves the barrel.
         // The local optimistic launch already kicked, so do not double-trigger it.
         if (ev.side !== this.mySide())
           this.anims.push({ kind: "recoil", side: ev.side, t: -delay / 0.34, dur: 0.34 });
-        delay += dur;
       } else if (ev.type === "explosion") {
         const dmg = ev.damage || 0;
         this.anims.push({ kind: "explosion", x: ev.x, y: ev.y, r: ev.radius,
@@ -879,7 +916,7 @@ const GameView = {
       alive.push(p);
     }
     this.particles = alive;
-    this.anims = this.anims.filter(a => a.t < 1);
+    this.anims = this.anims.filter(a => a.t < 1 || (a.optimistic && a.t < 6));
   },
 
   // ---------------- drawing ----------------
@@ -1024,11 +1061,11 @@ const GameView = {
     }
     // aim arrow
     if ((this.aiming || performance.now() < (this.showAimUntil || 0) || this.snap?.aim_guide_active)
-        && (this.canFire() || this.snap?.aim_guide_active)) this.drawAim();
+        && this.canAim()) this.drawAim();
     // animations
     for (const a of this.anims) {
       if (a.t < 0) continue;  // sequenced for later
-      if (a.kind === "shot") this.drawShot(a);
+      if (a.kind === "shot" && !(a.optimistic && a.t>=1)) this.drawShot(a);
       else if (a.kind === "explosion") this.drawExplosion(a);
       else if (a.kind === "debris") this.drawDebris(a);
       else if (a.kind === "dmgnum") this.drawDmgNum(a);
@@ -1507,10 +1544,16 @@ const GameView = {
 
   showEnd() {
     this.stopPoll();
+    document.getElementById("bot-hold-ov")?.classList.add("hidden");
+    document.getElementById("tutorial-ov")?.classList.add("hidden");
+    document.getElementById("turn-banner")?.classList.add("hidden");
     const s = this.snap, ov = document.getElementById("game-overlay");
     const isDraw = !s.winner_side && ((s.results || {})[s.you] || {}).outcome === "draw";
     const iWon = s.winner_side === s.you;
     const res = (s.results || {})[s.you] || {};
+    const damageXp=Number(res.damage_xp_awarded ?? (res.outcome === "win" ? res.rank_points_awarded : 0) ?? 0);
+    const award=Number(res.rank_points_awarded || res.damage_xp_awarded || 0), loss=Number(res.rank_points_lost||0);
+    const num=(n)=>`<bdi dir="ltr">${Number(n)>0?"+":""}${Number(n).toFixed(1)}</bdi>`;
     const terr = (s.results || {}).territory || (s.territory ? { outcome: iWon ? "won" : "lost" } : null);
     if (isDraw) Sfx.play("click");
     else if (iWon) { Sfx.play("win"); this.spawnConfetti(); } else Sfx.play("lose");
@@ -1525,14 +1568,12 @@ const GameView = {
       <div class="end-emoji">${isDraw ? "🤝" : (iWon ? "🏆🎉" : "💥")}</div>
       <h2>${isDraw ? "תיקו" : (iWon ? "ניצחת!" : "הפסדת")}</h2>
       <p class="end-sub">${reason}</p>
-      <p>${res.coins != null ? `🪙 +${res.coins} מטבעות` : ""}
-         ${res.rating_delta != null ? ` · דירוג ${res.rating_delta > 0 ? "+" : ""}${res.rating_delta}` : ""}</p>
+      <p>${res.coins != null ? `🪙 <bdi dir="ltr">+${res.coins}</bdi> מטבעות` : ""}</p>
+      ${res.rating_delta != null ? `<p>דירוג (Elo): ${num(res.rating_delta)}</p>` : ""}
       ${terr ? `<p class="practice-note">${s.you === "p2" ? (iWon ? "🛡️ הגנת על האריח!" : "🏴 האריח נכבש ממך. אפשר לכבוש אותו חזרה.") : (terr.outcome === "won" ? "🏴 האריח נכבש! תקופת חסד של יום." : "האריח לא נכבש. החומרים נוצלו.")}</p>` : ""}
       ${res.practice && !terr ? `<p class="practice-note">🎯 משחק תרגול - לא נספר לדרגה</p>` : ""}
-      ${!res.practice && res.rank_points_awarded > 0 ? `<p class="practice-note">⭐ +${res.rank_points_awarded} XP מנזק וניצחון</p>` : ""}
-      ${!res.practice && res.damage_xp_awarded > 0 ? `<p class="practice-note">⭐ +${res.damage_xp_awarded} XP מנזק</p>` : ""}
-      ${!res.practice && res.rank_points_lost > 0 ? `<p class="practice-note">📉 ירדו ${res.rank_points_lost} XP</p>` : ""}
-      ${res.materials ? `<p class="practice-note">🧰 קיבלת חומרים: 🪵 ${res.materials.wood} · ⚙️ ${res.materials.iron} · 🧱 ${res.materials.stone}</p>` : ""}
+      ${!res.practice ? `<div class="xp-summary"><p>XP מנזק: ${num(damageXp)}</p>${award>damageXp?`<p>בונוס ניצחון: ${num(award-damageXp)}</p>`:""}<p>קנס הפסד: ${num(-loss)}</p><p><b>נטו XP: ${num(award-loss)}</b></p></div>` : ""}
+      ${res.materials ? `<p class="practice-note">🧰 קיבלת חומרים: 🪵 <bdi dir="ltr">${res.materials.wood}</bdi> · ⚙️ <bdi dir="ltr">${res.materials.iron}</bdi> · 🧱 <bdi dir="ltr">${res.materials.stone}</bdi></p>` : ""}
       ${res.rank_up ? `<p class="rank-up"><img class="rank-badge-big" src="${esc(res.rank_up.insignia)}" alt=""> קודמת לדרגת ${esc(res.rank_up.name_he)} (${esc(res.rank_up.abbr_he)})!</p>` : ""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         ${terr ? `<button class="btn" id="map-btn">🗺️ חזרה למפה</button>` : `<button class="btn" id="again-btn">עוד משחק</button>`}

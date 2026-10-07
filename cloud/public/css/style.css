@@ -560,6 +560,7 @@ body.fs-mode.game-active #fs-float { right: auto; }
 @media (max-width: 900px) { #fs-inline { display: block; } }
 #fs-float { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); }
 body.fs-mode.game-active main { padding: 4px 6px; justify-content: flex-start; }
+@media (orientation: landscape) and (min-width: 640px) {
 body.fs-mode.game-active #view { display: grid; height: 100%; align-content: start; align-items: start; column-gap: 8px; row-gap: 2px;
   grid-template-columns: min(calc((100dvh - 56px) * 1.785714), calc(100vw - 184px)) minmax(0, 1fr); grid-auto-rows: min-content; }
 body.fs-mode.game-active #game-hud { grid-column: 1 / -1; grid-row: 1; }
@@ -572,6 +573,7 @@ body.fs-mode.game-active #ability-bar .btn { flex: 1 1 46%; padding: 5px 6px; fo
 body.fs-mode.game-active #weapon-bar { display: flex; flex-wrap: wrap; gap: 4px; justify-content: stretch; max-height: calc(100dvh - 190px); overflow-y: auto; }
 body.fs-mode.game-active .wpn { flex: 1 1 46%; padding: 5px 6px; font-size: 12px; min-width: 0; }
 body.fs-mode.game-active #fs-float { top: auto; bottom: 6px; left: 8px; right: auto; transform: none; padding: 6px 10px; font-size: 12px; }
+}
 /* v52: tips line, lobby title, secret night mode */
 .tip-line { margin: 4px 0 10px; opacity: .85; font-size: 14px; transition: opacity .4s; }
 .tip-line.tip-out { opacity: 0; }
@@ -594,3 +596,30 @@ body.game-active #exit-confirm { position: fixed; z-index: 80; inset: auto;
 body.game-active #exit-confirm .btn { min-height: 44px; }
 /* v64: the guest warning remains in menus, never over match controls. */
 body.fs-mode.game-active #guest-banner { display: none; }
+
+/* v68: touch feedback and stable portrait layout */
+#game-canvas, button, #weapon-bar, #ability-bar { -webkit-tap-highlight-color: transparent; }
+@media (orientation: portrait), (max-width: 639px) {
+ body.fs-mode.game-active { overflow: auto; }
+ body.fs-mode.game-active main { position: static; height: auto; min-height: 100dvh; }
+ body.fs-mode.game-active #view { display: flex; height: auto; }
+ body.fs-mode.game-active #game-stage { width: 100%; flex-shrink: 0; }
+ body.fs-mode.game-active #game-hud { flex-wrap: wrap; }
+ body.fs-mode.game-active #fs-float { position: static; transform: none; margin: 8px; }
+}
+body:not(.game-active) main { padding-bottom: 70px; }
+#fs-inline { display: block; }
+@media (pointer: coarse), (hover: none) { .kbd-help { display: none !important; } }
+bdi[dir=ltr] { unicode-bidi: isolate; }
+.xp-summary { padding: 10px 16px; border: 1px solid #ba854b; border-radius: 12px; margin: 8px; }
+.xp-summary p { margin: 3px; }
+.renderer-loading { position:absolute; inset:0; z-index:20; display:grid; place-content:center; text-align:center; padding:20px; background:#25160b; color:#ffe0ac; }
+
+.policy-toggle { display:flex; gap:10px; padding:8px; } .policy-toggle input { width:auto; }
+/* A labelled fullscreen exit stays after the controls, never over them. */
+body.fs-mode.game-active:has(#view) #fs-float { z-index: 30; }
+body:not(.game-active):has(#fs-inline) #fs-float { display:none !important; }
+body:not(.game-active) #fs-float { position: static; display: block; transform:none; width:calc(100% - 24px); margin:12px; }
+
+/* v68 results must stay readable on a short mobile stage. */
+#game-overlay:not(.hidden) { position:fixed; inset: max(8px, env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom)); z-index:85; overflow-y:auto; border-radius:16px; padding:18px 12px; background:rgba(33,17,7,.97); box-sizing:border-box; }

@@ -97,6 +97,7 @@ export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpCo
     let delta: number, idfR: any, up: any = null, pts = 0, lossPts = 0, damageXp = 0;
     if (outcome === "win") {
       delta = practice ? 0 : eloDelta(myR, theirR);
+      damageXp = practice ? 0 : Math.round(dmg * xp.per_damage * 10) / 10;
       pts = practice ? 0 : Math.round((dmg * xp.per_damage + (m.p2_ai ? xp.bot_win : xp.human_win)) * 10) / 10;
       await db.run("UPDATE users SET rating = rating + ?, wins = wins + ?, rank_points = rank_points + ?, matches_played = matches_played + 1 WHERE id = ?",
         [delta, practice ? 0 : 1, pts, uid]);
@@ -114,7 +115,7 @@ export async function finalizeMatch(db: Db, m: any, winnerSide: string, xp: XpCo
       outcome, coins: total, hit_coins: hitCoins,
       rating_delta: outcome === "win" ? delta : -delta, idf_rank: idfR,
     };
-    if (outcome === "win") results[side].rank_points_awarded = pts;
+    if (outcome === "win") { results[side].rank_points_awarded = pts; results[side].damage_xp_awarded = damageXp; }
     else { results[side].rank_points_lost = lossPts; results[side].damage_xp_awarded = damageXp; }
     if (outcome === "win" && m.p2_ai && !m.state.territory && !m.state.courtyard && controls) {
       const tier = String(m.state.ai_tier ?? (m.state.ai_difficulty === "easy" ? "easy" : "medium"));

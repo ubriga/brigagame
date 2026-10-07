@@ -4,6 +4,7 @@
  * Port of app.py match_state / match_ready / match_leave. The MatchRoom DO
  * owns live state; D1 holds the checkpoint + event journal.
  */
+import { combatSnapshot } from "../game/snapshot.js";
 import { shownName } from "../nickname.js";
 import { currentUser } from "../auth.js";
 import { handleMatchmaking, sweepStaleMatches, offerToPresentPlayer, nowIso } from "./matchmaking.js";
@@ -24,6 +25,7 @@ function sideFor(m, userId) {
         return "p2";
     return null;
 }
+const metadataCache = new Map();
 async function effectiveCatalogMap(env) {
     const catalog = {};
     for (const [k, v] of Object.entries(CATALOG))
@@ -53,10 +55,13 @@ async function matchSnapshot(env, m, userId, since) {
     const userQ = (uid) => uid != null
         ? env.DB.prepare("SELECT id, name, is_guest, picture, (SELECT nickname FROM user_nicknames WHERE user_id = users.id AND status = 'ok') AS nick, rating, wins, rank_points FROM users WHERE id = ?").bind(uid).first()
         : null;
+    const cacheKey = String(m.id) + ":" + String(m.p1) + ":" + String(m.p2) + ":" + JSON.stringify(state.mods ?? {});
+    const cached = metadataCache.get(cacheKey);
+    const valid = cached && Date.now() - cached.at < 30000;
     const [rows, u1, u2, catalog, controls] = await Promise.all([
         env.DB.prepare("SELECT version, data FROM match_events WHERE match_id = ? AND version > ? ORDER BY version, id")
             .bind(m.id, since).all(),
-        userQ(m.p1), userQ(m.p2), effectiveCatalogMap(env), getControls(env),
+        valid ? null : userQ(m.p1), valid ? null : userQ(m.p2), valid ? null : effectiveCatalogMap(env), getControls(env),
     ]);
     const events = rows.results.map((r) => JSON.parse(r.data));
     const players = {};
@@ -84,9 +89,16 @@ async function matchSnapshot(env, m, userId, since) {
                 towerDims[s] = { rows: towers[s].length, cols: (towers[s][0] ?? []).length };
         }
     }
+    const skins = valid ? cached.skins : { p1: skinStyle(catalog, mods.p1?.skin ?? null), p2: skinStyle(catalog, mods.p2?.skin ?? null) };
+    if (!valid) {
+        if (metadataCache.size > 128)
+            metadataCache.clear();
+        metadataCache.set(cacheKey, { at: Date.now(), players, skins });
+    }
     return {
         id: m.id, code: m.code ?? null, mode: m.mode, status: m.status, version: m.version,
-        you: side, players,
+        you: side, players: valid ? cached.players : players,
+        metadata_version: cacheKey,
         territory: state.territory ? { live: Boolean(state.territory.live) } : null,
         towers: state.towers ?? null,
         tower_x: state.tower_x ?? null,
@@ -108,10 +120,7 @@ async function matchSnapshot(env, m, userId, since) {
         emp_immune_until: state.emp_immune_until ?? {},
         damage_dealt: state.damage_dealt ?? null,
         coatings: state.coatings ?? {},
-        skins: {
-            p1: skinStyle(catalog, mods.p1?.skin ?? null),
-            p2: skinStyle(catalog, mods.p2?.skin ?? null),
-        },
+        skins,
         last_shot_at: state.last_shot_at ?? null,
         winner_side: state.winner_side ?? null,
         results: state.results ?? null,
@@ -127,6 +136,7 @@ async function matchSnapshot(env, m, userId, since) {
         bot_tactics: m.p2_ai ? (state.bot_tactics ?? null) : null,
         practice: resolvePractice(m, state, controls),
         server_time: Date.now() / 1000,
+        ...combatSnapshot(m, side),
         events,
     };
 }
@@ -149,7 +159,7 @@ export async function handleMatchApi(env, request, path) {
         : (action === "ready" || action === "leave" || action === "guide") ? "mutation" : null;
     // Latency: these three are independent once auth resolved - one round.
     const [rl, row, live] = await Promise.all([
-        rlBucket ? limited(env, request, rlBucket, user) : null,
+        rlBucket && action !== "fire" ? limited(env, request, rlBucket, user) : null,
         env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first(),
         doFetch(env, matchId, "/snapshot"),
     ]);
@@ -162,6 +172,11 @@ export async function handleMatchApi(env, request, path) {
         : { ...row, state: JSON.parse(row.state || "{}") };
     if (sideFor(m, uid) === null)
         return json({ error: "not_found" }, 404);
+    if (action === "fire") {
+        const rlFire = await limited(env, request, m.state.combat_policy?.reload_enabled === false ? "fire_fast" : "fire", user);
+        if (rlFire)
+            return rlFire;
+    }
     // app.py poll parity: a waiting match stays alive only while its owner
     // actively polls; quick-match owners keep inviting present players.
     // Write-reduction (27.9): the keepalive touch persists at most once per
@@ -220,10 +235,12 @@ export async function handleMatchApi(env, request, path) {
                 return json({ error: "bad_weapon" }, 400);
             }
             const out = await doFetch(env, matchId, "/fire", {
-                method: "POST", body: JSON.stringify({ userId: uid, angle, power, weapon, mega: Boolean(body.mega) })
+                method: "POST", body: JSON.stringify({ userId: uid, angle, power, weapon, mega: Boolean(body.mega), command_id: String(body.command_id ?? "").slice(0, 100) })
             });
             if (out?.error)
                 return json(out, Number(out.status) || 400);
+            if (out.ack)
+                return json(out);
             // The DO returns the post-shot state directly - saves a D1 re-read.
             const snapMatch = { ...row, state: out.state, status: out.status,
                 version: out.version };

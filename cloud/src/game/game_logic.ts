@@ -508,6 +508,7 @@ export function fireWeapon(state: any, side: string, angle: number, power: numbe
 }
 
 export function cooldownFor(weapon: string, state?: any): number {
+  if (state?.combat_policy?.reload_enabled === false) return 0;
   const o = Number(state?.cooldowns?.[weapon]);
   if (Number.isFinite(o) && o >= 0.5) return o;
   return (WEAPONS[weapon] ?? WEAPONS.standard).cooldown;
@@ -668,7 +669,7 @@ export function aiChooseShot(state: any, side = "p2", difficulty = "normal",
     dist2 = Math.max(60, Math.abs(tx - sx));
   }
 
-  const angle = 45 + (rng() * 2 - 1) * profile.angle_noise;
+  const angle = 45;
   const rad = angle * Math.PI / 180;
   const dy = ty - sy;
   const tanA = Math.tan(rad);
@@ -678,5 +679,5 @@ export function aiChooseShot(state: any, side = "p2", difficulty = "normal",
   const v = (dist2 - 0.5 * alongAccel * flightT * flightT) / Math.max(0.05, Math.cos(rad) * flightT);
   let power = v / POWER_SCALE * (profile.power_min + rng() * (profile.power_max - profile.power_min));
   power = Math.min(96, Math.max(30, power));
-  return [angle, power, "standard"];
+  return [Math.max(0, Math.min(90, angle + (rng() * 2 - 1) * profile.angle_noise)), power, "standard"];
 }

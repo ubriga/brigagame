@@ -7,8 +7,9 @@
  * (profile.reaction seconds), and state is checkpointed to D1 so a cold DO
  * can resume. All combat math runs through src/game/* (parity-tested ports).
  */
-import { TOWER_X_RANGE, aiChooseShot, turnDeadline, shieldBlocked, defaultRng, } from "../game/game_logic";
-import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot";
+import { combatSnapshot } from "../game/snapshot.js";
+import { TOWER_X_RANGE, aiChooseShot, turnDeadline, shieldBlocked, defaultRng, } from "../game/game_logic.js";
+import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot.js";
 import { finalizeMatch, resolveTimeLimit, MATCH_DURATION_SECONDS } from "../game/finalize.js";
 import { d1, getControls } from "../util.js";
 const BOT_MIN_DELAY = 0.15; // floor so a reaction of 0 can't spin the alarm
@@ -17,6 +18,12 @@ export class MatchRoom {
     env;
     match = null;
     sessions = [];
+    actionTail = Promise.resolve();
+    execAction(sess, msg) {
+        const work = this.actionTail.then(() => this.execActionLocked(sess, msg));
+        this.actionTail = work.catch(() => { });
+        return work;
+    }
     constructor(state, env) {
         this.state = state;
         this.env = env;
@@ -60,9 +67,11 @@ export class MatchRoom {
             if (!m || !side)
                 return Response.json({ error: "not_found" });
             const prevVersion = m.version;
-            const { events, err } = await this.execAction({ userId, side }, { type: actionMatch[1], ...body });
+            const { events, err, ack } = await this.execAction({ userId, side }, { ...body, type: actionMatch[1], userId });
             if (err)
                 return Response.json({ ...err.body, status: err.status });
+            if (ack)
+                return Response.json(ack);
             return Response.json({ ok: true, version: m.version, prevVersion, events, state: m.state, status: m.status });
         }
         if (url.pathname.endsWith("/ready") && request.method === "POST") {
@@ -127,12 +136,20 @@ export class MatchRoom {
      * including the 10s shot clock and atomic ammo debit). Mutates, persists,
      * journals and broadcasts on success.
      */
-    async execAction(sess, msg) {
+    async execActionLocked(sess, msg) {
         const m = this.match;
         if (!m || m.status !== "active") {
             return { events: null, err: { status: 400, body: { error: "not_active", error_he: "המשחק לא פעיל." } } };
         }
         if (msg.type === "fire") {
+            const cid = String(msg.command_id ?? "").slice(0, 100), key = String(sess.userId) + ":" + cid;
+            const done = m.command_acks ??= {};
+            if (cid && done[key])
+                return { events: [], err: null, ack: { ack: true, command_id: cid, version: m.version, events: [], snapshot: combatSnapshot(m, sess.side) } };
+            const acceptedAt = Date.now() / 1000;
+            const last = Number(m.state.last_shot_at?.[sess.side] ?? 0);
+            if (m.state.combat_policy?.reload_enabled === false && acceptedAt - last < .5)
+                return { events: null, err: { status: 429, body: { error: "fire_rate", error_he: "אפשר לירות עד פעמיים בשנייה." } } };
             const weapon = String(msg.weapon ?? "standard");
             // Shot-clock enforcement is server-side too (app.py parity): clients
             // get the deadline for display but cannot bypass it by hiding JS.
@@ -172,7 +189,8 @@ export class MatchRoom {
                 }
                 return { events: null, err };
             }
-            (m.state.aim_guide_active ??= {})[sess.side] = false;
+            if (!m.state.combat_policy?.guide_always)
+                (m.state.aim_guide_active ??= {})[sess.side] = false;
             m.version += 1;
             if (result.won) {
                 await this.finalize(sess.side);
@@ -182,14 +200,26 @@ export class MatchRoom {
             // persist (matches) and journaling (match_events) touch different
             // tables - run them concurrently to cut a D1 round trip off the fire
             // hot path.
+            for (const ev of result.events)
+                if (cid)
+                    ev.command_id = cid;
+            const ack = { ack: true, command_id: cid, accepted_at: acceptedAt, version: m.version, events: result.events, snapshot: combatSnapshot(m, sess.side) };
+            if (cid) {
+                done[key] = { version: m.version };
+                const keys = Object.keys(done);
+                if (keys.length > 32)
+                    delete done[keys[0]];
+            }
             await Promise.all([this.persist(), this.recordEvents(result.events)]);
-            this.broadcast({ type: "events", version: m.version, events: result.events });
+            this.broadcast({ type: "events", version: m.version, events: result.events, command_id: cid, accepted_at: acceptedAt });
             if (m.p2_ai && m.status === "active")
                 await this.scheduleBot();
-            return { events: result.events, err: null };
+            return { events: result.events, err: null, ack };
         }
         if (msg.type === "guide") {
             const side = sess.side;
+            if (m.state.combat_policy?.guide_always)
+                return { events: [], err: null };
             if (m.state.aim_guide_active?.[side])
                 return { events: [], err: null };
             const used = Number(m.state.aim_guide_uses?.[side] ?? 0);
@@ -257,12 +287,8 @@ export class MatchRoom {
                 case "fire":
                 case "move":
                 case "shield": {
-                    const { events, err } = await this.execAction({ userId: sess.userId, side: sess.side }, msg);
-                    if (err) {
-                        ws.send(JSON.stringify({ type: "error", ...err.body }));
-                        return;
-                    }
-                    break;
+                    ws.send(JSON.stringify({ type: "error", error: "rest_required" }));
+                    return;
                 }
             }
         }
@@ -275,6 +301,11 @@ export class MatchRoom {
     }
     /** Bot loop: alarm fires after profile.reaction seconds, bot takes its turn. */
     async alarm() {
+        const work = this.actionTail.then(() => this.alarmLocked());
+        this.actionTail = work.catch(() => { });
+        await work;
+    }
+    async alarmLocked() {
         const m = this.match;
         if (!m || m.status !== "active")
             return;
@@ -303,6 +334,16 @@ export class MatchRoom {
         const holdUntil = Number(m.state.bot_hold_until ?? 0);
         if (holdUntil > Date.now() / 1000) {
             await this.state.storage.setAlarm(holdUntil * 1000);
+            return;
+        }
+        if (!m.state.ready?.p1) {
+            await this.state.storage.setAlarm(Date.now() + 1000);
+            return;
+        }
+        const reload = Number(m.state.reload_until?.p2 ?? 0);
+        const reaction = Math.max(m.state.combat_policy?.reload_enabled === false ? .5 : BOT_MIN_DELAY, Number(m.state.ai_profile?.reaction ?? 1));
+        if (reload + reaction > Date.now() / 1000) {
+            await this.state.storage.setAlarm((reload + reaction) * 1000);
             return;
         }
         const events = [];
@@ -346,7 +387,7 @@ export class MatchRoom {
         }
         else {
             // Cooldown not elapsed or no ammo: retry on the remaining cadence.
-            await this.state.storage.setAlarm(Date.now() + 500);
+            await this.scheduleBot();
             return;
         }
         if (m.status === "active")
@@ -378,8 +419,9 @@ export class MatchRoom {
     }
     async scheduleBot() {
         const profile = this.match?.state?.ai_profile ?? {};
-        const reaction = Math.max(BOT_MIN_DELAY, Number(profile.reaction ?? 1));
-        const at = Date.now() + reaction * 1000;
+        const reaction = Math.max(this.match?.state?.combat_policy?.reload_enabled === false ? .5 : BOT_MIN_DELAY, Number(profile.reaction ?? 1));
+        const reload = Number(this.match?.state?.reload_until?.p2 ?? 0) * 1000;
+        const at = Math.max(Date.now() + reaction * 1000, reload + reaction * 1000);
         const current = await this.state.storage.getAlarm();
         if (current == null || current > at)
             await this.state.storage.setAlarm(at);
@@ -409,10 +451,10 @@ export class MatchRoom {
         if (!this.env.DB || !this.match)
             return;
         const now = new Date().toISOString();
-        for (const ev of events) {
-            await this.env.DB.prepare("INSERT INTO match_events (match_id, version, type, data, created_at) VALUES (?,?,?,?,?)")
-                .bind(this.match.id, this.match.version, String(ev.type ?? "event"), JSON.stringify(ev), now).run();
-        }
+        const statements = events.map(ev => this.env.DB.prepare("INSERT INTO match_events (match_id, version, type, data, created_at) VALUES (?,?,?,?,?)")
+            .bind(this.match.id, this.match.version, String(ev.type ?? "event"), JSON.stringify(ev), now));
+        if (statements.length)
+            await this.env.DB.batch(statements);
     }
     async persist() {
         await this.state.storage.put("match", this.match);
@@ -424,10 +466,9 @@ export class MatchRoom {
         }
     }
     broadcast(payload) {
-        const s = JSON.stringify(payload);
         for (const sess of this.sessions) {
             try {
-                sess.ws.send(s);
+                sess.ws.send(JSON.stringify({ ...payload, snapshot: this.match && sess.side ? combatSnapshot(this.match, sess.side) : null }));
             }
             catch { /* dropped socket reaped on close */ }
         }

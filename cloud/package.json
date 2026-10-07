@@ -5,8 +5,8 @@
   "description": "Brigagame 2.0 - Cloudflare Workers port (parallel copy, PA version untouched)",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "test": "node test/flight67.mjs && node test/weapons66.mjs && node test/shot_clock.mjs && node test/territory_bot.mjs",
+    "build": "tsc && esbuild src/game/predict.ts --bundle --format=iife --global-name=BrigaPhysics --outfile=public/js/physics.js",
+    "test": "node test/flight67.mjs && node test/weapons66.mjs && node test/shot_clock.mjs && node test/territory_bot.mjs && node test/physics68.mjs && node test/policy68.mjs && node test/commands68.mjs && node test/reconcile68.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },

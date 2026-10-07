@@ -215,3 +215,11 @@ export function nextStreakMilestone(cfg: LoginStreakCfg, streakDay: number): { d
   const day = days[0];
   return { day, amount: cfg.milestones[String(day)] };
 }
+
+/** v68: active matches preserve their creation policy. */
+export function applyCombatPolicy(state: any, controls: any, bot: boolean): void {
+ const p = controls.combat_policy ?? {};
+ const area = state.territory ? "territories" : bot ? "bots" : "pvp";
+ state.combat_policy = { area, reload_enabled: p.reload_enabled !== false && p["reload_"+area] !== false, guide_always: p["guide_"+area] === true };
+ if (state.combat_policy.guide_always) state.aim_guide_active = { p1: true, p2: true };
+}

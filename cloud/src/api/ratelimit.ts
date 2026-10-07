@@ -16,6 +16,7 @@ import type { Env } from "../do/MatchRoom";
 const RATE_LIMITS: Record<string, [number, number]> = {
   auth: [10, 60],
   fire: [30, 60],
+  fire_fast: [120, 60],
   state: [240, 60],
   store: [30, 60],
   admin: [120, 60],

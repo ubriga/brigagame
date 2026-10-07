@@ -8,6 +8,7 @@ import { applyTerritoryBotRules } from "../game/territory_bot.js";
  */
 import { currentUser } from "../auth.js";
 import { d1, getControls, userMods } from "../util.js";
+import { applyCombatPolicy } from "../util.js";
 import { newState, cooldownsFromControls, applyObstacleCtx } from "../game/game_logic.js";
 import { MAX_LEVEL, rankPayload } from "../game/ranks.js";
 import { personaToProfile, DEFAULT_PERSONA } from "../game/persona.js";
@@ -224,6 +225,7 @@ export async function createAiMatch(env, user, tierRaw, extra) {
     state.ai_rank_level = aiRankLevel;
     if (extra)
         Object.assign(state, extra);
+    applyCombatPolicy(state, controls, true);
     await scaleObstacle(env, state, controls, aiTier);
     // v23 item A (mirror): bot tower parity - scale the stock bot tower to
     // the tier's percentage of the player's tower max HP; mirror coating.
@@ -299,6 +301,7 @@ export async function createCourtyardMatch(env, attacker, ownerId, practice, ext
     state.ready = { p1: false, p2: true };
     if (extra)
         Object.assign(state, extra);
+    applyCombatPolicy(state, controls, true);
     if (state.territory)
         state.cooldowns.shot_clock = 6;
     await scaleObstacle(env, state, controls);
@@ -493,6 +496,7 @@ export async function handleMatchmaking(env, request, path) {
         const mm = await loadMatch(env, m.id);
         mm.state = newState(await userMods(env, Number(mm.p1)), await userMods(env, uid));
         mm.state.cooldowns = cooldownsFromControls(await getControls(env));
+        applyCombatPolicy(mm.state, await getControls(env), false);
         mm.version = Number(mm.version) + 1;
         await env.DB.prepare("UPDATE matches SET state = ?, version = ?, updated_at = ? WHERE id = ?")
             .bind(JSON.stringify(mm.state), mm.version, nowIso(), mm.id).run();
@@ -542,6 +546,7 @@ export async function handleMatchmaking(env, request, path) {
             state.cooldowns.shot_clock = 6;
             await scaleObstacle(env, state, await getControls(env));
         }
+        applyCombatPolicy(state, await getControls(env), false);
         const cur = await env.DB.prepare("UPDATE matches SET p2 = ?, status = 'active', state = ?,"
             + " version = version + 1, updated_at = ? WHERE id = ?"
             + " AND status = 'waiting' AND p2 IS NULL")

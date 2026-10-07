@@ -36,6 +36,7 @@ const CORS_ORIGINS = new Set([
 ]);
 
 function withCors(request: Request, res: Response): Response {
+  if(res.status===101)return res;
   const origin = request.headers.get("Origin") ?? "";
   if (!CORS_ORIGINS.has(origin)) return res;
   const h = new Headers(res.headers);
@@ -502,8 +503,17 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     // Match WebSocket: /api/matches/<id>/ws?uid=&side=
     const wsMatch = path.match(/^\/api\/matches\/([a-z0-9]+)\/ws$/);
     if (wsMatch) {
-      const stub = env.MATCH_ROOM.get(env.MATCH_ROOM.idFromName(wsMatch[1]));
-      return stub.fetch(request);
+      const url=new URL(request.url); const token=url.searchParams.get("token")??"";
+      const authReq=new Request(request.url,{headers:{Authorization:"Bearer "+token}});
+      const u=await currentUser(d1(env.DB),authReq);
+      if(!u||u.suspended||(u.banned_until&&String(u.banned_until)>new Date().toISOString()))return json({error:"unauthorized"},401);
+      const m:any=await env.DB.prepare("SELECT p1,p2 FROM matches WHERE id=?").bind(wsMatch[1]).first();
+      const side=m&&Number(m.p1)===Number(u.id)?"p1":m&&Number(m.p2)===Number(u.id)?"p2":null;
+      if(!side)return json({error:"not_found"},404);
+      const rl=await limited(env,request,"mutation",u);if(rl)return rl;
+      const dest=new URL("https://do/ws");dest.searchParams.set("uid",String(u.id));dest.searchParams.set("side",side);
+      const stub=env.MATCH_ROOM.get(env.MATCH_ROOM.idFromName(wsMatch[1]));
+      return stub.fetch(new Request(dest,{headers:request.headers}));
     }
 
     if (path === "/api/matches/ai" && request.method === "POST") {
