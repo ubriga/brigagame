@@ -19,7 +19,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
   "homing_missile": {
     "kind": "consumable",
     "name": "Homing Missile",
-    "name_he": "טיל מתביית",
+    "name_he": "טיל מסתובב",
     "pack_shots": 3,
     "price": 150,
     "desc_he": "מתקן את מסלולו לעבר מגדל האויב באוויר. חבילה של 3 שימושים."
@@ -31,6 +31,21 @@ export const CATALOG: Record<string, CatalogEntry> = {
     "pack_shots": 3,
     "price": 180,
     "desc_he": "מתפצל לארבעה פצצונים בשיא המסלול. חבילה של 3 שימושים."
+  },
+  "piercing_shell": {
+    "kind": "consumable", "name": "Piercing Shell", "name_he": "פגז חודר",
+    "pack_shots": 3, "price": 210,
+    "desc_he": "פגיעה מדויקת חודרת עד שתי קוביות באותו קו ועוקפת חצי מהציפוי. טעינה 8 שניות. חבילה של 3 שימושים."
+  },
+  "emp_shell": {
+    "kind": "consumable", "name": "EMP Shell", "name_he": "פגז EMP",
+    "pack_shots": 3, "price": 180,
+    "desc_he": "פגיעה במגדל גורמת נזק קטן ומשביתה מגן ל-8 שניות. אחריה 10 שניות חסינות. לא משבית תנועה או ירי. טעינה 7 שניות. חבילה של 3 שימושים."
+  },
+  "aim_guide": {
+    "kind": "consumable", "name": "Partial Aim Guide", "name_he": "קו הכוונה חלקי",
+    "pack_shots": 3, "price": 90,
+    "desc_he": "קשת מקווקוות של תחילת המסלול בלבד, ללא חישוב רוח. הפעלה צורכת שימוש אחד עד הירייה הבאה, גם אם לא יורים. עד 3 הפעלות לקרב."
   },
   "armor": {
     "kind": "upgrade",
@@ -2219,6 +2234,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "double_bomb": 5,
     "homing_missile": 5,
     "cluster_shell": 6,
+    "piercing_shell": 8,
+    "emp_shell": 7,
     "shot_clock": 10
   },
   "dynamic_obstacle": {

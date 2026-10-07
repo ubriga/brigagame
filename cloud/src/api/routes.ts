@@ -96,7 +96,7 @@ async function effectiveCatalog(env: Env): Promise<Record<string, any>> {
   for (const [k, v] of Object.entries(CATALOG)) catalog[k] = { ...(v as any) };
   const rows = await env.DB.prepare("SELECT item_id, price, available FROM cosmetic_overrides").all();
   for (const r of rows.results as any[]) {
-    if (catalog[r.item_id] && (catalog[r.item_id].kind === "skin" || r.item_id === "homing_missile")) {
+    if (catalog[r.item_id] && (catalog[r.item_id].kind === "skin" || catalog[r.item_id].kind === "consumable")) {
       catalog[r.item_id].price = r.price;
       catalog[r.item_id].available = Boolean(r.available);
     }

@@ -4,5 +4,5 @@ const s=newState({},{});s.cooldowns={standard:3,shot_clock:3};s.ai_profile={mega
 if(r<=2){assert.equal(s.bot_controls.deep_aim,false);assert.equal(s.bot_controls.tactical_mega,false);}
 const total=Object.values(s.bot_ammo).reduce((a,b)=>a+b,0);assert.equal(total,r===1?0:r===2?1:3*r);
 if(r===1)assert.equal(botChooseWeapon(s,()=>0),'standard');
-for(const w of Object.keys(s.bot_ammo)){while(s.bot_ammo[w]>0){s.last_shot_at.p2=0;const [,err]=executeShot({state:s,p2_ai:true},'p2',45,30,w,false,null,null,()=>.5,100000);assert.equal(err,null);}s.last_shot_at.p2=0;const [,err]=executeShot({state:s,p2_ai:true},'p2',45,30,w,false,null,null,()=>.5,100000);assert.ok(err);}
+for(const w of Object.keys(s.bot_ammo)){while(s.bot_ammo[w]>0){s.last_shot_at.p2=0;s.reload_until={};const [,err]=executeShot({state:s,p2_ai:true},'p2',45,30,w,false,null,null,()=>.5,100000);assert.equal(err,null);}s.last_shot_at.p2=0;s.reload_until={};const [,err]=executeShot({state:s,p2_ai:true},'p2',45,30,w,false,null,null,()=>.5,100000);assert.ok(err);}
 console.log('territory rarity',r,'finite ammo/clock/isolation PASS');}

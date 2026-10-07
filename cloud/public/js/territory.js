@@ -92,7 +92,7 @@
       const cs = Math.max(20, Math.round(fitCs * zoom));
       g.style.setProperty("--cs", cs + "px");
       g.classList.toggle("war-small", cs < 28);
-      m.style.maxHeight = zoom > 1 ? (land ? Math.max(200, availH) + "px" : "75vh") : "none";
+      m.style.maxHeight = land ? Math.max(160, availH * 0.7) + "px" : "52vh";
       if (scroll && land && zoom === 1) { const z = document.querySelector(".war-zoom"); if (z && z.scrollIntoView) z.scrollIntoView({ block: "start" }); }
       return true;
     };
@@ -123,8 +123,8 @@
         <div class="war-wrap">
           <div><div class="war-zoom"><button class="btn small secondary" id="war-zin" aria-label="zoom in">➕</button><button class="btn small secondary" id="war-zout" aria-label="zoom out">➖</button><button class="btn small secondary" id="war-zfit">⤢</button></div><div class="war-map" id="war-map"><div class="war-grid" id="war-grid" style="grid-template-columns:repeat(${size},var(--cs,8px))">${grid.join("")}</div></div></div>
           <div class="war-side">
-            ${econCard()}
             <div class="card" id="war-detail">${detail()}</div>
+            ${econCard()}
             ${legend()}
             <div id="war-extra"></div>
             <div class="card war-persona"><h3>🛡️ אישיות המגן שלי</h3>
@@ -158,8 +158,8 @@
       if (sel.mine) act = `<p class="sub">האריח שלך${sel.home ? " (הבית)" : ""}.</p>`;
       else if (sel.ally) act = `<p class="sub">${T("🤝 בעל ברית.")}</p>`;
       else if (sel.protected) act = `<p class="sub">🔒 מוגן בתקופת חסד.</p>`;
-      else if (!adjacent(sel)) act = `<p class="sub">לא צמוד לטריטוריה שלך.</p>`;
-      else act = `<button class="btn" id="war-attack">⚔️ תקוף</button>`;
+      else if (!adjacent(sel)) act = `<p class="sub">לא צמוד לטריטוריה שלך.</p><button class="btn" disabled>⚔️ התחלת קרב - צריך אריח צמוד</button>`;
+      else act = `<button class="btn" id="war-attack">⚔️ התחלת קרב</button>`;
       const stars = sel.rarity > 1 ? "★".repeat(sel.rarity - 1) : "0 ★";
       const bot = sel.owner ? "המגן נקבע לפי אישיות ומגדל הבעלים, לא לפי הכוכבים" : "בוט " + ["", "קל", "בינוני", "קשה", "חזק מאוד"][sel.rarity];
       return `<h3>${k[0]} ${k[1]} · ${RAR[sel.rarity]} · ${stars}</h3><p class="sub">${bot}</p><p class="sub">עלות תקיפה: ${c} מכל חומר.</p><p class="sub">בעלים: ${sel.owner ? esc(sel.owner) : "פנוי (הגנת בוט)"}${sel.owner && !sel.mine && App.showProfile ? ` <button class="btn small secondary" id="war-prof">${T("פרופיל")}</button>` : ""}</p>${act}`;
@@ -176,7 +176,7 @@
           draw();
         };
       }
-      view.querySelectorAll(".wt").forEach(b => b.onclick = () => { sel = map.tiles.find(t => t.id === Number(b.dataset.id)); const sc = document.getElementById("war-map").scrollTop; const sl = document.getElementById("war-map").scrollLeft; draw(); const mp = document.getElementById("war-map"); mp.scrollTop = sc; mp.scrollLeft = sl; });
+      view.querySelectorAll(".wt").forEach(b => b.onclick = () => { sel = map.tiles.find(t => t.id === Number(b.dataset.id)); const sc = document.getElementById("war-map").scrollTop; const sl = document.getElementById("war-map").scrollLeft; draw(); const mp = document.getElementById("war-map"); mp.scrollTop = sc; mp.scrollLeft = sl; if (window.innerWidth <= 760) document.getElementById("war-detail")?.scrollIntoView({block:"center",behavior:"smooth"}); });
       const pf = document.getElementById("war-prof"); if (pf) pf.onclick = () => App.showProfile(sel.owner);
       const atk = document.getElementById("war-attack");
       if (atk) atk.onclick = async () => {

@@ -7,7 +7,7 @@
  * module stays persistence-free; the Durable Object wires storage in.
  */
 import {
-  towerHp, obstacleAt, towerBlocks, TOWER_X_RANGE, cooldownFor, fireWeapon,
+  towerHp, obstacleAt, towerBlocks, TOWER_X_RANGE, cooldownFor, fireWeapon, shieldBlocked,
   type Rng, defaultRng,
 } from "./game_logic.js";
 import { WEAPONS } from "./economy.js";
@@ -61,6 +61,7 @@ export function applyBotTactics(m: any, rng: Rng = defaultRng): any[] {
   const loss = Math.max(0, previous - current);
   const abilities = (state.abilities ??= {}).p2 ??= {};
   if ((controls.reactive_shield ?? true) && (abilities.shield ?? 0) > 0
+      && !shieldBlocked(state, "p2")
       && !(state.shield ??= {}).p2
       && (towerRatio(state, "p2") <= Number(profile.shield_hp ?? 0.4)
           || loss >= Number(profile.shield_damage ?? 60))) {
@@ -102,7 +103,7 @@ export function executeShot(
   if (!(weapon in WEAPONS)) return [null, { status: 400, body: { error: "bad_weapon" } }];
   const state = m.state;
   const last = state.last_shot_at[side];
-  const remaining = cooldownFor(weapon, state) - (t - last);
+  const remaining = Number(state.reload_until?.[side] ?? (last + cooldownFor(weapon, state))) - t;
   if (remaining > 0.05) return [null, { status: 429, body: { error: "reloading", remaining: Math.round(remaining * 100) / 100, error_he: "התותח בטעינה." } }];
   if (weapon !== "standard") {
     if (side === "p2" && m.p2_ai) {

@@ -42,7 +42,7 @@ const PANEL_STRINGS = {
   "שליטת משחק":"Game controls",
   "יומן פעילות":"Activity log",
   "שידור הודעה":"Broadcast",
-  "שליטת קוסמטיקה וטיל מתביית":"Cosmetic catalog controls",
+  "שליטת קטלוג קוסמטי":"Cosmetic catalog controls",
   "מחיר וזמינות נשמרים בשרת.":"Price and availability are saved on the server.",
   "קצב התקדמות XP":"XP progression rate",
   "בונוס ניצחון מול שחקן":"Player win bonus",
@@ -99,9 +99,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
   view.innerHTML = `
     <h1>🛠️ ניהול</h1>
     <div class="tabs">
-      ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail", "nicks"].map(t =>
+      ${["stats", "users", "contact", "gameplay", "coatings", "store", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail", "nicks"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-          stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה וטיל מתביית", audit: "יומן פעילות", broadcast: "שידור הודעה",
+          stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", store: "חנות", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
           coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל", nicks: "✏️ כינויים" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
@@ -318,7 +318,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       ${feature("coatings", "ציפויי מגדל", [["max_level", "מספר שלבים מרבי", 1, 3, 1], ["wood_price", "מחיר עץ", 0, 100000, 1], ["wood_minutes", "זמן עץ (דקות)", .01, 10080, .01], ["wood_hp", "הגנת עץ", 1, 10000, 1], ["tin_price", "מחיר פח", 0, 100000, 1], ["tin_minutes", "זמן פח (דקות)", .01, 10080, .01], ["tin_hp", "הגנת פח", 1, 10000, 1], ["iron_price", "מחיר ברזל", 0, 100000, 1], ["iron_minutes", "זמן ברזל (דקות)", .01, 10080, .01], ["iron_hp", "הגנת ברזל", 1, 10000, 1]], "מחיר = עלות במטבעות. זמן = משך הבנייה בדקות. הגנה = כמה HP הציפוי סופג לפני שהמגדל נפגע. מספר שלבים = כמה רמות ציפוי אפשר לבנות ברצף (עץ ← פח ← ברזל).")}
       ${feature("tower_expansion", "הרחבת מגדל", [["max_extra_cubes", "מספר קוביות נוספות מרבי", 0, 24, 1], ["build_minutes", "זמן בנייה בסיסי (דקות)", .01, 10080, .01], ["cube_price", "מחיר קובייה", 0, 100000, 1], ["cube_hp", "חיים לכל קובייה", 1, 10000, 1]], "קוביות נוספות = כמה קוביות אפשר להוסיף למגדל מעל הבסיס. זמן בנייה = דקות לכל קובייה (עולה עם כל קובייה). מחיר = עלות כל קובייה במטבעות. חיים = HP שכל קובייה מוסיפה למגדל.")}
       <div class="card"><h2>⏱️ צינון נשקים ושעון ירייה</h2><p class="sub">זמן טעינה (בשניות) לכל נשק, ושעון הירייה הכללי של השרת. השינוי חל על משחקים חדשים בלבד; משחק שכבר התחיל שומר את הערכים שלו.</p>
-        ${[["standard","רגיל"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מונחה"],["cluster_shell","אשכול"]].map(([k,l]) => `<label>${l}</label><input type="number" min="0.5" max="60" step="0.1" value="${(c.weapon_cooldowns && c.weapon_cooldowns[k]) ?? ({standard:4,double_bomb:5,homing_missile:5,cluster_shell:6})[k]}" data-control="weapon_cooldowns.${k}">`).join("")}
+        ${[["standard","רגיל"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מסתובב"],["cluster_shell","מרושת"],["piercing_shell","פגז חודר"],["emp_shell","פגז EMP"]].map(([k,l]) => `<label>${l}</label><input type="number" min="0.5" max="60" step="0.1" value="${(c.weapon_cooldowns && c.weapon_cooldowns[k]) ?? ({standard:4,double_bomb:5,homing_missile:5,cluster_shell:6,piercing_shell:8,emp_shell:7})[k]}" data-control="weapon_cooldowns.${k}">`).join("")}
         <label>שעון ירייה (שניות)</label><input type="number" min="3" max="120" step="1" value="${(c.weapon_cooldowns && c.weapon_cooldowns.shot_clock) ?? 10}" data-control="weapon_cooldowns.shot_clock"></div>
       <div class="card"><h2>מכשול דינמי</h2><p class="sub">המכשול (לחיצת הקיטור) זז בזירה. מהירות = קצב תנועה אופקית (גבוה = מהיר יותר). התראה = כמה שניות מוצגת אזהרה לשחקנים לפני שהמכשול זז. תנועה אנכית = המכשול עולה ויורד בין ההרמה המינימלית למקסימלית (בפיקסלים מעל הקרקע) תוך כדי תנועה - יריות יכולות לעבור מתחתיו כשהוא באוויר. כיבוי התנועה האנכית מחזיר מיידית למכשול על הקרקע.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="dynamic_obstacle.enabled" ${c.dynamic_obstacle.enabled ? "checked" : ""} style="width:auto">מופעל</label>
@@ -376,7 +376,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <details class="sub" style="margin-bottom:8px"><summary>מה מפעיל כל מתג?</summary>
         מנוע חכם = כיבוי/הדלקה כוללת של הבוט החכם (בכיבוי: בוט בסיסי). נשקים מיוחדים = שולט בכולם ביחד או בכל אחד בנפרד. תנועה טקטית = הבוט זז לעמדה טובה יותר. מגן תגובתי = הבוט מפעיל מגן כשהוא בסכנה. Mega טקטי = הבוט שומר Mega לרגע הנכון. הסתגלות = הבוט לומד מהפספוסים שלו בתוך המשחק. תחמושת אינסופית = הבוט לא מוגבל במלאי נשקים מיוחדים.</details>
         <div class="bot-system-toggles">
-          ${[["enabled","מנוע חכם"],["special_weapons","נשקים מיוחדים"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מתביית"],["cluster_shell","פגז מצרר"],["movement","תנועה טקטית"],["reactive_shield","מגן תגובתי"],["tactical_mega","Mega טקטי"],["adaptation","הסתגלות בתוך משחק"],["infinite_ammo","תחמושת אינסופית"]].map(([k,l]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_system.${k}" ${c.bot_system[k] ? "checked" : ""} style="width:auto">${l}</label>`).join("")}
+          ${[["enabled","מנוע חכם"],["special_weapons","נשקים מיוחדים"],["double_bomb","פצצה כפולה"],["homing_missile","טיל מסתובב"],["cluster_shell","פגז מצרר"],["movement","תנועה טקטית"],["reactive_shield","מגן תגובתי"],["tactical_mega","Mega טקטי"],["adaptation","הסתגלות בתוך משחק"],["infinite_ammo","תחמושת אינסופית"]].map(([k,l]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="bot_system.${k}" ${c.bot_system[k] ? "checked" : ""} style="width:auto">${l}</label>`).join("")}
         </div></div>
       <div class="card bot-admin"><h2>🎯 כוונון לפי רמה</h2><p class="sub">דיוק, משאבים, הגנה, תנועה, זיכרון ואגרסיביות. הערכים נשמרים בשרת.</p>
         <details class="sub" style="margin-bottom:8px"><summary>מה משמעות כל שדה?</summary>
@@ -560,11 +560,27 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       if (built === 200) { toast("הבנייה התחילה"); vAdmin(App, view, "coatings"); window.refreshMe?.(); }
       else toast(result.error_he || "הבנייה נכשלה");
     });
+  } else if (tab === "store") {
+    const { status, data } = await API.get("/api/admin/store");
+    if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת החנות.</p>"; return; }
+    body.innerHTML = `<div class="card"><h2>חנות - שליטת נשקים</h2><p class="sub">מחיר וזמינות נאכפים בשרת. כל מחיר הוא לחבילה, לא לירייה. שינוי אינו מוחק תחמושת שכבר נקנתה.</p>
+      ${(data.weapons || []).map(w => `<div class="card"><h3>${esc(w.name_he)}</h3><p>${w.pack_shots} שימושים בחבילה</p>
+      <label>מחיר חבילה<input type="number" min="0" max="100000" value="${w.price}" data-wprice="${esc(w.item_id)}"></label>
+      <label><input type="checkbox" data-wavailable="${esc(w.item_id)}" ${w.available ? "checked" : ""}>זמין לרכישה</label>
+      <button class="btn" data-wsave="${esc(w.item_id)}">שמור</button></div>`).join("")}</div>`;
+    body.querySelectorAll("[data-wsave]").forEach(btn => btn.onclick = async () => {
+      const id = btn.dataset.wsave;
+      const price = Number(body.querySelector(`[data-wprice="${id}"]`).value);
+      const available = body.querySelector(`[data-wavailable="${id}"]`).checked;
+      btn.disabled = true;
+      const r = await API.post("/api/admin/store/" + encodeURIComponent(id), { price, available });
+      toast(r.status === 200 ? "נשמר ונאכף בחנות" : "השמירה נכשלה"); btn.disabled = false;
+    });
   } else if (tab === "cosmetics") {
     const loadCosmetics = async () => {
       const { status, data } = await API.get("/api/admin/cosmetics");
       if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הקטלוג.</p>"; return; }
-      body.innerHTML = `<div class="card"><h2>שליטת קוסמטיקה וטיל מתביית</h2><p class="sub">מחיר וזמינות נשמרים בשרת.</p><table>
+      body.innerHTML = `<div class="card"><h2>שליטת קטלוג קוסמטי</h2><p class="sub">מחיר וזמינות נשמרים בשרת.</p><table>
         <tr><th>פריט</th><th>דרגה</th><th>מחיר</th><th>זמין</th><th></th></tr>
         ${(data.cosmetics || []).map(c => `<tr><td>${esc(c.name_he || c.name)}<br><small>${esc(c.item_id)}</small></td>
           <td>${esc(c.tier || "common")}</td><td><input type="number" min="0" max="100000" value="${c.price}" data-price="${esc(c.item_id)}" style="width:100px"></td>

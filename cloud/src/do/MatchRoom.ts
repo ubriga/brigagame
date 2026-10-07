@@ -9,7 +9,7 @@
  */
 import {
   newState, fireWeapon, towerHp, obstacleAt, TOWER_X_RANGE,
-  aiChooseShot, shotClockFor, turnDeadline, type PlayerMods, defaultRng,
+  aiChooseShot, shotClockFor, turnDeadline, shieldBlocked, type PlayerMods, defaultRng,
 } from "../game/game_logic";
 import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot";
 import { finalizeMatch, resolveTimeLimit, MATCH_DURATION_SECONDS } from "../game/finalize.js";
@@ -69,7 +69,7 @@ export class MatchRoom {
     if (url.pathname.endsWith("/snapshot")) {
       return Response.json(this.publicSnapshot());
     }
-    const actionMatch = url.pathname.match(/\/(fire|move|shield)$/);
+    const actionMatch = url.pathname.match(/\/(fire|move|shield|guide)$/);
     if (actionMatch && request.method === "POST") {
       const body: any = await request.json().catch(() => ({}));
       const userId = Number(body.userId);
@@ -191,6 +191,7 @@ export class MatchRoom {
         }
         return { events: null, err };
       }
+      (m.state.aim_guide_active ??= {})[sess.side] = false;
       m.version += 1;
       if (result!.won) {
         await this.finalize(sess.side);
@@ -204,6 +205,21 @@ export class MatchRoom {
       this.broadcast({ type: "events", version: m.version, events: result!.events });
       if (m.p2_ai && m.status === "active") await this.scheduleBot();
       return { events: result!.events, err: null };
+    }
+    if (msg.type === "guide") {
+      const side = sess.side;
+      if (m.state.aim_guide_active?.[side]) return { events: [], err: null };
+      const used = Number(m.state.aim_guide_uses?.[side] ?? 0);
+      if (used >= 3) return { events: null, err: { status: 400, body: { error: "guide_limit", error_he: "עד 3 הפעלות קו הכוונה לקרב." } } };
+      const debit = await this.env.DB.prepare("UPDATE user_items SET qty=qty-1 WHERE user_id=? AND item_id='aim_guide' AND qty>0").bind(sess.userId).run();
+      if (Number(debit.meta?.changes ?? 0) !== 1) return { events: null, err: { status: 400, body: { error: "no_ammo", error_he: "אין שימושי קו הכוונה. ניתן לרכוש בחנות." } } };
+      (m.state.aim_guide_active ??= {})[side] = true;
+      (m.state.aim_guide_uses ??= {})[side] = used + 1;
+      m.version += 1;
+      const events = [{ type: "guide", side, active: true }];
+      await this.persist(); await this.recordEvents(events);
+      this.broadcast({ type: "events", version: m.version, events });
+      return { events, err: null };
     }
     if (msg.type === "move") {
       const side = sess.side;
@@ -222,6 +238,7 @@ export class MatchRoom {
     }
     // shield
     const side = sess.side;
+    if (shieldBlocked(m.state, side)) return { events: null, err: { status: 400, body: { error: "emp_disabled", error_he: "המגן מושבת זמנית על ידי EMP." } } };
     const abilities = (m.state.abilities ??= {})[side] ??= {};
     if ((abilities.shield ?? 0) < 1) {
       return { events: null, err: { status: 400, body: { error: "no_ability", error_he: "המגן כבר נוצל." } } };

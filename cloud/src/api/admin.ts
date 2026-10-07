@@ -142,6 +142,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     weapon_cooldowns: {
       standard: [0.5, 60, "float"], double_bomb: [0.5, 60, "float"],
       homing_missile: [0.5, 60, "float"], cluster_shell: [0.5, 60, "float"],
+      piercing_shell: [0.5, 60, "float"], emp_shell: [0.5, 60, "float"],
       shot_clock: [3, 120, "float"],
     },
     dynamic_obstacle: {
@@ -630,13 +631,36 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     return json({ ok: true, controls: current });
   }
 
+  // Store weapons use the same audited override table, but a separate admin category.
+  if (path === "/api/admin/store" && method === "GET") {
+    const rows = await db.prepare("SELECT item_id, price, available FROM cosmetic_overrides").all();
+    const ov = Object.fromEntries(rows.results.map((r: any) => [r.item_id, r]));
+    return json({ weapons: Object.entries(CATALOG).filter(([, v]) => v.kind === "consumable").map(([id, v]) => ({
+      item_id: id, ...v, price: ov[id]?.price ?? v.price,
+      available: ov[id] ? Boolean(ov[id].available) : v.available !== false,
+    })) });
+  }
+  const storeMatch = path.match(/^\/api\/admin\/store\/([A-Za-z0-9_]+)$/);
+  if (storeMatch && method === "POST") {
+    const itemId = storeMatch[1], base = CATALOG[itemId];
+    if (!base || base.kind !== "consumable") return json({ error: "unknown_weapon" }, 404);
+    const body: any = await request.json().catch(() => ({}));
+    const price = Number(body.price);
+    if (!Number.isInteger(price) || price < 0 || price > 100000 || typeof body.available !== "boolean")
+      return json({ error: "bad_store_control" }, 400);
+    await db.prepare("INSERT INTO cosmetic_overrides (item_id,price,available,updated_by,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(item_id) DO UPDATE SET price=excluded.price,available=excluded.available,updated_by=excluded.updated_by,updated_at=excluded.updated_at")
+      .bind(itemId, price, body.available ? 1 : 0, Number(u.id), nowIso()).run();
+    await audit(env, request, Number(u.id), "admin.store_update", "item", itemId, { price, available: body.available });
+    return json({ ok: true, item_id: itemId, price, available: body.available });
+  }
+
   // GET /api/admin/cosmetics
   if (path === "/api/admin/cosmetics" && method === "GET") {
     const overrides = await db.prepare("SELECT item_id, price, available FROM cosmetic_overrides").all();
     const ov: Record<string, any> = {};
     for (const r of overrides.results as any[]) ov[r.item_id] = r;
     const cosmetics = Object.entries(CATALOG)
-      .filter(([k, v]: any) => v.kind === "skin" || k === "homing_missile")
+      .filter(([, v]: any) => v.kind === "skin")
       .map(([k, v]: any) => ({
         item_id: k, ...v,
         price: ov[k] ? ov[k].price : v.price,
@@ -650,7 +674,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (cosmMatch && method === "POST") {
     const itemId = cosmMatch[1];
     const base: any = (CATALOG as any)[itemId];
-    if (!base || (base.kind !== "skin" && itemId !== "homing_missile")) return json({ error: "unknown_cosmetic" }, 404);
+    if (!base || base.kind !== "skin") return json({ error: "unknown_cosmetic" }, 404);
     const body: any = await request.json().catch(() => ({}));
     const price = Number.parseInt(String(body.price ?? base.price), 10);
     if (!Number.isFinite(price) || price < 0 || price > 100000) {

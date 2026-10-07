@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {newState,simulate,fireWeapon,applyEmp,shieldBlocked,cooldownFor,cooldownsFromControls,towerBlocks} from '../dist/game/game_logic.js';
+import {executeShot,applyBotTactics} from '../dist/game/bot.js';
+import {CATALOG} from '../dist/game/catalog.js';
+const fresh=()=>{const s=newState({}, {},()=>.5,1000);s.obstacle=null;s.obstacle_motion.enabled=false;s.wind=0;return s};
+const base=fresh();let aim;
+for(let a=10;a<=80&&!aim;a++)for(let p=20;p<=100&&!aim;p++){const ev=[];simulate(base,'p1',a,p,'piercing_shell',ev,'p2',1000);if(ev.some(e=>e.side==='p2')){const s=fresh();const [events]=fireWeapon(s,'p1',a,p,'piercing_shell',()=>.5,1000);if(events.find(e=>e.type==='piercing')?.cells.length===2)aim={a,p};}}
+assert.ok(aim);console.log('aim',aim);
+const s=fresh();s.coatings.p2={material:'iron',hp:100,max_hp:100};const [ev]=fireWeapon(s,'p1',aim.a,aim.p,'piercing_shell',()=>.5,1000);assert.equal(ev.find(e=>e.type==='piercing').cells.length,2);assert.equal(ev.filter(e=>e.type==='explosion').length,2);assert.equal(ev.filter(e=>e.type==='coating_hit')[0].absorbed,12);assert.ok(s.damage_dealt.p1>0);assert.equal(cooldownFor('piercing_shell'),8);
+const misses=fresh();const [miss]=fireWeapon(misses,'p1',90,5,'emp_shell',()=>.5,1000);assert.ok(!miss.some(e=>e.type==='emp'));
+const emp=fresh();emp.shield.p2=true;const [ee]=fireWeapon(emp,'p1',aim.a,aim.p,'emp_shell',()=>.5,1000);assert.ok(ee.some(e=>e.type==='emp'&&e.target==='p2'));assert.equal(emp.shield.p2,false);assert.ok(shieldBlocked(emp,'p2',1007));assert.ok(!shieldBlocked(emp,'p2',1008));assert.equal(applyEmp(emp,'p2',[],1005),false);assert.equal(emp.emp_disabled_until.p2,1008);assert.equal(applyEmp(emp,'p2',[],1017),false);assert.equal(applyEmp(emp,'p2',[],1018),true);
+const tactics=fresh();tactics.abilities.p2.shield=3;tactics.ai_profile={shield_hp:1};tactics.emp_disabled_until={p2:Date.now()/1000+30};applyBotTactics({state:tactics},()=>1);assert.equal(tactics.shield.p2,false);assert.equal(tactics.abilities.p2.shield,3);tactics.emp_disabled_until.p2=0;applyBotTactics({state:tactics},()=>1);assert.equal(tactics.shield.p2,true);
+for(const weapon of ['piercing_shell','emp_shell']){const n=fresh();const [out,err]=executeShot({state:n,p2_ai:false},'p1',aim.a,aim.p,weapon,false,1,()=>true,()=>.5,1000);assert.equal(err,null);assert.ok(out.events.some(e=>e.weapon===weapon));assert.equal(n.reload_until.p1,1000+cooldownFor(weapon));assert.equal(executeShot({state:n,p2_ai:false},'p1',45,50,'standard',false,1,null,()=>.5,1005)[1].body.error,'reloading');assert.ok(executeShot({state:n,p2_ai:false},'p1',45,50,weapon,false,1,()=>true,()=>.5,1001)[1]);const no=fresh();assert.equal(executeShot({state:no,p2_ai:false},'p1',45,50,weapon,false,1,()=>false,()=>.5,1000)[1].body.error,'no_ammo');assert.equal(CATALOG[weapon].pack_shots,3);}
+assert.equal(cooldownsFromControls({weapon_cooldowns:{piercing_shell:11,emp_shell:12}}).emp_shell,12);
+console.log('v66 piercing2cells/coating/miss/EMPexpiry/nonstack/immunity/botshield/ammo/reload PASS');

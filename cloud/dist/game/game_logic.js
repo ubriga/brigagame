@@ -221,7 +221,7 @@ export function towerAlive(tower) {
         }
     return alive > total * (1 - DESTROY_FRACTION);
 }
-export function explode(state, x, y, damage, radius, attacker, events, cosmetic = false) {
+export function explode(state, x, y, damage, radius, attacker, events, cosmetic = false, coatingBypass = 0) {
     const enemy = attacker === "p1" ? "p2" : "p1";
     let dealt = 0;
     const destroyed = [];
@@ -231,7 +231,7 @@ export function explode(state, x, y, damage, radius, attacker, events, cosmetic 
         const coating = state.coatings?.[enemy];
         if (coating && coating.hp > 0) {
             const incoming = Math.max(0, damage * mult);
-            const absorbed = Math.min(coating.hp, incoming);
+            const absorbed = Math.min(coating.hp, incoming * (1 - coatingBypass));
             if (coating.material === "wood" && incoming > 0)
                 coating.hp = 0;
             else
@@ -344,6 +344,10 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
                 const hp = state.towers[s][r][c];
                 if (hp !== null && hp > 0 && Math.abs(x - cx) <= BLOCK / 2 && Math.abs(y - cy) <= BLOCK / 2) {
                     points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+                    if (weapon === "piercing_shell")
+                        events.push({ type: "piercing_impact", side: s, vx, vy, r, c });
+                    if (weapon === "emp_shell")
+                        events.push({ type: "emp_impact", side: s });
                     return [x, y, points, false];
                 }
             }
@@ -358,6 +362,21 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
         }
     }
     return [null, null, points, true];
+}
+/** EMP never stacks: 8 seconds off, then 10 seconds of recovery immunity. */
+export function shieldBlocked(state, side, now = Date.now() / 1000) {
+    return Number(state.emp_disabled_until?.[side] ?? 0) > now;
+}
+export function applyEmp(state, target, events, now = Date.now() / 1000) {
+    if (Number(state.emp_immune_until?.[target] ?? 0) > now) {
+        events.push({ type: "emp", target, immune: true });
+        return false;
+    }
+    (state.emp_disabled_until ??= {})[target] = now + 8;
+    (state.emp_immune_until ??= {})[target] = now + 18;
+    (state.shield ??= {})[target] = false;
+    events.push({ type: "emp", target, disabled_until: now + 8, immune_until: now + 18 });
+    return true;
 }
 export function criticalMultiplier(state, attacker, x, y, events) {
     const enemy = attacker === "p1" ? "p2" : "p1";
@@ -387,6 +406,43 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
             }
             events.push(...ev);
         });
+    }
+    else if (weapon === "piercing_shell" || weapon === "emp_shell") {
+        const impacts = [];
+        const [x, y, pts, off] = simulate(state, side, angle, power, weapon, impacts, enemy, now);
+        events.push({ type: "shot", side, weapon, angle, power, points: pts });
+        const impact = impacts.find(e => e.side === enemy);
+        if (x !== null && !off) {
+            if (weapon === "piercing_shell" && impact) {
+                const length = Math.hypot(impact.vx, impact.vy) || 1;
+                const dx = impact.vx / length, dy = impact.vy / length;
+                const cells = [];
+                const seen = new Set();
+                // Continue along the impact tangent. Sampling avoids skipping thin cells.
+                for (let d = 0; d <= BLOCK * 8 && cells.length < 2; d += 2) {
+                    const px = x + dx * d, py = y + dy * d;
+                    for (const b of towerBlocks(state, enemy)) {
+                        const [r, c, cx, cy] = b;
+                        const key = `${r}:${c}`;
+                        if (!seen.has(key) && state.towers[enemy][r][c] > 0 && Math.abs(px - cx) <= BLOCK / 2 && Math.abs(py - cy) <= BLOCK / 2) {
+                            seen.add(key);
+                            cells.push(b);
+                            break;
+                        }
+                    }
+                }
+                for (const [, , cx, cy] of cells)
+                    explode(state, cx, cy, w.damage, w.radius, side, events, false, 0.5);
+                events.push({ type: "piercing", side, target: enemy, cells: cells.map(([r, c]) => ({ r, c })) });
+            }
+            else {
+                explode(state, x, y, w.damage, w.radius, side, events);
+            }
+            if (weapon === "emp_shell" && impact)
+                applyEmp(state, enemy, events, now);
+        }
+        else if (x !== null)
+            explode(state, x, y, 0, 26, side, events, true);
     }
     else if (weapon === "cluster_shell") {
         const ev = [];
@@ -462,7 +518,7 @@ export function turnDeadline(state, side) {
 export function cooldownsFromControls(controls) {
     const c = controls?.weapon_cooldowns ?? {};
     const out = {};
-    for (const k of ["standard", "double_bomb", "homing_missile", "cluster_shell", "shot_clock"]) {
+    for (const k of ["standard", "double_bomb", "homing_missile", "cluster_shell", "piercing_shell", "emp_shell", "shot_clock"]) {
         const v = Number(c[k]);
         if (Number.isFinite(v))
             out[k] = v;

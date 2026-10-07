@@ -57,6 +57,8 @@ export const WEAPONS: Record<string, Weapon> = {
   double_bomb:    { damage: 34, radius: 50, cooldown: 5.0 },
   homing_missile: { damage: 55, radius: 60, cooldown: 5.0 },
   cluster_shell:  { damage: 18, radius: 40, cooldown: 6.0 },
+  piercing_shell: { damage: 24, radius: 14, cooldown: 8.0 },
+  emp_shell:      { damage: 8, radius: 32, cooldown: 7.0 },
 };
 
 export function armorReduction(level: number): number {

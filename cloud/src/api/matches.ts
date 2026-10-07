@@ -101,10 +101,14 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
     sudden_death: Boolean(state.sudden_death),
     turn_deadline: turnDeadline(state, side!),
     reload_until: state.reload_until ?? {},
-    cooldowns: { standard: cooldownFor("standard", state), double_bomb: cooldownFor("double_bomb", state), homing_missile: cooldownFor("homing_missile", state), cluster_shell: cooldownFor("cluster_shell", state) },
+    cooldowns: { standard: cooldownFor("standard", state), double_bomb: cooldownFor("double_bomb", state), homing_missile: cooldownFor("homing_missile", state), cluster_shell: cooldownFor("cluster_shell", state), piercing_shell: cooldownFor("piercing_shell", state), emp_shell: cooldownFor("emp_shell", state) },
     moves_left: (state.moves_left ?? {})[side!] ?? 0,
     abilities: (state.abilities ?? {})[side!] ?? {},
     shield: state.shield ?? {},
+    aim_guide_active: Boolean(state.aim_guide_active?.[side!]),
+    aim_guide_uses: Number(state.aim_guide_uses?.[side!] ?? 0),
+    emp_disabled_until: state.emp_disabled_until ?? {},
+    emp_immune_until: state.emp_immune_until ?? {},
     damage_dealt: state.damage_dealt ?? null,
     coatings: state.coatings ?? {},
     skins: {
@@ -135,7 +139,7 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
   const mmRes = await handleMatchmaking(env, request, path);
   if (mmRes) return mmRes;
   await sweepStaleMatches(env);
-  const mm = path.match(/^\/api\/matches\/([a-z0-9]+)\/(state|ready|leave|fire|move|shield)$/);
+  const mm = path.match(/^\/api\/matches\/([a-z0-9]+)\/(state|ready|leave|fire|move|shield|guide)$/);
   if (!mm) return null;
   const [, matchId, action] = mm;
   const user = await currentUser(d1(env.DB), request);
@@ -143,7 +147,7 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
   const uid = Number(user.id);
   // app.py limiter parity: state->state, fire->fire, ready/leave->mutation (move/shield unlimited there)
   const rlBucket = action === "state" ? "state" : action === "fire" ? "fire"
-    : (action === "ready" || action === "leave") ? "mutation" : null;
+    : (action === "ready" || action === "leave" || action === "guide") ? "mutation" : null;
   // Latency: these three are independent once auth resolved - one round.
   const [rl, row, live]: any[] = await Promise.all([
     rlBucket ? limited(env, request, rlBucket, user) : null,
@@ -187,7 +191,7 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
     return json(out, (out as any)?.error ? 404 : 200);
   }
 
-  if ((action === "fire" || action === "move" || action === "shield") && request.method === "POST") {
+  if ((action === "fire" || action === "move" || action === "shield" || action === "guide") && request.method === "POST") {
     if (m.status !== "active") return json({ error: "not_active", error_he: "המשחק לא פעיל." }, 400);
     if (action === "fire") {
       if (user.suspended) {
@@ -204,7 +208,7 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
         return json({ error: "bad_params" }, 400);
       }
       const weapon = String(body.weapon ?? "standard");
-      if (!["standard", "double_bomb", "homing_missile", "cluster_shell"].includes(weapon)) {
+      if (!["standard", "double_bomb", "homing_missile", "cluster_shell", "piercing_shell", "emp_shell"].includes(weapon)) {
         return json({ error: "bad_weapon" }, 400);
       }
       const out = await doFetch(env, matchId, "/fire", {

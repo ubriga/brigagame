@@ -71,10 +71,10 @@ const GameView = {
       <div id="tutorial-ov" class="hidden"></div>
       <div id="aim-info" aria-label="מדדי כיוון ועוצמה"><span>זווית</span><div class="aim-gauge"><i id="angle-gauge"></i></div><span>עוצמה</span><div class="aim-gauge"><i id="power-gauge"></i></div></div>
       <div id="ability-bar"><button id="move-left" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">⬅ הזזה</button><button id="move-right" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">הזזה ➡</button><button id="shield-btn" class="btn small secondary" title="מגן זמני שסופג את הפגיעה הבאה במגדל.">🛡 מגן</button><button id="mega-btn" class="btn small secondary" title="יריית מגה עוצמתית - מתמלאת עם הזמן.">⚡ מגה</button></div>
-      <div id="weapon-bar"></div>
+      <div id="weapon-bar"></div><button class="btn small secondary" id="guide-btn" title="קו חלקי ללא חישוב רוח. שימוש אחד להפעלה עד הירייה הבאה, עד 3 לקרב.">קו הכוונה</button>
       <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
-        · <b>רווח</b> ירייה · <b>1-4</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
+        · <b>רווח</b> ירייה · <b>1-6</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
     requestAnimationFrame(() => {
       document.documentElement.scrollLeft = 0; document.body.scrollLeft = 0;
@@ -135,8 +135,9 @@ const GameView = {
     this.bindInput();
     const ability = async (path, body = {}) => {
       const { status, data } = await API.post(`/api/matches/${this.matchId}/${path}`, body);
-      if (status === 200) this.applySnap(data); else toast((data && data.error_he) || "הפעולה אינה זמינה");
+      if (status === 200) { this.applySnap(data); if (path === "guide") window.refreshMe?.(); } else toast((data && data.error_he) || "הפעולה אינה זמינה");
     };
+    document.getElementById("guide-btn").onclick = () => ability("guide");
     document.getElementById("move-left").onclick = () => ability("move", { direction: "left" });
     document.getElementById("move-right").onclick = () => ability("move", { direction: "right" });
     document.getElementById("shield-btn").onclick = () => ability("shield");
@@ -352,7 +353,7 @@ const GameView = {
       this.fire();
     });
     cv.addEventListener("pointercancel", cancelAim);
-    // Keyboard controls: arrows adjust angle/power, space fires, 1-4 picks a
+    // Keyboard controls: arrows adjust angle/power, space fires, 1-6 picks a
     // weapon. Shift makes arrow steps bigger. The aim indicator stays visible
     // briefly after a key press so keyboard aiming has visual feedback.
     this._onKey = (e) => {
@@ -362,7 +363,7 @@ const GameView = {
       if (document.activeElement && document.activeElement.tagName === "BUTTON")
         document.activeElement.blur();
       const step = e.shiftKey ? 5 : 1;
-      const weapons = ["standard", "double_bomb", "homing_missile", "cluster_shell"];
+      const weapons = ["standard", "double_bomb", "homing_missile", "cluster_shell", "piercing_shell", "emp_shell"];
       let used = true;
       switch (e.key) {
         case "ArrowUp":
@@ -376,7 +377,7 @@ const GameView = {
         case " ":
           if (this.canFire()) this.fire();
           break;
-        case "1": case "2": case "3": case "4": {
+        case "1": case "2": case "3": case "4": case "5": case "6": {
           const id = weapons[Number(e.key) - 1];
           const qty = id === "standard" ? 1 : (this._inventory?.[id]?.qty || 0);
           if (id && qty > 0) { this.weapon = id; Sfx.play("click"); this.renderWeapons(); }
@@ -407,7 +408,7 @@ const GameView = {
 
   cooldown() {
     const cd = (this.snap && this.snap.cooldowns) || {};
-    return Number(cd[this.weapon]) || { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6 }[this.weapon] || 4;
+    return Number(cd[this.weapon]) || { standard: 4, double_bomb: 5, homing_missile: 5, cluster_shell: 6, piercing_shell: 8, emp_shell: 7 }[this.weapon] || 4;
   },
 
   reloadFrac() {
@@ -417,6 +418,9 @@ const GameView = {
     // before the server's last_shot_at catches up on the round trip.
     const last = Math.max(serverLast, this.localLastShot || 0);
     const nowSrv = Date.now() / 1000 + this.serverOffset;
+    const loaded = Number(this.snap.reload_until?.[this.mySide()] || 0);
+    if (loaded > nowSrv && serverLast >= (this.localLastShot || 0))
+      return Math.max(0, Math.min(1, (nowSrv - serverLast) / Math.max(0.5, loaded - serverLast)));
     return Math.max(0, Math.min(1, (nowSrv - last) / this.cooldown()));
   },
 
@@ -560,13 +564,38 @@ const GameView = {
     }
     const moves = Number(s.moves_left || 0);
     ["move-left", "move-right"].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = moves < 1; });
+    const gb = document.getElementById("guide-btn");
+    if (gb) {
+      const qty = Number(this._inventory?.aim_guide?.qty || 0), used = Number(s.aim_guide_uses || 0);
+      gb.disabled = s.aim_guide_active || qty < 1 || used >= 3;
+      gb.textContent = s.aim_guide_active ? "קו פעיל עד הירייה · ללא רוח" : `קו הכוונה (${qty}) · ${used}/3 בקרב`;
+    }
     const ab = s.abilities || {};
-    const sb = document.getElementById("shield-btn"); if (sb) sb.disabled = Number(ab.shield || 0) < 1;
+    this.renderEmp();
     const mb = document.getElementById("mega-btn"); if (mb) mb.disabled = Number(ab.mega || 0) < 1;
     this.renderTimer();
   },
 
+  renderEmp() {
+    const s = this.snap; if (!s) return;
+    const now = Date.now()/1000 + this.serverOffset;
+    const side = s.you, enemy = side === "p1" ? "p2" : "p1";
+    const remaining = Math.max(0, Math.ceil(Number(s.emp_disabled_until?.[side] || 0) - now));
+    const sb = document.getElementById("shield-btn");
+    if (sb) { sb.disabled = remaining > 0 || Number(s.abilities?.shield || 0) < 1; sb.textContent = remaining ? `⚡ מגן מושבת ${remaining}ש׳` : "🛡 מגן"; }
+    for (const target of [side, enemy]) {
+      const tag = document.getElementById("tag-" + target); if (!tag) continue;
+      let badge = tag.querySelector(".emp-status");
+      const off = Math.max(0, Math.ceil(Number(s.emp_disabled_until?.[target] || 0) - now));
+      const immune = Math.max(0, Math.ceil(Number(s.emp_immune_until?.[target] || 0) - now));
+      if (!badge) { badge = document.createElement("span"); badge.className="emp-status"; badge.style.cssText="font-size:11px;color:var(--gold);display:block"; tag.querySelector(".tag-mid")?.appendChild(badge); }
+        badge.style.minHeight = "13px";
+        badge.textContent = off ? `⚡ מגן מושבת ${off}ש׳` : immune ? `🛡 חסינות EMP ${immune}ש׳` : "";
+    }
+  },
+
   renderTimer() {
+    this.renderEmp();
     const el = document.getElementById("match-timer");
     if (!el || !this.snap) return;
     if (this.snap.status !== "active" || !this.snap.match_ends_at) {
@@ -600,7 +629,7 @@ const GameView = {
     if (!bar) return;
     const inv = this._inventory || {};
     const names = { standard: "🎯 רגיל (∞)", double_bomb: "💣 כפולה",
-                    homing_missile: "🚀 מסתובב", cluster_shell: "🎇 מרושת" };
+                    homing_missile: "🚀 מסתובב", cluster_shell: "🎇 מרושת", piercing_shell: "🔩 חודר", emp_shell: "⚡ EMP" };
     bar.innerHTML = "";
     for (const [id, label] of Object.entries(names)) {
       const qty = id === "standard" ? null : (inv[id] ? inv[id].qty : 0);
@@ -609,15 +638,17 @@ const GameView = {
       b.textContent = qty === null ? label : `${label} (${qty})`;
       if (!this._noTooltips) b.title = { standard: "פגז רגיל - ללא הגבלה",
         double_bomb: "פצצה כפולה - שתי פגיעות. נקנית בחנות במטבעות",
-        homing_missile: "טיל מתביית - מתקן מסלול לארץ. נקנה בחנות במטבעות",
-        cluster_shell: "פגז מצרר - מתפזר לכמה פגיעות. נקנה בחנות במטבעות" }[id] || "";
+        homing_missile: "טיל מסתובב - מתקן מסלול לעבר מגדל האויב. נקנה בחנות במטבעות",
+        cluster_shell: "פגז מצרר - מתפזר לכמה פגיעות. נקנה בחנות במטבעות",
+        piercing_shell: "פגז חודר - עד שתי קוביות בקו הפגיעה, עוקף חצי מהציפוי. טעינה 8 שניות",
+        emp_shell: "פגז EMP - נזק קטן, מגן מושבת 8 שניות ואחריהן 10 שניות חסינות" }[id] || "";
       b.disabled = qty !== null && qty <= 0;
       b.onclick = () => { this.weapon = id; Sfx.play("click"); this.renderWeapons(); };
       bar.appendChild(b);
     }
   },
 
-  setInventory(inv) { this._inventory = inv; if (this.canvas) this.renderWeapons(); },
+  setInventory(inv) { this._inventory = inv; if (this.canvas) { this.renderWeapons(); this.renderHud(); } },
 
   async fire() {
     if (!this.canFire()) return;
@@ -1482,7 +1513,28 @@ const GameView = {
     c.fillStyle = "#173d54"; c.beginPath(); c.arc(m.x, m.y, 4, 0, Math.PI * 2); c.fill();
   },
 
+  guidePoints() {
+    const m = this.muzzle(this.mySide()), ang = this.aimAngle * Math.PI / 180;
+    const vx = this.facing() * this.aimPower * 10 * Math.cos(ang);
+    let vy = -this.aimPower * 10 * Math.sin(ang), x=m.x, y=m.y, length=0;
+    const points=[[x,y]];
+    // Deliberately no wind or homing. Only the first 200 world pixels.
+    for (let t=0;t<0.9;t+=0.02) {
+      vy += 700*0.02; const nx=x+vx*0.02, ny=y+vy*0.02;
+      length += Math.hypot(nx-x,ny-y);
+      if (length>200 || ny>=this.GROUND || nx<0 || nx>this.W) break;
+      x=nx;y=ny;points.push([x,y]);
+    }
+    return points;
+  },
+
   drawAim() {
+    if (this.snap?.aim_guide_active) {
+      const c=this.ctx, pts=this.guidePoints();
+      c.save();c.strokeStyle="#fef08a";c.lineWidth=3;c.setLineDash([6,7]);
+      c.beginPath();pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.stroke();c.restore();
+      return;
+    }
     const c = this.ctx, m = this.muzzle(this.mySide());
     const ang = this.aimAngle * Math.PI / 180, f = this.facing();
     const len = 30 + this.aimPower * 1.2;
