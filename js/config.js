@@ -6,7 +6,7 @@ const CONFIG = {
   // Client deploy version. Must match the backend SERVER_VERSION; when the
   // presence pulse reports a different version the app reloads itself in the
   // lobby (never mid-game) to pick up the new build.
-  CLIENT_VERSION: "63",
+  CLIENT_VERSION: "64",
   // Origin-aware: the Worker serves assets same-origin (""), while the
   // GitHub Pages mirror must call the Worker explicitly. Runtime-detect so an
   // rsync of this folder to gh-pages can never clobber the Pages API base again.

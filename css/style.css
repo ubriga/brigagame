@@ -592,3 +592,5 @@ body.game-active #exit-confirm { position: fixed; z-index: 80; inset: auto;
   width: min(460px, calc(100vw - 24px)); box-sizing: border-box; margin: 0;
   max-height: calc(100dvh - 24px); overflow-y: auto; box-shadow: 0 8px 40px #000b; }
 body.game-active #exit-confirm .btn { min-height: 44px; }
+/* v64: the guest warning remains in menus, never over match controls. */
+body.fs-mode.game-active #guest-banner { display: none; }
