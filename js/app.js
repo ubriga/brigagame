@@ -1675,7 +1675,7 @@ const App = {
         html += `<div class="card item${kind === "skin" && inv && inv.equipped ? " equipped" : ""}${it.available === false ? " disabled" : ""}">
           <b>${esc(Lang.pick(it))}</b><span class="sub" style="margin:0">${esc(Lang.current === "en" ? (it.desc_en || (kind === "skin" ? `Premium ${it.tier || "common"} cosmetic.` : Lang.text(it.desc_he))) : it.desc_he)}</span>
           ${body}
-          <button class="btn small" data-buy="${id}" ${kind === "skin" && (inv && inv.equipped || it.available === false) ? "disabled" : ""}>${it.available === false ? "לא זמין" : skinBtn}</button>
+          <button class="btn small" data-buy="${id}" ${it.available === false || (kind === "skin" && inv && inv.equipped) ? "disabled" : ""}>${it.available === false ? "לא זמין" : skinBtn}</button>
         </div>`;
       }
       html += `</div></section>`;

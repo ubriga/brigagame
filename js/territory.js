@@ -22,16 +22,17 @@
   .war-chip{background:rgba(255,255,255,.08);padding:6px 10px;border-radius:12px;font-weight:700}
   .war-wrap{display:grid;grid-template-columns:minmax(0,2fr) minmax(220px,1fr);gap:12px}
   @media (max-width:760px){.war-wrap{grid-template-columns:1fr}}
+  .war-wrap>div{min-width:0}
   .war-map{overflow:auto;border-radius:12px;background:#361c0b;padding:6px;max-width:100%;touch-action:pan-x pan-y pinch-zoom}
   .war-zoom{display:flex;gap:6px;margin:0 0 8px}
   .war-zoom button{min-width:44px}
-  .war-grid{display:grid;gap:2px;direction:ltr}
+  .war-grid{width:max-content;display:grid;gap:2px;direction:ltr}
   .wt{display:flex;align-items:center;justify-content:center;aspect-ratio:1;min-width:0;width:var(--cs,8px);height:var(--cs,8px);border:0;border-radius:4px;font-size:calc(var(--cs,8px)*.5);overflow:hidden;line-height:1;padding:0;color:#fff;cursor:pointer;position:relative;opacity:.92}
   .wt.mine{outline:3px solid #ffd35c;opacity:1}
   .wt.enemy{outline:3px solid #e0556b}
   .wt.sel{outline:3px solid #fff;opacity:1}
   .wt .r{position:absolute;bottom:1px;left:2px;font-size:9px;font-weight:700}
-  .war-small .wt .r{display:none}
+  .war-small .wt .r{font-size:6px;left:0;bottom:0}
   .war-side .card{margin-bottom:10px}
   .war-leg{margin:4px 18px 8px 0;padding:0 0 0 0;list-style:none;line-height:1.7}
   .war-legend summary{cursor:pointer}
@@ -72,7 +73,7 @@
         <li>🌾 מישור - מייצר מעט מכל שלושת החומרים</li>
         <li>🏰 מצודה - מייצרת מכל החומרים, תמיד אפית או אגדית</li>
       </ul>
-      <p class="sub">דרגת נדירות: ★ נדיר, ★★ אפי, ★★★ אגדי. ככל שהדרגה גבוהה יותר התפוקה גדולה יותר, אבל גם עלות התקיפה גבוהה יותר (${cfg.cost_per_rarity || 15} מכל חומר לכל דרגה) והבוט המגן חזק יותר.</p>
+      <p class="sub">דרגת נדירות: ★ נדיר, ★★ אפי, ★★★ אגדי. ככל שהדרגה גבוהה יותר התפוקה גדולה יותר, אבל גם עלות התקיפה גבוהה יותר (${cfg.cost_per_rarity || 15} מכל חומר לכל דרגה) והבוט המגן חזק יותר באריח פנוי. בשטח של שחקן, המגן נקבע לפי אישיות ומגדל הבעלים.</p>
       <ul class="war-leg">
         <li>🏠 הבית שלך. אי אפשר לתקוף אותו כל עוד יש לך אריחים אחרים.</li>
         <li>🟨 מסגרת צהובה - אריחים שלך. 🟥 מסגרת אדומה - של שחקן אחר.</li>
@@ -88,9 +89,9 @@
       const availH = land ? window.innerHeight - 64 : 100000;
       const box = Math.min(m.parentElement.clientWidth, window.innerWidth - 24, availH) - 14;
       const fitCs = Math.max(8, Math.floor((box - 2 * (size - 1)) / size));
-      const cs = Math.max(8, Math.round(fitCs * zoom));
+      const cs = Math.max(20, Math.round(fitCs * zoom));
       g.style.setProperty("--cs", cs + "px");
-      g.classList.toggle("war-small", cs < 18);
+      g.classList.toggle("war-small", cs < 28);
       m.style.maxHeight = zoom > 1 ? (land ? Math.max(200, availH) + "px" : "75vh") : "none";
       if (scroll && land && zoom === 1) { const z = document.querySelector(".war-zoom"); if (z && z.scrollIntoView) z.scrollIntoView({ block: "start" }); }
       return true;
@@ -158,8 +159,10 @@
       else if (sel.ally) act = `<p class="sub">${T("🤝 בעל ברית.")}</p>`;
       else if (sel.protected) act = `<p class="sub">🔒 מוגן בתקופת חסד.</p>`;
       else if (!adjacent(sel)) act = `<p class="sub">לא צמוד לטריטוריה שלך.</p>`;
-      else act = `<p class="sub">עלות תקיפה: ${c} מכל חומר.</p><button class="btn" id="war-attack">⚔️ תקוף</button>`;
-      return `<h3>${k[0]} ${k[1]} · ${RAR[sel.rarity]}</h3><p class="sub">בעלים: ${sel.owner ? esc(sel.owner) : "פנוי (הגנת בוט)"}${sel.owner && !sel.mine && App.showProfile ? ` <button class="btn small secondary" id="war-prof">${T("פרופיל")}</button>` : ""}</p>${act}`;
+      else act = `<button class="btn" id="war-attack">⚔️ תקוף</button>`;
+      const stars = sel.rarity > 1 ? "★".repeat(sel.rarity - 1) : "0 ★";
+      const bot = sel.owner ? "המגן נקבע לפי אישיות ומגדל הבעלים, לא לפי הכוכבים" : "בוט " + ["", "קל", "בינוני", "קשה", "חזק מאוד"][sel.rarity];
+      return `<h3>${k[0]} ${k[1]} · ${RAR[sel.rarity]} · ${stars}</h3><p class="sub">${bot}</p><p class="sub">עלות תקיפה: ${c} מכל חומר.</p><p class="sub">בעלים: ${sel.owner ? esc(sel.owner) : "פנוי (הגנת בוט)"}${sel.owner && !sel.mine && App.showProfile ? ` <button class="btn small secondary" id="war-prof">${T("פרופיל")}</button>` : ""}</p>${act}`;
     };
     const wire = () => {
       for (const [id, url] of [["war-gift", "/api/territory/daily-gift"], ["war-refill", "/api/territory/refill"]]) {
