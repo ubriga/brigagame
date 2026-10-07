@@ -25,6 +25,7 @@ const Render3D = {
   /* init(game) → true when the 3D scene is live. Throws on any failure so
    * the caller silently keeps the 2D renderer. */
   async init(game) {
+    const hostAtStart=game.canvas;
     if (Render3D._ready) return true;
     const T = await import("../vendor/three.module.min.js");
     Render3D._T = T;
@@ -77,6 +78,7 @@ const Render3D = {
         pressPiston: await opt("press_piston.glb"),
       };
     } catch (e) { models = null; console.warn("[r3d] model init failed:", e && (e.message || e)); }
+    if(game._r3dCancelled || !game.canvas || game.canvas!==hostAtStart)return false;
     if (models) Render3D._modelCache = models;
     Render3D._models = models;
     /* The 2D canvas already owns a 2D context, so WebGL gets its own canvas
