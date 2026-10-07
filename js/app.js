@@ -1640,7 +1640,7 @@ const App = {
     for (const [id, it] of Object.entries(catalog)) groups[it.kind].push([id, it]);
     const tierOrder = { common: 1, rare: 2, epic: 3, legendary: 4 };
     groups.skin.sort((a, b) => (tierOrder[a[1].tier] || 0) - (tierOrder[b[1].tier] || 0) || a[1].price - b[1].price);
-    let html = `<h1>🛒 חנות</h1><p class="sub">יתרה: 🪙 ${data.coins} מטבעות</p>
+    let html = `<h1>🛒 חנות</h1><p class="sub">יתרה: 🪙 ${data.coins} מטבעות</p><button class="btn small secondary" id="store-refresh">רענן חנות</button>
       <div class="card store-workshop-callout"><div><b>מחפש ציפוי או קוביות למגדל?</b><span>הם נמצאים בסדנת המגדל, יחד עם הפועלים וזמני הבנייה.</span></div><a class="btn" href="#/custom">לסדנת המגדל</a></div>
       <div class="store-category-bar" role="tablist" aria-label="קטגוריות חנות">
         <button class="active" data-store-filter="consumable">⚔️ נשקים</button><button data-store-filter="upgrade">🛡️ שדרוגים</button><button data-store-filter="skin">🎨 מראות</button><button data-store-filter="all">הכל</button>
@@ -1693,6 +1693,7 @@ const App = {
       }));
     };
     view.querySelectorAll("[data-store-filter]").forEach(b => b.onclick=()=>setStoreFilter(b.dataset.storeFilter));
+    view.querySelector("#store-refresh").onclick = () => this.vStore(view, seq);
     view.querySelectorAll("[data-skin-preview]").forEach(canvas => {
       const it = catalog[canvas.dataset.skinPreview];
       try { this.drawSkinPreview(canvas, { colors: it.colors, ...(it.style || {}) }, 0); canvas.dataset.rendered="1"; }
