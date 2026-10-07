@@ -29,6 +29,7 @@ const App = {
       if (m.status === 200) App.setMe(m.data);
     };
     window.addEventListener("hashchange", () => this.route());
+    this.startVersionWatch();
     document.querySelector('a[data-nav="contact"]')?.addEventListener("click", (e) => {
       if (this.me) { e.preventDefault(); Sfx.play("click"); this.showContactOverlay(); }
     });
@@ -120,6 +121,43 @@ const App = {
     this.route();
   },
 
+  async checkVersion(version) {
+    if (!version || String(version) === String(CONFIG.CLIENT_VERSION) || this._versionChecking) return;
+    const h = location.hash || "#/lobby";
+    if (!["#/lobby", "#/", "#/login"].includes(h) || Date.now() - (this._lastActiveAt || 0) < 2000) return;
+    if (GameView.snap?.status === "active" && GameView.canvas) return;
+    const key = "bg_reloaded_for_" + version;
+    if (sessionStorage.getItem(key)) return;
+    this._versionChecking = true;
+    try {
+      // The Worker can deploy before Pages. Only refresh when this host's
+      // frontend is actually ready, and bypass the HTML cache on navigation.
+      const res = await fetch("./js/config.js?release=" + encodeURIComponent(version), { cache: "no-store" });
+      const text = await res.text();
+      const ready = text.match(/CLIENT_VERSION:\s*["']([^"']+)["']/)?.[1];
+      if (!res.ok || ready !== String(version)) return;
+      if (!["#/lobby", "#/", "#/login"].includes(location.hash || "#/lobby") || Date.now() - (this._lastActiveAt || 0) < 2000 || (GameView.canvas && GameView.snap?.status === "active")) return;
+      sessionStorage.setItem(key, "1");
+      navigator.serviceWorker?.getRegistration().then(reg => reg?.update()).catch(() => {});
+      const url = new URL(location.href); url.searchParams.set("release", version);
+      location.replace(url.href);
+    } catch (_) { /* Stay usable offline; retry on the next version check. */ }
+    finally { this._versionChecking = false; }
+  },
+
+  startVersionWatch() {
+    clearInterval(this._versionWatch);
+    const check = async () => {
+      if (document.hidden || !["#/lobby", "#/", "#/login", ""].includes(location.hash)) return;
+      try {
+        const res = await fetch(CONFIG.API_BASE + "/api/health", { cache: "no-store" });
+        if (res.ok) this.checkVersion((await res.json()).version);
+      } catch (_) {}
+    };
+    this._versionWatch = setInterval(check, 30000);
+    window.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+  },
+
   // App-wide presence pulse: keeps the player invitable from ANY screen
   // (lobby, store, leaderboard, ...) and delivers incoming match invites as
   // a global overlay.
@@ -129,25 +167,7 @@ const App = {
       if (!API.token) return;
       const { status, data } = await API.post("/api/presence/ping");
       if (status !== 200 || !data) return;
-      // Version handshake: a newer deploy reloads the app, but only from the
-      // lobby - never mid-game - and at most once per version, so a half
-      // deployed release cannot cause a reload loop.
-      if (data.server_version && data.server_version !== CONFIG.CLIENT_VERSION) {
-        const h = location.hash || "#/lobby";
-        // Never reload right after a route change or a tap: the reload wipes
-        // the in-flight screen behind several seconds of black, and on a slow
-        // connection the user starts poking the dark page (pinch zoom) which
-        // then renders the next view tiny. Wait for a genuinely idle lobby.
-        const idleFor = Date.now() - (this._lastActiveAt || 0);
-        if ((h === "#/lobby" || h === "#/") && idleFor > 10000) {
-          const key = "bg_reloaded_for_" + data.server_version;
-          if (!sessionStorage.getItem(key)) {
-            sessionStorage.setItem(key, "1");
-            location.reload();
-            return;
-          }
-        }
-      }
+      if (data.server_version) this.checkVersion(data.server_version);
       const offer = data.offer;
       if (offer && offer.match_id && this._offerMatchId !== offer.match_id)
         this.showMatchOffer(offer.match_id, offer.expires_in || 20, offer.territory || null);
