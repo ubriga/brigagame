@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {turnDeadline,newState,cooldownsFromControls} from '../dist/game/game_logic.js';
+import {executeShot} from '../dist/game/bot.js';
+const s=newState({}, {},()=>.5,1000);s.cooldowns={standard:3,shot_clock:3,cluster_shell:4};
+assert.equal(turnDeadline(s,'p1'),1003);s.last_shot_at.p1=1001;s.last_turn_at.p1=1001;
+assert.equal(turnDeadline(s,'p1'),1007);s.reload_until={p1:1005};assert.equal(turnDeadline(s,'p1'),1008);
+s.last_turn_at.p1=1010;assert.equal(turnDeadline(s,'p1'),1013);
+const t=newState({}, {},()=>.5,1000);t.cooldowns=s.cooldowns;t.last_shot_at.p1=0;
+const [out,err]=executeShot({state:t,p2_ai:true},'p1',45,50,'standard',false,1,null,()=>.5,1001);
+assert.equal(err,null);assert.equal(t.reload_until.p1,1004);assert.equal(turnDeadline(t,'p1'),1007);
+console.log('shot clock: initial / post-load / old matches / expiry / actual shot PASS');

@@ -11,7 +11,7 @@ import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
 import { resolvePractice } from "../game/finalize.js";
 import { reapDanglingBattles } from "../game/territory.js";
-import { towerHp, obstacleAt, cooldownFor, shotClockFor } from "../game/game_logic.js";
+import { towerHp, obstacleAt, cooldownFor, turnDeadline } from "../game/game_logic.js";
 import { rankFor } from "../game/economy.js";
 import { rankPayload, rankForLevel } from "../game/ranks.js";
 import { CATALOG, DEFAULT_SKIN } from "../game/catalog.js";
@@ -96,7 +96,8 @@ async function matchSnapshot(env, m, userId, since) {
         map: state.map ?? "valley",
         obstacle: obstacleAt(state),
         sudden_death: Boolean(state.sudden_death),
-        turn_deadline: ((state.last_turn_at ?? {})[side] ?? 0) + shotClockFor(state),
+        turn_deadline: turnDeadline(state, side),
+        reload_until: state.reload_until ?? {},
         cooldowns: { standard: cooldownFor("standard", state), double_bomb: cooldownFor("double_bomb", state), homing_missile: cooldownFor("homing_missile", state), cluster_shell: cooldownFor("cluster_shell", state) },
         moves_left: (state.moves_left ?? {})[side] ?? 0,
         abilities: (state.abilities ?? {})[side] ?? {},

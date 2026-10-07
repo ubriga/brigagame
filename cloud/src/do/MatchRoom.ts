@@ -9,7 +9,7 @@
  */
 import {
   newState, fireWeapon, towerHp, obstacleAt, TOWER_X_RANGE,
-  aiChooseShot, shotClockFor, type PlayerMods, defaultRng,
+  aiChooseShot, shotClockFor, turnDeadline, type PlayerMods, defaultRng,
 } from "../game/game_logic";
 import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot";
 import { finalizeMatch, resolveTimeLimit, MATCH_DURATION_SECONDS } from "../game/finalize.js";
@@ -153,7 +153,7 @@ export class MatchRoom {
       // get the deadline for display but cannot bypass it by hiding JS.
       const now = Date.now() / 1000;
       const lastTurn = (m.state.last_turn_at ??= {});
-      const deadline = Number(lastTurn[sess.side] ?? m.state.started_at ?? now) + shotClockFor(m.state);
+      const deadline = turnDeadline(m.state, sess.side);
       if (now > deadline + 1.5) {
         lastTurn[sess.side] = now;
         await this.persist();

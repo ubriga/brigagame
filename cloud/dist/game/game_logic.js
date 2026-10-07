@@ -450,6 +450,14 @@ export function shotClockFor(state) {
     const v = Number(state?.cooldowns?.shot_clock);
     return Number.isFinite(v) && v >= 3 ? v : 10;
 }
+/** Aim time starts only once the previous shot has finished reloading.
+ * Old live matches without reload_until fall back to the standard cooldown. */
+export function turnDeadline(state, side) {
+    const last = Number(state.last_shot_at?.[side] ?? 0);
+    const loaded = last > 0 ? Number(state.reload_until?.[side] ?? (last + cooldownFor("standard", state))) : 0;
+    const turn = Number(state.last_turn_at?.[side] ?? state.started_at ?? 0);
+    return Math.max(turn, loaded) + shotClockFor(state);
+}
 /** Snapshot of the admin cooldown controls, frozen into a new match state. */
 export function cooldownsFromControls(controls) {
     const c = controls?.weapon_cooldowns ?? {};

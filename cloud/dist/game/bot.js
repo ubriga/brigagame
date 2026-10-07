@@ -124,6 +124,7 @@ export function executeShot(m, side, angle, power, weapon = "standard", mega = f
     if (mega)
         events.push({ type: "ability", side, ability: "mega" });
     const after = towerHp(state, enemySide).hp;
+    (state.reload_until ??= {})[side] = t + cooldownFor(weapon, state);
     if (side === "p2" && m.p2_ai) {
         const tactics = (state.bot_tactics ??= {});
         const history = (tactics.history ??= []);
