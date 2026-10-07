@@ -727,7 +727,7 @@ const GameView = {
           this.anims.push({ kind: "hitflash", target: ev.target,
                             t: -delay / 0.24, dur: 0.24 });
           this.anims.push({ kind: "dmgnum", x: ev.x, y: Math.max(60, ev.y - 46),
-                            t: -delay / 1.3, dur: 1.3, damage: dmg });
+                            t: -delay / 1.3, dur: 1.3, damage: dmg, label: ev.impact_label });
           if (ev.destroyed) for (const b of ev.destroyed)
             this.spawnDebris(ev.target, b.r, b.c, delay);
           if (ev.destroyed && ev.destroyed.length)
@@ -1099,8 +1099,7 @@ const GameView = {
       c.restore();
     }
     const n = a.points.length;
-    // Smoothstep removes the hard launch/landing snap while preserving the
-    // authoritative path and impact point.
+    // Linear interpolation by the simulation timestamp, never visual easing.
     const fi = this.shotIndex(a), i = Math.floor(fi), f = fi - i;
     const p0 = a.points[i], p1 = a.points[Math.min(n - 1, i + 1)];
     const x = p0[0] + (p1[0] - p0[0]) * f, y = p0[1] + (p1[1] - p0[1]) * f;
@@ -1238,7 +1237,7 @@ const GameView = {
     c.textAlign = "center";
     c.direction = "ltr";
     c.lineWidth = 5; c.strokeStyle = "rgba(10,10,20,.85)";
-    const label = a.damage > 0 ? `-${Math.round(a.damage)}` : "החטאה!";
+    const label = a.label || (a.damage > 0 ? `-${Math.round(a.damage)}` : "החטאה!");
     c.strokeText(label, a.x, a.y - rise);
     c.fillStyle = a.damage > 0 ? "#f87171" : "#94a3b8";
     c.fillText(label, a.x, a.y - rise);

@@ -449,6 +449,13 @@ export function fireWeapon(state, side, angle, power, weapon, rng = defaultRng, 
             }
             else {
                 explode(state, x, y, w.damage, w.radius, side, events);
+                if (weapon === "piercing_shell") {
+                    const ob = obstacleAt(state, (now ?? Date.now() / 1000) + Number(pts.at(-1)?.[2] || 0));
+                    const blocked = ob && x >= ob.x && x <= ob.x + ob.w && y >= ob.y && y <= ob.y + ob.h;
+                    const blast = [...events].reverse().find((e) => e.type === "explosion");
+                    if (blast && blocked)
+                        blast.impact_label = "מכשול חסם";
+                }
             }
             if (weapon === "emp_shell" && impact)
                 applyEmp(state, enemy, events, now);

@@ -447,6 +447,12 @@ export function fireWeapon(state: any, side: string, angle: number, power: numbe
         events.push({ type: "piercing", side, target: enemy, cells: cells.map(([r,c]) => ({r,c})) });
       } else {
         explode(state, x, y!, w.damage, w.radius, side, events);
+        if (weapon === "piercing_shell") {
+          const ob = obstacleAt(state, (now ?? Date.now() / 1000) + Number(pts.at(-1)?.[2] || 0));
+          const blocked = ob && x >= ob.x && x <= ob.x + ob.w && y! >= ob.y && y! <= ob.y + ob.h;
+          const blast = [...events].reverse().find((e: any) => e.type === "explosion");
+          if (blast && blocked) blast.impact_label = "מכשול חסם";
+        }
       }
       if (weapon === "emp_shell" && impact) applyEmp(state, enemy, events, now);
     } else if (x !== null) explode(state, x, y!, 0, 26, side, events, true);
