@@ -583,10 +583,13 @@ const GameView = {
     const shot = document.getElementById("shot-clock");
     if (shot && this.snap.turn_deadline) {
       const turn = Math.max(0, Math.ceil(this.snap.turn_deadline - (Date.now() / 1000 + this.serverOffset)));
-      shot.textContent = `⏳ ${turn}`; shot.classList.toggle("urgent", turn <= 3);
+      const reloading = !this.canFire();
+      shot.textContent = reloading ? (Lang.current === "en" ? "Reloading..." : "בטעינה...") : `⏳ ${turn}`;
+      shot.classList.toggle("urgent", !reloading && turn <= 3);
       // The ten-second clock is a real gameplay constraint: if the player is
       // still loaded and ready at zero, fire the current visual-gauge aim.
-      if (turn === 0 && this.canFire() && !this._clockAutoFired) {
+      // Never steal an in-progress pointer drag from the player.
+      if (turn === 0 && this.canFire() && !this.aiming && !this._clockAutoFired) {
         this._clockAutoFired = true; this.fire();
       } else if (turn > 0) this._clockAutoFired = false;
     }

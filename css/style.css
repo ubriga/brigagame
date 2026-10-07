@@ -87,7 +87,7 @@ label { font-size: 13px; color: var(--muted); display: block; margin: 10px 0 4px
 
 /* game */
 #game-stage { position: relative; width: 100%; animation: stage-in .28s ease-out; }
-#game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: pan-y; background: #2b1709; border: 1px solid rgba(198,147,88,.48); box-shadow: 0 16px 36px rgba(17,9,4,.38), inset 0 0 0 1px rgba(255,255,255,.03); }
+#game-canvas { width: 100%; border-radius: var(--radius); display: block; touch-action: none; background: #2b1709; border: 1px solid rgba(198,147,88,.48); box-shadow: 0 16px 36px rgba(17,9,4,.38), inset 0 0 0 1px rgba(255,255,255,.03); }
 #game-canvas.gl3d { background: transparent; }
 #game-hud { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .player-tag { display: flex; align-items: center; gap: 8px; background: linear-gradient(145deg, #4f2a11, #3d200d); padding: 7px 12px; border: 1px solid rgba(165,119,66,.38); border-radius: 12px; font-size: 14px; box-shadow: 0 6px 16px rgba(17,9,4,.18); transition: outline-color .2s ease, transform .2s ease; }
@@ -585,3 +585,10 @@ body.fs-mode.game-active #fs-float { top: auto; bottom: 6px; left: 8px; right: a
 .hero-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px; font-size: 1.05rem; }
 .hero-btn span { font-size: 1.9rem; line-height: 1; }
 @media (max-width: 560px) { .home-hero { gap: 8px; } .hero-btn { min-height: 78px; font-size: .9rem; padding: 8px 4px; } .hero-btn span { font-size: 1.5rem; } }
+
+/* v63: exit confirmation is above the battlefield, never in its grid rows. */
+body.game-active #exit-confirm { position: fixed; z-index: 80; inset: auto;
+  top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+  width: min(460px, calc(100vw - 24px)); box-sizing: border-box; margin: 0;
+  max-height: calc(100dvh - 24px); overflow-y: auto; box-shadow: 0 8px 40px #000b; }
+body.game-active #exit-confirm .btn { min-height: 44px; }
