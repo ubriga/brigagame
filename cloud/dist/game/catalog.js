@@ -16,7 +16,7 @@ export const CATALOG = {
     "homing_missile": {
         "kind": "consumable",
         "name": "Homing Missile",
-        "name_he": "טיל מסתובב",
+        "name_he": "טיל מתביית",
         "pack_shots": 3,
         "price": 150,
         "desc_he": "מתקן את מסלולו לעבר מגדל האויב באוויר. חבילה של 3 שימושים."

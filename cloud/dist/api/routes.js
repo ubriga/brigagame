@@ -87,7 +87,7 @@ async function effectiveCatalog(env) {
         catalog[k] = { ...v };
     const rows = await env.DB.prepare("SELECT item_id, price, available FROM cosmetic_overrides").all();
     for (const r of rows.results) {
-        if (catalog[r.item_id] && catalog[r.item_id].kind === "skin") {
+        if (catalog[r.item_id] && (catalog[r.item_id].kind === "skin" || r.item_id === "homing_missile")) {
             catalog[r.item_id].price = r.price;
             catalog[r.item_id].available = Boolean(r.available);
         }

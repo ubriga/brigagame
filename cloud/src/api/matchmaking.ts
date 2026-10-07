@@ -1,3 +1,4 @@
+import { applyTerritoryBotRules } from "../game/territory_bot.js";
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /**
  * HvH matchmaking - port of app.py quick/friend/join/accept/decline plus the
@@ -215,7 +216,7 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?
   const ux = (controls as any).ux_onboarding ?? {};
   const newbieN = Math.trunc(Number(ux.newbie_easy_matches ?? 0));
   let tier = String(tierRaw ?? "medium").toLowerCase();
-  if (newbieN > 0 && Number(user.matches_played ?? 0) < newbieN) tier = "easy";
+  if (!extra?.territory && newbieN > 0 && Number(user.matches_played ?? 0) < newbieN) tier = "easy";
   let difficulty: string, aiTier: string, aiRankLevel: number;
   if (tier === "easy") {
     difficulty = "easy"; aiTier = "easy";
@@ -274,6 +275,10 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?
     homing_missile: Number(state.ai_profile.homing_ammo ?? 0),
     cluster_shell: Number(state.ai_profile.cluster_ammo ?? 0),
   };
+  if (state.territory) {
+    const tile: any = await env.DB.prepare("SELECT rarity FROM territory_tiles WHERE id = ?").bind(Number(state.territory.tile_id)).first();
+    applyTerritoryBotRules(state, Number(tile?.rarity ?? 1));
+  }
   const now = new Date().toISOString();
   await env.DB.prepare(
     "INSERT INTO matches (id, mode, status, p1, p2_ai, state, version, created_at, updated_at)"
@@ -306,6 +311,7 @@ export async function createCourtyardMatch(env: Env, attacker: any, ownerId: num
   state.courtyard = { owner_id: ownerId, nickname: nick ? String(nick.nickname) : "", practice, persona };
   state.ready = { p1: false, p2: true };
   if (extra) Object.assign(state, extra);
+  if (state.territory) state.cooldowns.shot_clock = 6;
   await scaleObstacle(env, state, controls);
   state.bot_controls = controls.bot_system;
   state.bot_ammo = {
@@ -546,7 +552,7 @@ export async function handleMatchmaking(env: Env, request: Request, path: string
     const state = newState(await userMods(env, Number(m.p1)), await userMods(env, uid));
     state.cooldowns = cooldownsFromControls(await getControls(env));
     if (m.state?.territory) state.territory = { ...m.state.territory, live: true };   // live territory defense keeps its battle link
-    if (state.territory) await scaleObstacle(env, state, await getControls(env));
+    if (state.territory) { state.cooldowns.shot_clock = 6; await scaleObstacle(env, state, await getControls(env)); }
     const cur = await env.DB.prepare(
       "UPDATE matches SET p2 = ?, status = 'active', state = ?,"
       + " version = version + 1, updated_at = ? WHERE id = ?"

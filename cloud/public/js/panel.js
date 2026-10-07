@@ -42,7 +42,7 @@ const PANEL_STRINGS = {
   "שליטת משחק":"Game controls",
   "יומן פעילות":"Activity log",
   "שידור הודעה":"Broadcast",
-  "שליטת קטלוג קוסמטי":"Cosmetic catalog controls",
+  "שליטת קוסמטיקה וטיל מתביית":"Cosmetic catalog controls",
   "מחיר וזמינות נשמרים בשרת.":"Price and availability are saved on the server.",
   "קצב התקדמות XP":"XP progression rate",
   "בונוס ניצחון מול שחקן":"Player win bonus",
@@ -101,7 +101,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     <div class="tabs">
       ${["stats", "users", "contact", "gameplay", "coatings", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail", "nicks"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
-          stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
+          stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", cosmetics: "קוסמטיקה וטיל מתביית", audit: "יומן פעילות", broadcast: "שידור הודעה",
           coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל", nicks: "✏️ כינויים" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
@@ -564,7 +564,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     const loadCosmetics = async () => {
       const { status, data } = await API.get("/api/admin/cosmetics");
       if (status !== 200) { body.innerHTML = "<p>שגיאה בטעינת הקטלוג.</p>"; return; }
-      body.innerHTML = `<div class="card"><h2>שליטת קטלוג קוסמטי</h2><p class="sub">מחיר וזמינות נשמרים בשרת.</p><table>
+      body.innerHTML = `<div class="card"><h2>שליטת קוסמטיקה וטיל מתביית</h2><p class="sub">מחיר וזמינות נשמרים בשרת.</p><table>
         <tr><th>פריט</th><th>דרגה</th><th>מחיר</th><th>זמין</th><th></th></tr>
         ${(data.cosmetics || []).map(c => `<tr><td>${esc(c.name_he || c.name)}<br><small>${esc(c.item_id)}</small></td>
           <td>${esc(c.tier || "common")}</td><td><input type="number" min="0" max="100000" value="${c.price}" data-price="${esc(c.item_id)}" style="width:100px"></td>

@@ -636,7 +636,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     const ov: Record<string, any> = {};
     for (const r of overrides.results as any[]) ov[r.item_id] = r;
     const cosmetics = Object.entries(CATALOG)
-      .filter(([, v]: any) => v.kind === "skin")
+      .filter(([k, v]: any) => v.kind === "skin" || k === "homing_missile")
       .map(([k, v]: any) => ({
         item_id: k, ...v,
         price: ov[k] ? ov[k].price : v.price,
@@ -650,7 +650,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (cosmMatch && method === "POST") {
     const itemId = cosmMatch[1];
     const base: any = (CATALOG as any)[itemId];
-    if (!base || base.kind !== "skin") return json({ error: "unknown_cosmetic" }, 404);
+    if (!base || (base.kind !== "skin" && itemId !== "homing_missile")) return json({ error: "unknown_cosmetic" }, 404);
     const body: any = await request.json().catch(() => ({}));
     const price = Number.parseInt(String(body.price ?? base.price), 10);
     if (!Number.isFinite(price) || price < 0 || price > 100000) {
