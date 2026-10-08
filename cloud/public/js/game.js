@@ -74,7 +74,7 @@ const GameView = {
       <div id="fire-row"><button id="fire-btn" class="btn" type="button">🔥 ירה!</button><button id="fire-mode-btn" class="btn small secondary" type="button" title="החלפה בין ירי בשחרור האצבע לירי בכפתור"></button></div>
       <div id="ability-bar"><button id="move-left" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">⬅ הזזה</button><button id="move-right" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">הזזה ➡</button><button id="shield-btn" class="btn small secondary" title="מגן זמני שסופג את הפגיעה הבאה במגדל.">🛡 מגן</button><button id="mega-btn" class="btn small secondary" title="יריית מגה עוצמתית - מתמלאת עם הזמן.">⚡ מגה</button></div>
       <div id="weapon-bar"></div><button class="btn small secondary" id="guide-btn" title="קו חלקי ללא חישוב רוח. שימוש אחד להפעלה עד הירייה הבאה, עד 3 לקרב.">קו הכוונה</button>
-      <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
+      <p class="sub" id="aim-hint" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
         · <b>רווח</b> ירייה · <b>1-6</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
@@ -151,8 +151,16 @@ const GameView = {
       if (fb) fb.classList.toggle("hidden", this.fireMode !== "button");
       if (mb) mb.textContent = this.fireMode === "button" ? "מצב: ירי בכפתור" : "מצב: ירי בשחרור";
     };
-    applyFireMode();
-    document.getElementById("fire-mode-btn").onclick = () => { this.fireMode = this.fireMode === "button" ? "release" : "button"; Consent.setPref("bg_fire_mode", this.fireMode); applyFireMode(); };
+    const tbEl = document.getElementById("turn-banner");
+    const setHints = () => {
+      const btn = this.fireMode === "button";
+      if (tbEl) tbEl.textContent = btn ? "🎯 מוכן לירייה! גרור מהמגדל לכיוון המטרה ואז לחץ על ירה" : "🎯 מוכן לירייה! גרור מהמגדל שלך לכיוון המטרה ושחרר";
+      const hint = document.getElementById("aim-hint");
+      if (hint) hint.textContent = btn ? "גרור מהמגדל שלך כדי לכוון, ולחץ על כפתור הירי כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה." : "גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.";
+    };
+    this._setHints = setHints;
+    applyFireMode(); setHints();
+    document.getElementById("fire-mode-btn").onclick = () => { this.fireMode = this.fireMode === "button" ? "release" : "button"; Consent.setPref("bg_fire_mode", this.fireMode); applyFireMode(); setHints(); };
     document.getElementById("fire-btn").onclick = () => { this._pointerUpAt = performance.now(); if (!this.requestFire("button")) toast(this.firing ? "ממתין לאישור הירייה" : "התותח בטעינה"); };
     await this.refresh(0);
     this._destroyed = false;
@@ -725,6 +733,7 @@ const GameView = {
     this._pendingCommand=command;
     const metric={command_id:command.command_id,pointerup:this._pointerUpAt||performance.now(),send:performance.now(),firstframe:null,ack:null};
     this._shotMetrics ??= [];this._shotMetrics.push(metric);if(this._shotMetrics.length>100)this._shotMetrics.shift();
+    { const fb = document.getElementById("fire-btn"); if (fb) { fb.classList.add("fired"); setTimeout(() => fb.classList.remove("fired"), 260); } }
     this._inflight = (this._inflight || 0) + 1;
     this.firing = true;
     this.firingStarted = Date.now();
@@ -860,9 +869,35 @@ const GameView = {
     return lastImpact;
   },
 
+  fxOn() { return this.snap?.combat_policy?.fire_fx !== false; },
+
   startRecoil(side) {
     if (!side) return;
     this.cannonRecoil[side] = 0.34;
+    if (this.fxOn()) this.spawnMuzzleFx(side);
+  },
+
+  // Muzzle blast: a fan of sparks and a puff of smoke along the barrel. Pure
+  // drawing, no gameplay effect, bounded by the shared particle pool.
+  spawnMuzzleFx(side) {
+    const m = this.muzzle(side), f = side === this.mySide() ? this.facing() : (side === "p1" ? 1 : -1);
+    const ang = (side === this.mySide() ? this.aimAngle : 45) * Math.PI / 180;
+    const room = this.MAX_PARTICLES - this.particles.length; if (room <= 0) return;
+    const n = Math.min(14, room);
+    for (let i = 0; i < n; i++) {
+      const a = ang + (Math.random() - .5) * .7, sp = 180 + Math.random() * 300;
+      const p = this.takeParticle();
+      Object.assign(p, { type: "spark", x: m.x + f * Math.cos(ang) * 22, y: m.y - Math.sin(ang) * 22,
+        vx: f * Math.cos(a) * sp, vy: -Math.sin(a) * sp, age: 0, life: .25 + Math.random() * .25, size: 1.5 + Math.random() * 2 });
+      this.particles.push(p);
+    }
+    for (let i = 0; i < Math.min(4, room - n); i++) {
+      const p = this.takeParticle();
+      Object.assign(p, { type: "smoke", x: m.x + f * 18, y: m.y - 8, vx: f * (20 + Math.random() * 40), vy: -20 - Math.random() * 25, age: 0, life: .5 + Math.random() * .3, size: 7 + Math.random() * 8 });
+      this.particles.push(p);
+    }
+    if (side === this.mySide()) this.shake = Math.max(this.shake, 3);
+    this._muzzleFlash = { side, at: performance.now() };
   },
 
   beginTowerTransition(oldTowers, newTowers) {
@@ -1133,6 +1168,11 @@ const GameView = {
     // aim arrow
     if ((this.aiming || performance.now() < (this.showAimUntil || 0) || this.snap?.aim_guide_active)
         && this.canAim()) this.drawAim();
+    if (this._muzzleFlash && performance.now() - this._muzzleFlash.at < 120 && this.fxOn()) {
+      const mf = this._muzzleFlash, mm = this.muzzle(mf.side), k = 1 - (performance.now() - mf.at) / 120, c2 = this.ctx;
+      c2.save(); c2.globalAlpha = k; const g = c2.createRadialGradient(mm.x, mm.y, 2, mm.x, mm.y, 46); g.addColorStop(0, "rgba(255,244,180,.95)"); g.addColorStop(1, "rgba(255,160,40,0)");
+      c2.fillStyle = g; c2.beginPath(); c2.arc(mm.x, mm.y, 46, 0, 7); c2.fill(); c2.restore();
+    }
     // animations
     for (const a of this.anims) {
       if (a.t < 0) continue;  // sequenced for later
@@ -1149,6 +1189,8 @@ const GameView = {
     const bar = document.getElementById("reload-bar");
     const frac = this.reloadFrac();
     if (bar) bar.style.width = (frac * 100) + "%";
+    const fbtn = document.getElementById("fire-btn");
+    if (fbtn) { fbtn.style.setProperty("--p", Math.round(Math.min(1, frac) * 100) + "%"); fbtn.classList.toggle("ready", frac >= 1 && !this.firing); fbtn.classList.toggle("reloading", frac < 1); }
     // UX onboarding (item ה): turn banner + tower pulse when the cannon is
     // loaded and it's effectively your moment to fire.
     const tb = document.getElementById("turn-banner");
@@ -1601,7 +1643,41 @@ const GameView = {
     return points;
   },
 
+  // Live aim dial: a power ring around the muzzle that fills and shifts
+  // green -> amber -> red, an angle arrow with a handle, and a readout.
+  drawAimDial() {
+    const c = this.ctx, m = this.muzzle(this.mySide()), f = this.facing();
+    const ang = this.aimAngle * Math.PI / 180, pw = this.aimPower / 100;
+    const k = Math.max(1, Math.min(2.2, this.W / Math.max(1, this.canvas.clientWidth || this.W) * 0.6)), R = 62 * k, t = performance.now() / 1000;
+    const col = pw < .45 ? "#4ade80" : pw < .8 ? "#fbbf24" : "#f87171";
+    c.save();
+    c.translate(m.x, m.y); c.scale(f, 1);
+    // dial track (quarter circle 0..90 degrees)
+    c.lineCap = "round";
+    c.lineWidth = 9 * k; c.strokeStyle = "rgba(10,18,30,.55)";
+    c.beginPath(); c.arc(0, 0, R, -Math.PI / 2, 0); c.stroke();
+    // angle fill
+    c.lineWidth = 6 * k; c.strokeStyle = col; c.shadowColor = col; c.shadowBlur = 10;
+    c.beginPath(); c.arc(0, 0, R, -ang, 0); c.stroke();
+    c.shadowBlur = 0;
+    // arrow with power-scaled length and moving chevrons
+    const len = (34 + pw * 90) * k, dx = Math.cos(ang), dy = -Math.sin(ang);
+    c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 3 * k; c.setLineDash([9 * k, 7 * k]); c.lineDashOffset = -t * 40;
+    c.beginPath(); c.moveTo(dx * 24 * k, dy * 24 * k); c.lineTo(dx * len, dy * len); c.stroke(); c.setLineDash([]);
+    c.fillStyle = col; c.strokeStyle = "#0b1220"; c.lineWidth = 2;
+    c.beginPath(); c.arc(dx * len, dy * len, (8 + 2 * Math.sin(t * 8)) * k, 0, 7); c.fill(); c.stroke();
+    c.restore();
+    // numeric readout (not mirrored)
+    c.save(); c.font = `bold ${Math.round(15 * k)}px system-ui,sans-serif`; c.textAlign = "center";
+    const tx = m.x - f * 4, ty = m.y - R - 14 * k;
+    c.lineWidth = 4 * k; c.strokeStyle = "rgba(10,18,30,.8)"; c.fillStyle = col;
+    const label = `\u200E${this.aimAngle}° · ${this.aimPower}%`;
+    c.strokeText(label, tx, ty); c.fillText(label, tx, ty); c.restore();
+  },
+
   drawAim() {
+    if (this.fxOn() && !this.snap?.aim_guide_active) { this.drawAimDial(); return; }
+    if (this.fxOn()) this.drawAimDial();
     if (this.snap?.aim_guide_active) {
       const c=this.ctx, pts=this.guidePoints();
       c.save();c.strokeStyle="#fef08a";c.lineWidth=3;c.setLineDash([6,7]);

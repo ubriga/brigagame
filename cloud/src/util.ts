@@ -220,6 +220,6 @@ export function nextStreakMilestone(cfg: LoginStreakCfg, streakDay: number): { d
 export function applyCombatPolicy(state: any, controls: any, bot: boolean): void {
  const p = controls.combat_policy ?? {};
  const area = state.territory ? "territories" : bot ? "bots" : "pvp";
- state.combat_policy = { area, reload_enabled: p.reload_enabled !== false && p["reload_"+area] !== false, guide_always: p["guide_"+area] === true, auto_fire_timeout: p.auto_fire_timeout === true, shot_clock_enforced: p.shot_clock_enforced === true };
+ state.combat_policy = { area, reload_enabled: p.reload_enabled !== false && p["reload_"+area] !== false, guide_always: p["guide_"+area] === true, auto_fire_timeout: p.auto_fire_timeout === true, shot_clock_enforced: p.shot_clock_enforced === true, fire_fx: p.fire_fx !== false };
  if (state.combat_policy.guide_always) state.aim_guide_active = { p1: true, p2: true };
 }
