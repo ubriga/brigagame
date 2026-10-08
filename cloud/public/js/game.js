@@ -157,6 +157,7 @@ const GameView = {
     await this.refresh(0);
     this._destroyed = false;
     this.openSocket();
+    for (let i = 0; i < 3; i++) setTimeout(() => { if (!this._destroyed) this.poll(); }, 500 + i * 600);
     this.pollDelay = CONFIG.POLL_MIN_MS || 900;
     this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     const loop = () => {
@@ -441,8 +442,13 @@ const GameView = {
   canAim() { return !!(this.snap && this.snap.status === "active"); },
   canSubmit() { return this.canAim() && !this.firing && this.reloadFrac() >= 1; },
   canFire() {
-    if (this.firing) return false;
     if (!this.snap || this.snap.status !== "active") return false;
+    if (this.firing) {
+      // A second shot may be queued while the first ack is still in flight,
+      // once the local reload (+80ms jitter margin) has fully elapsed.
+      const cd = this.snap.combat_policy?.reload_enabled === false ? .5 : this.cooldown();
+      return this.reloadState().remaining <= 0 && (Date.now() / 1000 + this.serverOffset) - Number(this.localLastShot || 0) >= cd + .08;
+    }
     return this.reloadFrac() >= 1;
   },
 
@@ -478,11 +484,25 @@ const GameView = {
     return true;
   },
 
+  // Clock sync: the server stamps each snapshot mid-flight, so the offset is
+  // server_time - midpoint(request start, response end). Keep the lowest-RTT
+  // samples (least queueing noise); the moving obstacle, wind and shot clock
+  // all depend on this offset.
+  syncClock(serverTime, t0, t1) {
+    if (!Number.isFinite(serverTime) || !(t1 >= t0)) return;
+    const rtt = t1 - t0; if (rtt > 4000) return;
+    const off = serverTime - (t0 + t1) / 2000;
+    const arr = (this._clockSamples ??= []); arr.push({ off, rtt }); if (arr.length > 8) arr.shift();
+    const best = arr.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+    this.serverOffset = best.off; this.clockRtt = best.rtt;
+  },
+
   async poll() {
     if (!this.snap) return;
+    const t0 = Date.now();
     const { status, data } = await API.get(
       `/api/matches/${this.matchId}/state?since=${this.snap.version}`);
-    if (status === 200) { this.applySnap(data); this.sendReady(); return true; }
+    if (status === 200) { this.syncClock(data.server_time, t0, Date.now()); this.applySnap(data); this.sendReady(); return true; }
     return false;
   },
 
@@ -497,7 +517,8 @@ const GameView = {
   applySnap(s) {
     const prevV = this.snap ? this.snap.version : -1;
     if (s.version < prevV) return;
-    this.serverOffset = s.server_time - Date.now() / 1000;
+    // Initial estimate only; syncClock() refines it with round-trip midpoints.
+    if (!this._clockSamples) this.serverOffset = s.server_time - Date.now() / 1000;
     const events = (s.events || []).filter(e => !e.command_id || !(this._seenCommands || new Set()).has(e.command_id));
     delete s.events;
     this.snap = s;
@@ -704,6 +725,7 @@ const GameView = {
     this._pendingCommand=command;
     const metric={command_id:command.command_id,pointerup:this._pointerUpAt||performance.now(),send:performance.now(),firstframe:null,ack:null};
     this._shotMetrics ??= [];this._shotMetrics.push(metric);if(this._shotMetrics.length>100)this._shotMetrics.shift();
+    this._inflight = (this._inflight || 0) + 1;
     this.firing = true;
     this.firingStarted = Date.now();
     this.startRecoil(this.mySide());
@@ -719,12 +741,17 @@ const GameView = {
       requestAnimationFrame(()=>{metric.firstframe=performance.now();});
     }
     let result;
-    try {
-      result = await API.post(`/api/matches/${this.matchId}/fire`, {
-        ...command,
-      });
-    } catch (_) { result = { status: 0, data: {} }; }
-    finally { this.firing = false; this.firingStarted = 0; }
+    // A network failure is not a rejection: the server may have accepted the
+    // shot. Retry the SAME command_id (server dedupes and returns the original
+    // events) before deciding anything.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { result = await API.post(`/api/matches/${this.matchId}/fire`, { ...command }); }
+      catch (_) { result = { status: 0, data: {} }; }
+      if (result.status !== 0 || this._destroyed) break;
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+    this._inflight = Math.max(0, (this._inflight || 1) - 1);
+    if (!this._inflight) { this.firing = false; this.firingStarted = 0; }
     metric.ack=performance.now();
     const { status, data } = result;
     metric.accepted_at=data.accepted_at??null;
@@ -746,6 +773,11 @@ const GameView = {
       clearTimeout(this.pollTimer);
       if (!this._destroyed && this.snap.status !== "finished")
         this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
+    } else if (status === 0) {
+      // Still unknown after retries: keep the shell, resync from the server,
+      // which returns the authoritative events if the shot was accepted.
+      toast("אין חיבור יציב - מסנכרן את הירייה...");
+      clearTimeout(this.pollTimer); this.pollLoop();
     } else {
       this.anims=this.anims.filter(a=>a.command_id!==command.command_id);
       this.localLastShot = 0; this.localReloadUntil = 0;
@@ -1104,7 +1136,7 @@ const GameView = {
     // animations
     for (const a of this.anims) {
       if (a.t < 0) continue;  // sequenced for later
-      if (a.kind === "shot" && !(a.optimistic && a.t>=1)) this.drawShot(a);
+      if (a.kind === "shot") this.drawShot(a);
       else if (a.kind === "explosion") this.drawExplosion(a);
       else if (a.kind === "debris") this.drawDebris(a);
       else if (a.kind === "dmgnum") this.drawDmgNum(a);
@@ -1204,6 +1236,12 @@ const GameView = {
       c.moveTo(a.points[0][0], a.points[0][1]);
       for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
       c.lineTo(x, y); c.stroke();
+    }
+    // A predicted shell that reached the end of its arc before the server
+    // answered is held in place with a pulse; it never silently disappears.
+    if (a.optimistic && a.t >= 1) {
+      c.save(); c.strokeStyle = "rgba(253,224,71,.8)"; c.lineWidth = 2;
+      c.beginPath(); c.arc(x, y, 12 + 4 * Math.sin(performance.now() / 120), 0, 7); c.stroke(); c.restore();
     }
     // shell with glow
     const r = a.weapon === "cluster_mini" ? 5 : 8;

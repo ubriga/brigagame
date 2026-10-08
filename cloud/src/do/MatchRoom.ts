@@ -170,7 +170,7 @@ export class MatchRoom {
     if (msg.type === "fire") {
       const cid=String(msg.command_id??"").slice(0,100), key=String(sess.userId)+":"+cid;
       const done=m.command_acks??={};
-      if(cid && done[key]) return {events:[],err:null,ack:{ack:true,command_id:cid,version:m.version,events:[],snapshot:combatSnapshot(m,sess.side)}};
+      if(cid && done[key]) return {events:done[key].events??[],err:null,ack:{ack:true,duplicate:true,command_id:cid,version:done[key].version,events:done[key].events??[],snapshot:combatSnapshot(m,sess.side)}};
       const acceptedAt=Date.now()/1000;
       const last=Number(m.state.last_shot_at?.[sess.side]??0);
       if(m.state.combat_policy?.reload_enabled===false && acceptedAt-last < .5) return {events:null,err:{status:429,body:{error:"fire_rate",error_he:"אפשר לירות עד פעמיים בשנייה."}}};
@@ -229,7 +229,7 @@ export class MatchRoom {
       // hot path.
       for (const ev of result!.events) if(cid) ev.command_id=cid;
       const ack={ack:true,command_id:cid,accepted_at:acceptedAt,version:m.version,events:result!.events,snapshot:combatSnapshot(m,sess.side)};
-      if(cid){done[key]={version:m.version};const keys=Object.keys(done);if(keys.length>32)delete done[keys[0]];}
+      if(cid){done[key]={version:m.version,events:result!.events};const keys=Object.keys(done);if(keys.length>8)delete done[keys[0]];}
       const dp0 = Date.now();
       if (m.status === "active" && !result!.won) {
         // Fast ack: the DO storage write is the durable commit; the D1
