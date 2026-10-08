@@ -72,6 +72,16 @@ export class MatchRoom {
       await this.initMatch(await request.json());
       return Response.json({ ok: true });
     }
+    if (url.pathname.endsWith("/diag-put") && request.method === "POST") {
+      const row: any = await request.json().catch(() => null);
+      const list: any[] = (await this.state.storage.get("diag")) ?? [];
+      list.push(row); while (list.length > 200) list.shift();
+      await this.state.storage.put("diag", list);
+      return Response.json({ ok: true });
+    }
+    if (url.pathname.endsWith("/diag-get")) {
+      return Response.json((await this.state.storage.get("diag")) ?? []);
+    }
     if (url.pathname.endsWith("/snapshot")) {
       return Response.json(this.publicSnapshot());
     }
@@ -217,7 +227,9 @@ export class MatchRoom {
       for (const ev of result!.events) if(cid) ev.command_id=cid;
       const ack={ack:true,command_id:cid,accepted_at:acceptedAt,version:m.version,events:result!.events,snapshot:combatSnapshot(m,sess.side)};
       if(cid){done[key]={version:m.version};const keys=Object.keys(done);if(keys.length>32)delete done[keys[0]];}
+      const dp0 = Date.now();
       await Promise.all([this.persist(), this.recordEvents(result!.events)]);
+      (ack as any)._d = { persist: Date.now() - dp0, exec: dp0 - Math.round(acceptedAt * 1000) };
       this.broadcast({ type: "events", version: m.version, events: result!.events, command_id:cid, accepted_at:acceptedAt });
       if (m.p2_ai && m.status === "active") await this.scheduleBot();
       return { events: result!.events, err: null, ack };

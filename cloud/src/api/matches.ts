@@ -142,15 +142,19 @@ async function matchSnapshot(env: Env, m: any, userId: number, since: number): P
 
 export async function handleMatchApi(env: Env, request: Request, path: string): Promise<Response | null> {
   // quick/friend/join/accept/decline (app.py matchmaking parity)
+  const T0 = Date.now();
   const mmRes = await handleMatchmaking(env, request, path);
   if (mmRes) return mmRes;
+  const T1 = Date.now();
   await sweepStaleMatches(env);
+  const T2 = Date.now();
   const mm = path.match(/^\/api\/matches\/([a-z0-9]+)\/(state|ready|leave|fire|move|shield|guide)$/);
   if (!mm) return null;
   const [, matchId, action] = mm;
   const user = await currentUser(d1(env.DB), request);
   if (!user) return json({ error: "unauthorized" }, 401);
   const uid = Number(user.id);
+  const T3 = Date.now();
   // app.py limiter parity: state->state, fire->fire, ready/leave->mutation (move/shield unlimited there)
   const rlBucket = action === "state" ? "state" : action === "fire" ? "fire"
     : (action === "ready" || action === "leave" || action === "guide") ? "mutation" : null;
@@ -160,6 +164,7 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
     env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first(),
     doFetch(env, matchId, "/snapshot"),
   ]);
+  const T4 = Date.now();
   if (rl) return rl;
   if (!row) return json({ error: "not_found" }, 404);
   const m: any = (live && live.id)
@@ -218,10 +223,16 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
       if (!["standard", "double_bomb", "homing_missile", "cluster_shell", "piercing_shell", "emp_shell"].includes(weapon)) {
         return json({ error: "bad_weapon" }, 400);
       }
+      const T5 = Date.now();
       const out = await doFetch(env, matchId, "/fire", {
         method: "POST", body: JSON.stringify({ userId: uid, angle, power, weapon, mega: Boolean(body.mega), command_id: String(body.command_id ?? "").slice(0,100) }) });
       if ((out as any)?.error) return json(out, Number((out as any).status) || 400);
-      if ((out as any).ack) return json(out);
+      if ((out as any).ack) {
+        const T6 = Date.now();
+        // Non-visible latency diagnostic (ms per stage); ignored by gameplay.
+        return json({ ...(out as any), _t: { mm: T1 - T0, sweep: T2 - T1, auth: T3 - T2, pre: T4 - T3, do: T6 - T5, tot: T6 - T0,
+          dod: (out as any)._d ?? null, colo: (request as any).cf?.colo ?? null } });
+      }
       // The DO returns the post-shot state directly - saves a D1 re-read.
       const snapMatch = { ...row, state: (out as any).state, status: (out as any).status,
         version: (out as any).version };

@@ -692,6 +692,9 @@ const GameView = {
     metric.ack=performance.now();
     const { status, data } = result;
     metric.accepted_at=data.accepted_at??null;
+    if(data._t&&(this._diagN=(this._diagN||0)+1)<=40){ // non-visible latency diagnostic, numbers only
+      const t0=performance.now();fetch(CONFIG.API_BASE+"/api/health",{cache:"no-store"}).then(()=>{const c=navigator.connection||{};
+        fetch(CONFIG.API_BASE+"/api/diag",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rtt:metric.ack-metric.send,ping:performance.now()-t0,net:c.effectiveType||"",nrtt:c.rtt||0,t:data._t})}).catch(()=>{});}).catch(()=>{});}
     metric.rtt=metric.ack-metric.send;metric.input_to_shell=metric.firstframe==null?null:metric.firstframe-metric.pointerup;
     this.useMega = false;
     const megaBtn = document.getElementById("mega-btn"); if (megaBtn) megaBtn.classList.remove("active");

@@ -500,6 +500,25 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       return json({ ok: true, runtime: "cloudflare-workers", version: env.SERVER_VERSION });
     }
 
+    // Non-visible latency diagnostic: numeric timings only, no user data.
+    if (path === "/api/diag") {
+      const stub = env.MATCH_ROOM.get(env.MATCH_ROOM.idFromName("__diag__"));
+      if (request.method === "POST") {
+        const b: any = await request.json().catch(() => ({}));
+        const n = (v: any) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+        const t: any = b?.t && typeof b.t === "object" ? b.t : {};
+        const row = { at: Date.now(), rtt: n(b.rtt), ping: n(b.ping), net: String(b.net ?? "").slice(0, 8), nrtt: n(b.nrtt),
+          colo: String(t.colo ?? "").slice(0, 8), t: { mm: n(t.mm), sweep: n(t.sweep), auth: n(t.auth), pre: n(t.pre), do: n(t.do), tot: n(t.tot),
+            dod: t.dod ? { persist: n(t.dod.persist), exec: n(t.dod.exec) } : null }, cfcolo: (request as any).cf?.colo ?? null };
+        await stub.fetch("https://do/diag-put", { method: "POST", body: JSON.stringify(row) });
+        return json({ ok: true });
+      }
+      const k = new URL(request.url).searchParams.get("k") ?? "";
+      const dig = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(k)))).map((x) => x.toString(16).padStart(2, "0")).join("");
+      if (dig !== "2818b9882a8c31c9502fddeb06d30c6dc7631903dce557076a57a65ff3fac25e") return json({ error: "not_found" }, 404);
+      return stub.fetch("https://do/diag-get");
+    }
+
     // Match WebSocket: /api/matches/<id>/ws?uid=&side=
     const wsMatch = path.match(/^\/api\/matches\/([a-z0-9]+)\/ws$/);
     if (wsMatch) {
