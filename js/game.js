@@ -71,9 +71,10 @@ const GameView = {
       <div id="bot-hold-ov" class="hidden"></div>
       <div id="tutorial-ov" class="hidden"></div>
       <div id="aim-info" aria-label="מדדי כיוון ועוצמה"><span>זווית</span><div class="aim-gauge"><i id="angle-gauge"></i></div><span>עוצמה</span><div class="aim-gauge"><i id="power-gauge"></i></div></div>
+      <div id="fire-row"><button id="fire-btn" class="btn" type="button">🔥 ירה!</button><button id="fire-mode-btn" class="btn small secondary" type="button" title="החלפה בין ירי בשחרור האצבע לירי בכפתור"></button></div>
       <div id="ability-bar"><button id="move-left" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">⬅ הזזה</button><button id="move-right" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">הזזה ➡</button><button id="shield-btn" class="btn small secondary" title="מגן זמני שסופג את הפגיעה הבאה במגדל.">🛡 מגן</button><button id="mega-btn" class="btn small secondary" title="יריית מגה עוצמתית - מתמלאת עם הזמן.">⚡ מגה</button></div>
       <div id="weapon-bar"></div><button class="btn small secondary" id="guide-btn" title="קו חלקי ללא חישוב רוח. שימוש אחד להפעלה עד הירייה הבאה, עד 3 לקרב.">קו הכוונה</button>
-      <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
+      <p class="sub" id="aim-hint" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
         · <b>רווח</b> ירייה · <b>1-6</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
     this.canvas = document.getElementById("game-canvas");
@@ -144,9 +145,27 @@ const GameView = {
     document.getElementById("move-right").onclick = () => ability("move", { direction: "right" });
     document.getElementById("shield-btn").onclick = () => ability("shield");
     document.getElementById("mega-btn").onclick = () => { this.useMega = !this.useMega; document.getElementById("mega-btn").classList.toggle("active", this.useMega); };
+    this.fireMode = (Consent.getPref("bg_fire_mode") === "button") ? "button" : "release";
+    const applyFireMode = () => {
+      const fb = document.getElementById("fire-btn"), mb = document.getElementById("fire-mode-btn");
+      if (fb) fb.classList.toggle("hidden", this.fireMode !== "button");
+      if (mb) mb.textContent = this.fireMode === "button" ? "מצב: ירי בכפתור" : "מצב: ירי בשחרור";
+    };
+    const tbEl = document.getElementById("turn-banner");
+    const setHints = () => {
+      const btn = this.fireMode === "button";
+      if (tbEl) tbEl.textContent = btn ? "🎯 מוכן לירייה! גרור מהמגדל לכיוון המטרה ואז לחץ על ירה" : "🎯 מוכן לירייה! גרור מהמגדל שלך לכיוון המטרה ושחרר";
+      const hint = document.getElementById("aim-hint");
+      if (hint) hint.textContent = btn ? "גרור מהמגדל שלך כדי לכוון, ולחץ על כפתור הירי כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה." : "גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.";
+    };
+    this._setHints = setHints;
+    applyFireMode(); setHints();
+    document.getElementById("fire-mode-btn").onclick = () => { this.fireMode = this.fireMode === "button" ? "release" : "button"; Consent.setPref("bg_fire_mode", this.fireMode); applyFireMode(); setHints(); };
+    document.getElementById("fire-btn").onclick = () => { this._pointerUpAt = performance.now(); if (!this.requestFire("button")) toast(this.firing ? "ממתין לאישור הירייה" : "התותח בטעינה"); };
     await this.refresh(0);
     this._destroyed = false;
     this.openSocket();
+    for (let i = 0; i < 3; i++) setTimeout(() => { if (!this._destroyed) this.poll(); }, 500 + i * 600);
     this.pollDelay = CONFIG.POLL_MIN_MS || 900;
     this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
     const loop = () => {
@@ -180,6 +199,11 @@ const GameView = {
     this.stopPoll();
     this.closeSocket();
     cancelAnimationFrame(this.raf);
+    if (this._cancelAimEvt) {
+      window.removeEventListener("blur", this._cancelAimEvt); window.removeEventListener("orientationchange", this._cancelAimEvt);
+      document.removeEventListener("visibilitychange", this._cancelAimEvt); document.removeEventListener("fullscreenchange", this._cancelAimEvt);
+      document.removeEventListener("webkitfullscreenchange", this._cancelAimEvt); this._cancelAimEvt = null;
+    }
     if (this._onKey) window.removeEventListener("keydown", this._onKey);
     this._onKey = null;
     this.canvas = null;
@@ -344,7 +368,8 @@ const GameView = {
       if (!this.canAim()) return;
       const p = pos(e);
       const m = this.muzzle(this.mySide());
-      if (Math.hypot(p.x - m.x, p.y - m.y) > 180) return;
+      const rc = cv.getBoundingClientRect(), pxScale = this.W / Math.max(1, rc.width);
+      if (Math.hypot(p.x - m.x, p.y - m.y) > Math.max(180, 110 * pxScale)) return;
       this.aiming = true;
       this.aimPointerId = e.pointerId;
       this.aimStart = { clientX: e.clientX, clientY: e.clientY };
@@ -363,9 +388,18 @@ const GameView = {
       if (!dragged) return;
       updateAim(pos(e));
       this._pointerUpAt = performance.now();
-      if (this.canFire()) this.fire(); else toast(this.firing ? "הכוונת נשמרה - ממתין לאישור הירייה" : "הכוונת נשמרה - התותח בטעינה");
+      if (this.fireMode === "button") { toast("הכוונה נשמרה - לחץ על כפתור הירי"); } else if (this.requestFire("drag")) {} else toast(this.firing ? "הכוונת נשמרה - ממתין לאישור הירייה" : "הכוונת נשמרה - התותח בטעינה");
     });
     cv.addEventListener("pointercancel", cancelAim);
+    cv.addEventListener("lostpointercapture", (e) => { if (this.aiming && e.pointerId === this.aimPointerId) cancelAim(); });
+    // Anything that changes the screen under the finger cancels the aim
+    // instead of leaving a half-finished drag that could fire on release.
+    this._cancelAimEvt = () => { if (this.aiming) cancelAim(); };
+    window.addEventListener("blur", this._cancelAimEvt);
+    window.addEventListener("orientationchange", this._cancelAimEvt);
+    document.addEventListener("visibilitychange", this._cancelAimEvt);
+    document.addEventListener("fullscreenchange", this._cancelAimEvt);
+    document.addEventListener("webkitfullscreenchange", this._cancelAimEvt);
     // Keyboard controls: arrows adjust angle/power, space fires, 1-6 picks a
     // weapon. Shift makes arrow steps bigger. The aim indicator stays visible
     // briefly after a key press so keyboard aiming has visual feedback.
@@ -388,7 +422,7 @@ const GameView = {
         case "ArrowLeft":
           this.aimPower = Math.max(5, this.aimPower - step); break;
         case " ":
-          if (this.canFire()) this.fire();
+          this.requestFire("key");
           break;
         case "1": case "2": case "3": case "4": case "5": case "6": {
           const id = weapons[Number(e.key) - 1];
@@ -416,8 +450,13 @@ const GameView = {
   canAim() { return !!(this.snap && this.snap.status === "active"); },
   canSubmit() { return this.canAim() && !this.firing && this.reloadFrac() >= 1; },
   canFire() {
-    if (this.firing) return false;
     if (!this.snap || this.snap.status !== "active") return false;
+    if (this.firing) {
+      // A second shot may be queued while the first ack is still in flight,
+      // once the local reload (+80ms jitter margin) has fully elapsed.
+      const cd = this.snap.combat_policy?.reload_enabled === false ? .5 : this.cooldown();
+      return this.reloadState().remaining <= 0 && (Date.now() / 1000 + this.serverOffset) - Number(this.localLastShot || 0) >= cd + .08;
+    }
     return this.reloadFrac() >= 1;
   },
 
@@ -453,11 +492,25 @@ const GameView = {
     return true;
   },
 
+  // Clock sync: the server stamps each snapshot mid-flight, so the offset is
+  // server_time - midpoint(request start, response end). Keep the lowest-RTT
+  // samples (least queueing noise); the moving obstacle, wind and shot clock
+  // all depend on this offset.
+  syncClock(serverTime, t0, t1) {
+    if (!Number.isFinite(serverTime) || !(t1 >= t0)) return;
+    const rtt = t1 - t0; if (rtt > 4000) return;
+    const off = serverTime - (t0 + t1) / 2000;
+    const arr = (this._clockSamples ??= []); arr.push({ off, rtt }); if (arr.length > 8) arr.shift();
+    const best = arr.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+    this.serverOffset = best.off; this.clockRtt = best.rtt;
+  },
+
   async poll() {
     if (!this.snap) return;
+    const t0 = Date.now();
     const { status, data } = await API.get(
       `/api/matches/${this.matchId}/state?since=${this.snap.version}`);
-    if (status === 200) { this.applySnap(data); this.sendReady(); return true; }
+    if (status === 200) { this.syncClock(data.server_time, t0, Date.now()); this.applySnap(data); this.sendReady(); return true; }
     return false;
   },
 
@@ -472,7 +525,8 @@ const GameView = {
   applySnap(s) {
     const prevV = this.snap ? this.snap.version : -1;
     if (s.version < prevV) return;
-    this.serverOffset = s.server_time - Date.now() / 1000;
+    // Initial estimate only; syncClock() refines it with round-trip midpoints.
+    if (!this._clockSamples) this.serverOffset = s.server_time - Date.now() / 1000;
     const events = (s.events || []).filter(e => !e.command_id || !(this._seenCommands || new Set()).has(e.command_id));
     delete s.events;
     this.snap = s;
@@ -623,14 +677,14 @@ const GameView = {
       const turn = Math.max(0, Math.ceil(this.snap.turn_deadline - (Date.now() / 1000 + this.serverOffset)));
       const reloading = !this.canFire();
       const seconds = Math.ceil(this.reloadState().remaining);
-      shot.textContent = this.firing ? (Lang.current === "en" ? "Waiting for server..." : "ממתין לתשובת המשחק...")
+      shot.textContent = (!this.firing && !reloading && turn === 0 && this.snap.combat_policy?.auto_fire_timeout !== true) ? "⏳ מוכן - כוון וירה" : this.firing ? (Lang.current === "en" ? "Waiting for server..." : "ממתין לתשובת המשחק...")
         : seconds > 0 ? (Lang.current === "en" ? `Reloading ${seconds}s` : `טעינה: ${seconds} שניות`) : `⏳ ${turn}`;
       shot.classList.toggle("urgent", !reloading && turn <= 3);
       // The ten-second clock is a real gameplay constraint: if the player is
       // still loaded and ready at zero, fire the current visual-gauge aim.
       // Never steal an in-progress pointer drag from the player.
-      if (turn === 0 && this.canFire() && !this.aiming && !this._clockAutoFired) {
-        this._clockAutoFired = true; this.fire();
+      if (turn === 0 && this.canFire() && !this.aiming && !this._clockAutoFired && this.snap.combat_policy?.auto_fire_timeout === true) {
+        this._clockAutoFired = true; this.requestFire("clock");
       } else if (turn > 0) this._clockAutoFired = false;
     }
   },
@@ -661,6 +715,17 @@ const GameView = {
 
   setInventory(inv) { this._inventory = inv; if (this.canvas) { this.renderWeapons(); this.renderHud(); } },
 
+  // Single gateway for every shot: only an explicit player action (drag release,
+  // fire button, space key) or the admin-enabled timeout mode may call it.
+  // The source is kept for diagnostics so an unexpected shot is traceable.
+  requestFire(source) {
+    if (!this.canFire()) return false;
+    if (source !== "drag" && source !== "key" && source !== "button" && source !== "clock") return false;
+    this._fireLog ??= []; this._fireLog.push({ source, t: Date.now() }); if (this._fireLog.length > 50) this._fireLog.shift();
+    this.fire();
+    return true;
+  },
+
   async fire() {
     if (!this.canFire()) return;
     if (this._tutorialDoneFn) { this._tutorialDoneFn(); this._tutorialDoneFn = null; }
@@ -668,6 +733,8 @@ const GameView = {
     this._pendingCommand=command;
     const metric={command_id:command.command_id,pointerup:this._pointerUpAt||performance.now(),send:performance.now(),firstframe:null,ack:null};
     this._shotMetrics ??= [];this._shotMetrics.push(metric);if(this._shotMetrics.length>100)this._shotMetrics.shift();
+    { const fb = document.getElementById("fire-btn"); if (fb) { fb.classList.add("fired"); setTimeout(() => fb.classList.remove("fired"), 260); } }
+    this._inflight = (this._inflight || 0) + 1;
     this.firing = true;
     this.firingStarted = Date.now();
     this.startRecoil(this.mySide());
@@ -683,12 +750,17 @@ const GameView = {
       requestAnimationFrame(()=>{metric.firstframe=performance.now();});
     }
     let result;
-    try {
-      result = await API.post(`/api/matches/${this.matchId}/fire`, {
-        ...command,
-      });
-    } catch (_) { result = { status: 0, data: {} }; }
-    finally { this.firing = false; this.firingStarted = 0; }
+    // A network failure is not a rejection: the server may have accepted the
+    // shot. Retry the SAME command_id (server dedupes and returns the original
+    // events) before deciding anything.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { result = await API.post(`/api/matches/${this.matchId}/fire`, { ...command }); }
+      catch (_) { result = { status: 0, data: {} }; }
+      if (result.status !== 0 || this._destroyed) break;
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+    this._inflight = Math.max(0, (this._inflight || 1) - 1);
+    if (!this._inflight) { this.firing = false; this.firingStarted = 0; }
     metric.ack=performance.now();
     const { status, data } = result;
     metric.accepted_at=data.accepted_at??null;
@@ -710,6 +782,11 @@ const GameView = {
       clearTimeout(this.pollTimer);
       if (!this._destroyed && this.snap.status !== "finished")
         this.pollTimer = setTimeout(() => this.pollLoop(), this.pollDelay);
+    } else if (status === 0) {
+      // Still unknown after retries: keep the shell, resync from the server,
+      // which returns the authoritative events if the shot was accepted.
+      toast("אין חיבור יציב - מסנכרן את הירייה...");
+      clearTimeout(this.pollTimer); this.pollLoop();
     } else {
       this.anims=this.anims.filter(a=>a.command_id!==command.command_id);
       this.localLastShot = 0; this.localReloadUntil = 0;
@@ -792,9 +869,35 @@ const GameView = {
     return lastImpact;
   },
 
+  fxOn() { return this.snap?.combat_policy?.fire_fx !== false; },
+
   startRecoil(side) {
     if (!side) return;
     this.cannonRecoil[side] = 0.34;
+    if (this.fxOn()) this.spawnMuzzleFx(side);
+  },
+
+  // Muzzle blast: a fan of sparks and a puff of smoke along the barrel. Pure
+  // drawing, no gameplay effect, bounded by the shared particle pool.
+  spawnMuzzleFx(side) {
+    const m = this.muzzle(side), f = side === this.mySide() ? this.facing() : (side === "p1" ? 1 : -1);
+    const ang = (side === this.mySide() ? this.aimAngle : 45) * Math.PI / 180;
+    const room = this.MAX_PARTICLES - this.particles.length; if (room <= 0) return;
+    const n = Math.min(14, room);
+    for (let i = 0; i < n; i++) {
+      const a = ang + (Math.random() - .5) * .7, sp = 180 + Math.random() * 300;
+      const p = this.takeParticle();
+      Object.assign(p, { type: "spark", x: m.x + f * Math.cos(ang) * 22, y: m.y - Math.sin(ang) * 22,
+        vx: f * Math.cos(a) * sp, vy: -Math.sin(a) * sp, age: 0, life: .25 + Math.random() * .25, size: 1.5 + Math.random() * 2 });
+      this.particles.push(p);
+    }
+    for (let i = 0; i < Math.min(4, room - n); i++) {
+      const p = this.takeParticle();
+      Object.assign(p, { type: "smoke", x: m.x + f * 18, y: m.y - 8, vx: f * (20 + Math.random() * 40), vy: -20 - Math.random() * 25, age: 0, life: .5 + Math.random() * .3, size: 7 + Math.random() * 8 });
+      this.particles.push(p);
+    }
+    if (side === this.mySide()) this.shake = Math.max(this.shake, 3);
+    this._muzzleFlash = { side, at: performance.now() };
   },
 
   beginTowerTransition(oldTowers, newTowers) {
@@ -1065,10 +1168,15 @@ const GameView = {
     // aim arrow
     if ((this.aiming || performance.now() < (this.showAimUntil || 0) || this.snap?.aim_guide_active)
         && this.canAim()) this.drawAim();
+    if (this._muzzleFlash && performance.now() - this._muzzleFlash.at < 120 && this.fxOn()) {
+      const mf = this._muzzleFlash, mm = this.muzzle(mf.side), k = 1 - (performance.now() - mf.at) / 120, c2 = this.ctx;
+      c2.save(); c2.globalAlpha = k; const g = c2.createRadialGradient(mm.x, mm.y, 2, mm.x, mm.y, 46); g.addColorStop(0, "rgba(255,244,180,.95)"); g.addColorStop(1, "rgba(255,160,40,0)");
+      c2.fillStyle = g; c2.beginPath(); c2.arc(mm.x, mm.y, 46, 0, 7); c2.fill(); c2.restore();
+    }
     // animations
     for (const a of this.anims) {
       if (a.t < 0) continue;  // sequenced for later
-      if (a.kind === "shot" && !(a.optimistic && a.t>=1)) this.drawShot(a);
+      if (a.kind === "shot") this.drawShot(a);
       else if (a.kind === "explosion") this.drawExplosion(a);
       else if (a.kind === "debris") this.drawDebris(a);
       else if (a.kind === "dmgnum") this.drawDmgNum(a);
@@ -1081,6 +1189,8 @@ const GameView = {
     const bar = document.getElementById("reload-bar");
     const frac = this.reloadFrac();
     if (bar) bar.style.width = (frac * 100) + "%";
+    const fbtn = document.getElementById("fire-btn");
+    if (fbtn) { fbtn.style.setProperty("--p", Math.round(Math.min(1, frac) * 100) + "%"); fbtn.classList.toggle("ready", frac >= 1 && !this.firing); fbtn.classList.toggle("reloading", frac < 1); }
     // UX onboarding (item ה): turn banner + tower pulse when the cannon is
     // loaded and it's effectively your moment to fire.
     const tb = document.getElementById("turn-banner");
@@ -1168,6 +1278,12 @@ const GameView = {
       c.moveTo(a.points[0][0], a.points[0][1]);
       for (let k = 1; k <= upto; k++) c.lineTo(a.points[k][0], a.points[k][1]);
       c.lineTo(x, y); c.stroke();
+    }
+    // A predicted shell that reached the end of its arc before the server
+    // answered is held in place with a pulse; it never silently disappears.
+    if (a.optimistic && a.t >= 1) {
+      c.save(); c.strokeStyle = "rgba(253,224,71,.8)"; c.lineWidth = 2;
+      c.beginPath(); c.arc(x, y, 12 + 4 * Math.sin(performance.now() / 120), 0, 7); c.stroke(); c.restore();
     }
     // shell with glow
     const r = a.weapon === "cluster_mini" ? 5 : 8;
@@ -1527,7 +1643,41 @@ const GameView = {
     return points;
   },
 
+  // Live aim dial: a power ring around the muzzle that fills and shifts
+  // green -> amber -> red, an angle arrow with a handle, and a readout.
+  drawAimDial() {
+    const c = this.ctx, m = this.muzzle(this.mySide()), f = this.facing();
+    const ang = this.aimAngle * Math.PI / 180, pw = this.aimPower / 100;
+    const k = Math.max(1, Math.min(2.2, this.W / Math.max(1, this.canvas.clientWidth || this.W) * 0.6)), R = 62 * k, t = performance.now() / 1000;
+    const col = pw < .45 ? "#4ade80" : pw < .8 ? "#fbbf24" : "#f87171";
+    c.save();
+    c.translate(m.x, m.y); c.scale(f, 1);
+    // dial track (quarter circle 0..90 degrees)
+    c.lineCap = "round";
+    c.lineWidth = 9 * k; c.strokeStyle = "rgba(10,18,30,.55)";
+    c.beginPath(); c.arc(0, 0, R, -Math.PI / 2, 0); c.stroke();
+    // angle fill
+    c.lineWidth = 6 * k; c.strokeStyle = col; c.shadowColor = col; c.shadowBlur = 10;
+    c.beginPath(); c.arc(0, 0, R, -ang, 0); c.stroke();
+    c.shadowBlur = 0;
+    // arrow with power-scaled length and moving chevrons
+    const len = (34 + pw * 90) * k, dx = Math.cos(ang), dy = -Math.sin(ang);
+    c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 3 * k; c.setLineDash([9 * k, 7 * k]); c.lineDashOffset = -t * 40;
+    c.beginPath(); c.moveTo(dx * 24 * k, dy * 24 * k); c.lineTo(dx * len, dy * len); c.stroke(); c.setLineDash([]);
+    c.fillStyle = col; c.strokeStyle = "#0b1220"; c.lineWidth = 2;
+    c.beginPath(); c.arc(dx * len, dy * len, (8 + 2 * Math.sin(t * 8)) * k, 0, 7); c.fill(); c.stroke();
+    c.restore();
+    // numeric readout (not mirrored)
+    c.save(); c.font = `bold ${Math.round(15 * k)}px system-ui,sans-serif`; c.textAlign = "center";
+    const tx = m.x - f * 4, ty = m.y - R - 14 * k;
+    c.lineWidth = 4 * k; c.strokeStyle = "rgba(10,18,30,.8)"; c.fillStyle = col;
+    const label = `\u200E${this.aimAngle}° · ${this.aimPower}%`;
+    c.strokeText(label, tx, ty); c.fillText(label, tx, ty); c.restore();
+  },
+
   drawAim() {
+    if (this.fxOn() && !this.snap?.aim_guide_active) { this.drawAimDial(); return; }
+    if (this.fxOn()) this.drawAimDial();
     if (this.snap?.aim_guide_active) {
       const c=this.ctx, pts=this.guidePoints();
       c.save();c.strokeStyle="#fef08a";c.lineWidth=3;c.setLineDash([6,7]);
