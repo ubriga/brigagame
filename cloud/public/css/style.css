@@ -623,3 +623,4 @@ body:not(.game-active) #fs-float { position: static; display: block; transform:n
 
 /* v68 results must stay readable on a short mobile stage. */
 #game-overlay:not(.hidden) { position:fixed; inset: max(8px, env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom)); z-index:85; overflow-y:auto; border-radius:16px; padding:18px 12px; background:rgba(33,17,7,.97); box-sizing:border-box; }
+#fire-row{display:flex;gap:8px;justify-content:center;align-items:center;margin:6px auto;flex-wrap:wrap}#fire-btn{min-width:160px;min-height:52px;font-size:20px;font-weight:900;background:linear-gradient(#ef6a3a,#c2410c);color:#fff;border:2px solid #7c2d12;border-radius:14px;box-shadow:0 4px 0 #7c2d12;touch-action:manipulation}#fire-btn:active{transform:translateY(3px);box-shadow:0 1px 0 #7c2d12}#fire-btn.hidden{display:none}

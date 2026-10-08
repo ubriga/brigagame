@@ -57,8 +57,7 @@ var BrigaPhysics = (() => {
   function obstacleAt(state, atTime) {
     const ob = { ...state.obstacle || {} };
     const motion = state.obstacle_motion || {};
-    if (!ob.x || !motion.enabled)
-      return ob;
+    if (!ob.x || !motion.enabled) return ob;
     const t = Number(atTime ?? Date.now() / 1e3);
     const epoch = Number(motion.epoch ?? 0);
     const lo = Number(motion.min_x), hi = Number(motion.max_x);
@@ -133,14 +132,12 @@ var BrigaPhysics = (() => {
   }
   function towerAlive(tower) {
     let total = 0, alive = 0;
-    for (const row of tower)
-      for (const hp of row) {
-        if (hp !== null) {
-          total++;
-          if (hp > 0)
-            alive++;
-        }
+    for (const row of tower) for (const hp of row) {
+      if (hp !== null) {
+        total++;
+        if (hp > 0) alive++;
       }
+    }
     return alive > total * (1 - DESTROY_FRACTION);
   }
   function explode(state, x, y, damage, radius, attacker, events, cosmetic = false, coatingBypass = 0) {
@@ -154,10 +151,8 @@ var BrigaPhysics = (() => {
       if (coating && coating.hp > 0) {
         const incoming = Math.max(0, damage * mult);
         const absorbed = Math.min(coating.hp, incoming * (1 - coatingBypass));
-        if (coating.material === "wood" && incoming > 0)
-          coating.hp = 0;
-        else
-          coating.hp = Math.round(Math.max(0, coating.hp - absorbed) * 10) / 10;
+        if (coating.material === "wood" && incoming > 0) coating.hp = 0;
+        else coating.hp = Math.round(Math.max(0, coating.hp - absorbed) * 10) / 10;
         mult *= incoming ? Math.max(0, 1 - absorbed / incoming) : 0;
         events.push({
           type: "coating_hit",
@@ -173,33 +168,27 @@ var BrigaPhysics = (() => {
         state.shield[enemy] = false;
         events.push({ type: "shield", side: enemy, active: false });
       }
-      if (state.sudden_death)
-        mult *= 2;
+      if (state.sudden_death) mult *= 2;
       for (const [r, c, cx, cy] of towerBlocks(state, enemy)) {
         const hp = state.towers[enemy][r][c];
-        if (hp === null || hp <= 0)
-          continue;
+        if (hp === null || hp <= 0) continue;
         const dist = Math.hypot(cx - x, cy - y);
         if (dist <= radius) {
           const dmg = damage * (1 - dist / radius) * mult;
-          if (dmg <= 0)
-            continue;
+          if (dmg <= 0) continue;
           const newHp = Math.round((hp - dmg) * 10) / 10;
           dealt += Math.min(hp, dmg);
           state.towers[enemy][r][c] = Math.max(0, newHp);
-          if (newHp <= 0)
-            destroyed.push({ r, c });
+          if (newHp <= 0) destroyed.push({ r, c });
         }
       }
       for (const [r, c, cx, cy] of towerBlocks(state, attacker)) {
         const hp = state.towers[attacker][r][c];
-        if (hp === null || hp <= 0)
-          continue;
+        if (hp === null || hp <= 0) continue;
         const dist = Math.hypot(cx - x, cy - y);
         if (dist <= radius * 0.7) {
           const dmg = damage * 0.3 * (1 - dist / (radius * 0.7));
-          if (dmg > 0)
-            state.towers[attacker][r][c] = Math.max(0, Math.round((hp - dmg) * 10) / 10);
+          if (dmg > 0) state.towers[attacker][r][c] = Math.max(0, Math.round((hp - dmg) * 10) / 10);
         }
       }
       state.damage_dealt[attacker] = Math.round((state.damage_dealt[attacker] + dealt) * 10) / 10;
@@ -219,8 +208,7 @@ var BrigaPhysics = (() => {
               }
         }
       }
-      if (collapsed.length)
-        events.push({ type: "collapse", blocks: collapsed });
+      if (collapsed.length) events.push({ type: "collapse", blocks: collapsed });
     }
     events.push({
       type: "explosion",
@@ -264,18 +252,15 @@ var BrigaPhysics = (() => {
       }
       x += vx * DT;
       y += vy * DT;
-      if (timedPath || step % 6 === 0)
-        points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1e3) / 1e3]);
+      if (timedPath || step % 6 === 0) points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1e3) / 1e3]);
       if (y >= GROUND_Y) {
-        if (timedPath)
-          points.pop();
+        if (timedPath) points.pop();
         points.push([Math.round(x * 10) / 10, GROUND_Y, Math.round(t * 1e3) / 1e3]);
         return [x, GROUND_Y, points, false];
       }
       const ob = obstacleAt(state, t0 + t);
       if (ob && ob.x !== void 0 && ob.x <= x && x <= ob.x + ob.w && ob.y <= y && y <= ob.y + ob.h) {
-        if (timedPath)
-          points.pop();
+        if (timedPath) points.pop();
         points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1e3) / 1e3]);
         return [x, y, points, false];
       }
@@ -284,24 +269,19 @@ var BrigaPhysics = (() => {
         for (const [r, c, cx, cy] of towerBlocks(state, s)) {
           const hp = state.towers[s][r][c];
           if (hp !== null && hp > 0 && Math.abs(x - cx) <= BLOCK / 2 && Math.abs(y - cy) <= BLOCK / 2) {
-            if (timedPath)
-              points.pop();
+            if (timedPath) points.pop();
             points.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(t * 1e3) / 1e3]);
-            if (weapon === "piercing_shell")
-              events.push({ type: "piercing_impact", side: s, vx, vy, r, c });
-            if (weapon === "emp_shell")
-              events.push({ type: "emp_impact", side: s });
+            if (weapon === "piercing_shell") events.push({ type: "piercing_impact", side: s, vx, vy, r, c });
+            if (weapon === "emp_shell") events.push({ type: "emp_impact", side: s });
             return [x, y, points, false];
           }
         }
-        if (hit)
-          break;
+        if (hit) break;
       }
       if (x < -80 || x > WORLD_W + 80) {
         const cx2 = Math.max(10, Math.min(WORLD_W - 10, x));
         const cy2 = Math.max(40, Math.min(GROUND_Y, y));
-        if (timedPath)
-          points.pop();
+        if (timedPath) points.pop();
         points.push([Math.round(cx2 * 10) / 10, Math.round(cy2 * 10) / 10, Math.round(t * 1e3) / 1e3]);
         return [cx2, cy2, points, true];
       }
@@ -340,10 +320,8 @@ var BrigaPhysics = (() => {
         const [x, y, pts, off] = simulate(state, side, angle + i * 6, p, "standard", ev, enemy, now, true);
         events.push({ type: "shot", side, weapon, angle: angle + i * 6, power: p, points: pts });
         if (x !== null) {
-          if (off)
-            explode(state, x, y, 0, 26, side, ev, true);
-          else
-            explode(state, x, y, w.damage * criticalMultiplier(state, side, x, y, ev), w.radius, side, ev);
+          if (off) explode(state, x, y, 0, 26, side, ev, true);
+          else explode(state, x, y, w.damage * criticalMultiplier(state, side, x, y, ev), w.radius, side, ev);
         }
         events.push(...ev);
       });
@@ -383,21 +361,17 @@ var BrigaPhysics = (() => {
             const ob = obstacleAt(state, (now ?? Date.now() / 1e3) + Number(pts.at(-1)?.[2] || 0));
             const blocked = ob && x >= ob.x && x <= ob.x + ob.w && y >= ob.y && y <= ob.y + ob.h;
             const blast = [...events].reverse().find((e) => e.type === "explosion");
-            if (blast && blocked)
-              blast.impact_label = "\u05DE\u05DB\u05E9\u05D5\u05DC \u05D7\u05E1\u05DD";
+            if (blast && blocked) blast.impact_label = "\u05DE\u05DB\u05E9\u05D5\u05DC \u05D7\u05E1\u05DD";
           }
         }
-        if (weapon === "emp_shell" && impact)
-          applyEmp(state, enemy, events, now);
-      } else if (x !== null)
-        explode(state, x, y, 0, 26, side, events, true);
+        if (weapon === "emp_shell" && impact) applyEmp(state, enemy, events, now);
+      } else if (x !== null) explode(state, x, y, 0, 26, side, events, true);
     } else if (weapon === "cluster_shell") {
       const ev = [];
       const [x, y, pts, off] = simulate(state, side, angle, power, weapon, ev, enemy, now, true);
       events.push({ type: "shot", side, weapon, angle, power, points: pts });
       const legacyPts = pts.filter((p, i) => i > 0 && i % 6 === 0);
-      if (pts.length > 1)
-        legacyPts.push(pts[pts.length - 1]);
+      if (pts.length > 1) legacyPts.push(pts[pts.length - 1]);
       const apex = legacyPts.length ? legacyPts[Math.floor(legacyPts.length / 2)] : [x ?? 500, 150];
       for (let k = 0; k < 4; k++) {
         const sx = (x === null ? apex[0] : x) + (k - 1.5) * 38;
@@ -412,10 +386,8 @@ var BrigaPhysics = (() => {
       const [x, y, pts, off] = simulate(state, side, angle, power, weapon, ev, enemy, now, true);
       events.push({ type: "shot", side, weapon, angle, power, points: pts });
       if (x !== null) {
-        if (off)
-          explode(state, x, y, 0, 26, side, ev, true);
-        else
-          explode(state, x, y, w.damage * criticalMultiplier(state, side, x, y, ev), w.radius, side, ev);
+        if (off) explode(state, x, y, 0, 26, side, ev, true);
+        else explode(state, x, y, w.damage * criticalMultiplier(state, side, x, y, ev), w.radius, side, ev);
       }
       events.push(...ev);
     }
@@ -429,8 +401,7 @@ var BrigaPhysics = (() => {
     state.shot_count = (state.shot_count || 0) + 1;
     if (state.shot_count % 3 === 0) {
       const kind = ["gust", "meteor", "charge"][randint(rng, 0, 2)];
-      if (kind === "gust")
-        state.wind = Math.round((rng() < 0.5 ? -1 : 1) * WIND_MAX * 10) / 10;
+      if (kind === "gust") state.wind = Math.round((rng() < 0.5 ? -1 : 1) * WIND_MAX * 10) / 10;
       else if (kind === "meteor") {
         const mx = randint(rng, 360, 640);
         explode(state, mx, GROUND_Y, 10, 48, side, events);

@@ -180,7 +180,7 @@ export class MatchRoom {
       const now = Date.now() / 1000;
       const lastTurn = (m.state.last_turn_at ??= {});
       const deadline = turnDeadline(m.state, sess.side);
-      if (now > deadline + 1.5) {
+      if (m.state.combat_policy?.shot_clock_enforced === true && now > deadline + 1.5) {
         lastTurn[sess.side] = now;
         await this.persist();
         return { events: null, err: { status: 408, body: { error: "shot_clock", error_he: "זמן הירייה נגמר. השעון התחיל מחדש." } } };

@@ -2229,7 +2229,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "enabled": true,
     "persona_budget": 180
   },
-  "combat_policy": { "reload_enabled": true, "reload_bots": true, "reload_pvp": true, "reload_territories": true, "guide_bots": false, "guide_pvp": false, "guide_territories": false },
+  "combat_policy": { "reload_enabled": true, "reload_bots": true, "reload_pvp": true, "reload_territories": true, "guide_bots": false, "guide_pvp": false, "guide_territories": false, "auto_fire_timeout": false, "shot_clock_enforced": false },
   "weapon_cooldowns": {
     "standard": 4,
     "double_bomb": 5,

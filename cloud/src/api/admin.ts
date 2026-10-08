@@ -139,7 +139,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       max_bettors_per_match: [2, 500, "int"], house_fee_pct: [0, 50, "float"], close_after_shots: [0, 50, "int"], daily_cap_coins: [1, 1000000, "int"] },
     alliances: { enabled: [null, null, "bool"], max_members: [2, 20, "int"] },
     courtyard: { enabled: [null, null, "bool"], persona_budget: [30, 300, "int"] },
-    combat_policy: Object.fromEntries(["reload_enabled", "reload_bots", "reload_pvp", "reload_territories", "guide_bots", "guide_pvp", "guide_territories"].map(k => [k, [null,null,"bool"]])) as Record<string, Spec>,
+    combat_policy: Object.fromEntries(["reload_enabled", "reload_bots", "reload_pvp", "reload_territories", "guide_bots", "guide_pvp", "guide_territories", "auto_fire_timeout", "shot_clock_enforced"].map(k => [k, [null,null,"bool"]])) as Record<string, Spec>,
     weapon_cooldowns: {
       standard: [0.5, 60, "float"], double_bomb: [0.5, 60, "float"],
       homing_missile: [0.5, 60, "float"], cluster_shell: [0.5, 60, "float"],

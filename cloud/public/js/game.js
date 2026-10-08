@@ -71,6 +71,7 @@ const GameView = {
       <div id="bot-hold-ov" class="hidden"></div>
       <div id="tutorial-ov" class="hidden"></div>
       <div id="aim-info" aria-label="מדדי כיוון ועוצמה"><span>זווית</span><div class="aim-gauge"><i id="angle-gauge"></i></div><span>עוצמה</span><div class="aim-gauge"><i id="power-gauge"></i></div></div>
+      <div id="fire-row"><button id="fire-btn" class="btn" type="button">🔥 ירה!</button><button id="fire-mode-btn" class="btn small secondary" type="button" title="החלפה בין ירי בשחרור האצבע לירי בכפתור"></button></div>
       <div id="ability-bar"><button id="move-left" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">⬅ הזזה</button><button id="move-right" class="btn small secondary" title="הזזת המגדל צעד אחד - עוזר להתחמק מירי מדויק. מוגבל במספר צעדים.">הזזה ➡</button><button id="shield-btn" class="btn small secondary" title="מגן זמני שסופג את הפגיעה הבאה במגדל.">🛡 מגן</button><button id="mega-btn" class="btn small secondary" title="יריית מגה עוצמתית - מתמלאת עם הזמן.">⚡ מגה</button></div>
       <div id="weapon-bar"></div><button class="btn small secondary" id="guide-btn" title="קו חלקי ללא חישוב רוח. שימוש אחד להפעלה עד הירייה הבאה, עד 3 לקרב.">קו הכוונה</button>
       <p class="sub" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
@@ -144,6 +145,15 @@ const GameView = {
     document.getElementById("move-right").onclick = () => ability("move", { direction: "right" });
     document.getElementById("shield-btn").onclick = () => ability("shield");
     document.getElementById("mega-btn").onclick = () => { this.useMega = !this.useMega; document.getElementById("mega-btn").classList.toggle("active", this.useMega); };
+    this.fireMode = (Consent.getPref("bg_fire_mode") === "button") ? "button" : "release";
+    const applyFireMode = () => {
+      const fb = document.getElementById("fire-btn"), mb = document.getElementById("fire-mode-btn");
+      if (fb) fb.classList.toggle("hidden", this.fireMode !== "button");
+      if (mb) mb.textContent = this.fireMode === "button" ? "מצב: ירי בכפתור" : "מצב: ירי בשחרור";
+    };
+    applyFireMode();
+    document.getElementById("fire-mode-btn").onclick = () => { this.fireMode = this.fireMode === "button" ? "release" : "button"; Consent.setPref("bg_fire_mode", this.fireMode); applyFireMode(); };
+    document.getElementById("fire-btn").onclick = () => { this._pointerUpAt = performance.now(); if (!this.requestFire("button")) toast(this.firing ? "ממתין לאישור הירייה" : "התותח בטעינה"); };
     await this.refresh(0);
     this._destroyed = false;
     this.openSocket();
@@ -180,6 +190,11 @@ const GameView = {
     this.stopPoll();
     this.closeSocket();
     cancelAnimationFrame(this.raf);
+    if (this._cancelAimEvt) {
+      window.removeEventListener("blur", this._cancelAimEvt); window.removeEventListener("orientationchange", this._cancelAimEvt);
+      document.removeEventListener("visibilitychange", this._cancelAimEvt); document.removeEventListener("fullscreenchange", this._cancelAimEvt);
+      document.removeEventListener("webkitfullscreenchange", this._cancelAimEvt); this._cancelAimEvt = null;
+    }
     if (this._onKey) window.removeEventListener("keydown", this._onKey);
     this._onKey = null;
     this.canvas = null;
@@ -344,7 +359,8 @@ const GameView = {
       if (!this.canAim()) return;
       const p = pos(e);
       const m = this.muzzle(this.mySide());
-      if (Math.hypot(p.x - m.x, p.y - m.y) > 180) return;
+      const rc = cv.getBoundingClientRect(), pxScale = this.W / Math.max(1, rc.width);
+      if (Math.hypot(p.x - m.x, p.y - m.y) > Math.max(180, 110 * pxScale)) return;
       this.aiming = true;
       this.aimPointerId = e.pointerId;
       this.aimStart = { clientX: e.clientX, clientY: e.clientY };
@@ -363,9 +379,18 @@ const GameView = {
       if (!dragged) return;
       updateAim(pos(e));
       this._pointerUpAt = performance.now();
-      if (this.canFire()) this.fire(); else toast(this.firing ? "הכוונת נשמרה - ממתין לאישור הירייה" : "הכוונת נשמרה - התותח בטעינה");
+      if (this.fireMode === "button") { toast("הכוונה נשמרה - לחץ על כפתור הירי"); } else if (this.requestFire("drag")) {} else toast(this.firing ? "הכוונת נשמרה - ממתין לאישור הירייה" : "הכוונת נשמרה - התותח בטעינה");
     });
     cv.addEventListener("pointercancel", cancelAim);
+    cv.addEventListener("lostpointercapture", (e) => { if (this.aiming && e.pointerId === this.aimPointerId) cancelAim(); });
+    // Anything that changes the screen under the finger cancels the aim
+    // instead of leaving a half-finished drag that could fire on release.
+    this._cancelAimEvt = () => { if (this.aiming) cancelAim(); };
+    window.addEventListener("blur", this._cancelAimEvt);
+    window.addEventListener("orientationchange", this._cancelAimEvt);
+    document.addEventListener("visibilitychange", this._cancelAimEvt);
+    document.addEventListener("fullscreenchange", this._cancelAimEvt);
+    document.addEventListener("webkitfullscreenchange", this._cancelAimEvt);
     // Keyboard controls: arrows adjust angle/power, space fires, 1-6 picks a
     // weapon. Shift makes arrow steps bigger. The aim indicator stays visible
     // briefly after a key press so keyboard aiming has visual feedback.
@@ -388,7 +413,7 @@ const GameView = {
         case "ArrowLeft":
           this.aimPower = Math.max(5, this.aimPower - step); break;
         case " ":
-          if (this.canFire()) this.fire();
+          this.requestFire("key");
           break;
         case "1": case "2": case "3": case "4": case "5": case "6": {
           const id = weapons[Number(e.key) - 1];
@@ -623,14 +648,14 @@ const GameView = {
       const turn = Math.max(0, Math.ceil(this.snap.turn_deadline - (Date.now() / 1000 + this.serverOffset)));
       const reloading = !this.canFire();
       const seconds = Math.ceil(this.reloadState().remaining);
-      shot.textContent = this.firing ? (Lang.current === "en" ? "Waiting for server..." : "ממתין לתשובת המשחק...")
+      shot.textContent = (!this.firing && !reloading && turn === 0 && this.snap.combat_policy?.auto_fire_timeout !== true) ? "⏳ מוכן - כוון וירה" : this.firing ? (Lang.current === "en" ? "Waiting for server..." : "ממתין לתשובת המשחק...")
         : seconds > 0 ? (Lang.current === "en" ? `Reloading ${seconds}s` : `טעינה: ${seconds} שניות`) : `⏳ ${turn}`;
       shot.classList.toggle("urgent", !reloading && turn <= 3);
       // The ten-second clock is a real gameplay constraint: if the player is
       // still loaded and ready at zero, fire the current visual-gauge aim.
       // Never steal an in-progress pointer drag from the player.
-      if (turn === 0 && this.canFire() && !this.aiming && !this._clockAutoFired) {
-        this._clockAutoFired = true; this.fire();
+      if (turn === 0 && this.canFire() && !this.aiming && !this._clockAutoFired && this.snap.combat_policy?.auto_fire_timeout === true) {
+        this._clockAutoFired = true; this.requestFire("clock");
       } else if (turn > 0) this._clockAutoFired = false;
     }
   },
@@ -660,6 +685,17 @@ const GameView = {
   },
 
   setInventory(inv) { this._inventory = inv; if (this.canvas) { this.renderWeapons(); this.renderHud(); } },
+
+  // Single gateway for every shot: only an explicit player action (drag release,
+  // fire button, space key) or the admin-enabled timeout mode may call it.
+  // The source is kept for diagnostics so an unexpected shot is traceable.
+  requestFire(source) {
+    if (!this.canFire()) return false;
+    if (source !== "drag" && source !== "key" && source !== "button" && source !== "clock") return false;
+    this._fireLog ??= []; this._fireLog.push({ source, t: Date.now() }); if (this._fireLog.length > 50) this._fireLog.shift();
+    this.fire();
+    return true;
+  },
 
   async fire() {
     if (!this.canFire()) return;
