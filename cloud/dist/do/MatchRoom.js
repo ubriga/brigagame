@@ -68,6 +68,9 @@ export class MatchRoom {
             return Response.json((await this.state.storage.get("diag")) ?? []);
         }
         if (url.pathname.endsWith("/snapshot")) {
+            // A pollers' event read must never see a version whose journal rows are
+            // still being written in the background after a fast fire ack.
+            await this.bgTail;
             return Response.json(this.publicSnapshot());
         }
         const actionMatch = url.pathname.match(/\/(fire|move|shield|guide)$/);
@@ -223,7 +226,17 @@ export class MatchRoom {
                     delete done[keys[0]];
             }
             const dp0 = Date.now();
-            await Promise.all([this.persist(), this.recordEvents(result.events)]);
+            if (m.status === "active" && !result.won) {
+                // Fast ack: the DO storage write is the durable commit; the D1
+                // checkpoint and the event journal finish right after the response.
+                const evs = result.events, ver = m.version;
+                await this.state.storage.put("match", m);
+                this.deferWrite(() => this.persistD1());
+                this.deferWrite(() => this.recordEventsAt(evs, ver));
+            }
+            else {
+                await Promise.all([this.persist(), this.recordEvents(result.events)]);
+            }
             ack._d = { persist: Date.now() - dp0, exec: dp0 - Math.round(acceptedAt * 1000) };
             this.broadcast({ type: "events", version: m.version, events: result.events, command_id: cid, accepted_at: acceptedAt });
             if (m.p2_ai && m.status === "active")
@@ -462,16 +475,44 @@ export class MatchRoom {
     /** Append events to the D1 journal so polling clients (state?since=N)
      * can incrementally sync, mirroring emit_events. */
     async recordEvents(events) {
+        if (!this.match)
+            return;
+        return this.recordEventsAt(events, this.match.version);
+    }
+    async recordEventsAt(events, version) {
         if (!this.env.DB || !this.match)
             return;
         const now = new Date().toISOString();
         const statements = events.map(ev => this.env.DB.prepare("INSERT INTO match_events (match_id, version, type, data, created_at) VALUES (?,?,?,?,?)")
-            .bind(this.match.id, this.match.version, String(ev.type ?? "event"), JSON.stringify(ev), now));
+            .bind(this.match.id, version, String(ev.type ?? "event"), JSON.stringify(ev), now));
         if (statements.length)
             await this.env.DB.batch(statements);
     }
+    /** Background D1 writes queued by a fast fire ack. Chained so they land in
+     * order; the durable copy of the match is already in DO storage. */
+    bgTail = Promise.resolve();
+    deferWrite(fn) {
+        const run = async () => {
+            try {
+                await fn();
+            }
+            catch (e1) {
+                try {
+                    await fn();
+                }
+                catch (e2) {
+                    console.error("deferred D1 write failed", String(e2));
+                }
+            }
+        };
+        this.bgTail = this.bgTail.then(run, run);
+    }
     async persist() {
+        await this.bgTail;
         await this.state.storage.put("match", this.match);
+        await this.persistD1();
+    }
+    async persistD1() {
         // Checkpoint into D1 so match discovery/history survives DO eviction.
         if (this.env.DB && this.match) {
             const m = this.match;
@@ -491,7 +532,8 @@ export class MatchRoom {
         if (!this.match)
             return { status: "empty" };
         const m = this.match;
-        return { id: m.id, status: m.status, version: m.version, state: m.state };
+        return { id: m.id, status: m.status, version: m.version, state: m.state,
+            p1: m.p1, p2: m.p2, p2_ai: m.p2_ai, mode: m.mode };
     }
     /** Called by the worker right after DO creation to install a fresh match. */
     async initMatch(match) {

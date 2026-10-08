@@ -151,6 +151,10 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
   const mm = path.match(/^\/api\/matches\/([a-z0-9]+)\/(state|ready|leave|fire|move|shield|guide)$/);
   if (!mm) return null;
   const [, matchId, action] = mm;
+  // Fire latency: the DO snapshot does not depend on who is calling, so it runs
+  // in parallel with the user lookup instead of after it.
+  const earlyLive: Promise<any> | null = action === "fire"
+    ? doFetch(env, matchId, "/snapshot").catch(() => null) : null;
   const user = await currentUser(d1(env.DB), request);
   if (!user) return json({ error: "unauthorized" }, 401);
   const uid = Number(user.id);
@@ -159,10 +163,16 @@ export async function handleMatchApi(env: Env, request: Request, path: string): 
   const rlBucket = action === "state" ? "state" : action === "fire" ? "fire"
     : (action === "ready" || action === "leave" || action === "guide") ? "mutation" : null;
   // Latency: these three are independent once auth resolved - one round.
+  const liveEarly = earlyLive ? await earlyLive : null;
+  // The DO snapshot carries the player ids for a live match, so a fire does
+  // not need the matches row from D1 (one serial D1 round trip saved).
+  const skipRow = !!(liveEarly && liveEarly.id && liveEarly.status === "active" && liveEarly.p1 !== undefined);
   const [rl, row, live]: any[] = await Promise.all([
     rlBucket && action!=="fire" ? limited(env, request, rlBucket, user) : null,
-    env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first(),
-    doFetch(env, matchId, "/snapshot"),
+    skipRow ? Promise.resolve({ id: liveEarly.id, p1: liveEarly.p1, p2: liveEarly.p2, p2_ai: liveEarly.p2_ai,
+      mode: liveEarly.mode, state: "{}" })
+      : env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first(),
+    earlyLive ? Promise.resolve(liveEarly) : doFetch(env, matchId, "/snapshot"),
   ]);
   const T4 = Date.now();
   if (rl) return rl;
