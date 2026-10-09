@@ -1,12 +1,12 @@
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "118-fire69";
+const RELEASE = "119-nav270";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
-  "./css/style.css", "./js/config.js", "./js/consent.js", "./js/i18n.js", "./js/api.js",
+  "./css/style.css", "./css/nav2.css", "./js/config.js", "./js/consent.js", "./js/i18n.js", "./js/api.js",
   "./js/audio.js", "./js/tower-skins.js", "./js/clockwork.js", "./js/render3d.js", "./js/physics.js", "./js/game.js", "./js/app.js", "./js/pwa.js", "./js/screenmode.js", "./js/pesach.js",
-  "./js/panel.js", "./js/war_extra.js", "./js/territory.js",
+  "./js/panel.js", "./js/war_extra.js", "./js/territory.js", "./js/nav2.js",
   "./assets/sfx/shot.mp3", "./assets/sfx/explosion.mp3", "./assets/sfx/steam.mp3", "./assets/sfx/clank.mp3",
   "./assets/sfx/crumble.mp3", "./assets/sfx/click.mp3",
   "./assets/sfx/coin.mp3", "./assets/sfx/win.mp3", "./assets/sfx/lose.mp3",
