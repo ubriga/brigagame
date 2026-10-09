@@ -1,0 +1,85 @@
+/* v75 Neon Arcade (option A) on the pastel cream background (option B). Menus and the frame around the stage only. */
+:root{
+  --bg:#fbf6ef; --panel:#171134; --panel2:#221a4a;
+  --text:#f4eeff; --muted:#b4a9dd; --accent:#ff3df0; --accent2:#19e3ff;
+  --gold:#ffe14a; --danger:#ff5d7a; --ok:#3ef0a0;
+  --line:#4b3aa0; --shadow:#0b0820; --radius:16px;
+  --neon-pink:#ff3df0; --neon-cyan:#19e3ff; --neon-violet:#8a4dff; --ink:#2a1f4d; --cream:#fbf6ef;
+}
+html body{
+  background:var(--cream) !important; color:var(--ink);
+  background-image:none !important;
+}
+/* headings that sit straight on the cream page */
+h1,h2,h3{color:#2a1f4d;font-weight:900;letter-spacing:.2px}
+.card h1,.card h2,.card h3,.n2-tile h1,.n2-tile h2,.n2-tile h3{color:var(--neon-cyan);text-shadow:0 0 12px rgba(25,227,255,.55)}
+a{color:#b4189f}
+.card a,#topbar a{color:var(--neon-cyan)}
+small,.muted{color:inherit;opacity:.85}
+/* top bar */
+#topbar{background:rgba(11,8,32,.97) !important;border-bottom:2px solid var(--neon-pink) !important;box-shadow:0 0 18px rgba(255,61,240,.45) !important}
+.brand,.brand .ver{color:var(--neon-pink) !important;text-shadow:0 0 10px rgba(255,61,240,.7)}
+#topbar nav a{color:var(--muted) !important}
+#topbar nav a.active,#topbar nav a:hover{background:rgba(25,227,255,.15) !important;color:var(--neon-cyan) !important;box-shadow:0 0 10px rgba(25,227,255,.35) !important}
+.coins{color:var(--gold) !important;text-shadow:0 0 8px rgba(255,225,74,.55)}
+/* cards and tiles */
+.card,.n2-item,.n2-tile{
+  background:linear-gradient(160deg,#1a1240,#120c30) !important;
+  border:1.5px solid #5b46c8 !important;
+  box-shadow:0 0 18px rgba(255,61,240,.22),0 6px 18px rgba(42,31,77,.18) !important;
+  color:var(--text) !important;
+}
+.card::before,.card::after{display:none !important}
+.card.item.equipped{outline:2px solid var(--neon-cyan);box-shadow:0 0 20px rgba(25,227,255,.55) !important}
+/* buttons */
+button.btn,a.btn{
+  background:linear-gradient(90deg,var(--neon-pink),var(--neon-violet)) !important;color:#fff !important;
+  border:1.5px solid #ff9cf7 !important;box-shadow:0 0 18px rgba(255,61,240,.55) !important;font-weight:900;letter-spacing:.2px;text-shadow:0 1px 0 rgba(0,0,0,.25)
+}
+button.btn:hover{filter:brightness(1.1)}
+button.btn:active{box-shadow:0 0 8px rgba(255,61,240,.5) !important}
+button.btn.secondary{background:rgba(25,227,255,.06) !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan) !important;box-shadow:0 0 14px rgba(25,227,255,.4) !important;text-shadow:none}
+button.btn.danger{background:linear-gradient(90deg,#ff5d7a,#c2185b) !important;color:#fff !important;border:1.5px solid #ffb3c1 !important;box-shadow:0 0 16px rgba(255,93,122,.5) !important}
+/* inputs */
+input,select,textarea{background:#120c30 !important;color:var(--text) !important;border:1.5px solid #5b46c8 !important}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--neon-cyan) !important;box-shadow:0 0 12px rgba(25,227,255,.5)}
+/* bottom tab bar (phone) */
+#tabbar{background:#0b0820 !important;border-top:2px solid var(--neon-pink) !important;box-shadow:0 -4px 18px rgba(255,61,240,.35)}
+#tabbar a{color:var(--muted) !important}
+#tabbar a.on{color:var(--neon-cyan) !important;text-shadow:0 0 10px rgba(25,227,255,.7)}
+#tabbar a.on::before{background:var(--neon-cyan) !important;box-shadow:0 0 10px var(--neon-cyan)}
+/* game screen: only the frame around the stage (hud, clock, weapon and control buttons); the stage itself is untouched */
+#game-hud{background:linear-gradient(160deg,#1a1240,#120c30);border:1.5px solid #5b46c8;border-radius:14px;padding:6px 10px;box-shadow:0 0 16px rgba(255,61,240,.3);color:var(--text)}
+#game-hud *{color:inherit}
+#weapon-bar,#ability-bar{background:linear-gradient(160deg,#1a1240,#120c30);border:1.5px solid #5b46c8;border-radius:14px;padding:6px;box-shadow:0 0 16px rgba(25,227,255,.22)}
+#weapon-bar button,#ability-bar button{background:#221a4a !important;color:var(--text) !important;border:1.5px solid var(--neon-cyan) !important;border-radius:10px !important;box-shadow:0 0 10px rgba(25,227,255,.35) !important}
+#weapon-bar button.active,#weapon-bar button.selected,#weapon-bar button[aria-pressed="true"],#ability-bar button.active{border-color:var(--neon-pink) !important;box-shadow:0 0 16px rgba(255,61,240,.8) !important;background:#3a1b6e !important}
+#weapon-bar button:disabled,#ability-bar button:disabled{opacity:.45;box-shadow:none !important;border-color:#4b3aa0 !important}
+#game-stage.turn-pulse{outline:3px solid rgba(255,61,240,.7)}
+#game-overlay{background:rgba(11,8,32,.86) !important}
+#game-overlay h2{color:var(--neon-cyan);text-shadow:0 0 14px rgba(25,227,255,.7)}
+/* page-level text on the cream background */
+#view{color:var(--ink)}
+#view :where(.muted,small,.sub,p){color:#5a4d85}
+#view :where(.card,.n2-tile,.n2-item,.howto-card,.player-tag,#weapon-bar,#ability-bar,#game-hud) :where(.muted,small,.sub,p){color:var(--muted)}
+/* tabs (shop filters etc.) */
+.tabs button{background:#171134 !important;color:var(--muted) !important;border:1.5px solid #5b46c8 !important;box-shadow:none !important}
+.tabs button.active{background:linear-gradient(90deg,var(--neon-pink),var(--neon-violet)) !important;color:#fff !important;border-color:#ff9cf7 !important;box-shadow:0 0 14px rgba(255,61,240,.55) !important}
+/* game screen frame: player tags, weapons, clock, fire, full-screen */
+.player-tag{background:linear-gradient(160deg,#1a1240,#120c30) !important;border:1.5px solid #5b46c8 !important;box-shadow:0 0 14px rgba(255,61,240,.25);color:var(--text) !important}
+.player-tag.me,.player-tag.active,.player-tag.turn{border-color:var(--neon-pink) !important;box-shadow:0 0 18px rgba(255,61,240,.7)}
+.player-tag .hp-wrap{background:#0b0820 !important}
+.wpn{background:#221a4a !important;border:1.5px solid var(--neon-cyan) !important;color:var(--text) !important;box-shadow:0 0 10px rgba(25,227,255,.35) !important}
+.wpn.sel{border-color:var(--neon-pink) !important;background:#3a1b6e !important;box-shadow:0 0 18px rgba(255,61,240,.8) !important}
+#fire-btn{background:linear-gradient(90deg,var(--neon-pink),var(--neon-violet)) !important;color:#fff !important;border:1.5px solid #ff9cf7 !important;box-shadow:0 0 22px rgba(255,61,240,.7) !important}
+#shot-clock{background:#120c30 !important;color:var(--neon-cyan) !important;border:2px solid var(--neon-cyan) !important;box-shadow:0 0 14px rgba(25,227,255,.5)}
+#fs-float,#fs-float.on,button#fs-btn,.fs-btn{background:linear-gradient(90deg,var(--neon-pink),var(--neon-violet)) !important;color:#fff !important;border:1.5px solid #ff9cf7 !important;box-shadow:0 0 16px rgba(255,61,240,.55) !important}
+.howto-card{background:linear-gradient(160deg,#1a1240,#120c30) !important;border:1.5px solid #5b46c8 !important;color:var(--text)}
+#game-canvas{border:2px solid var(--neon-pink) !important;box-shadow:0 0 18px rgba(255,61,240,.45)}
+.rank-progress-card{border-color:#5b46c8 !important;background:#120c30 !important}
+#fs-inline{background:linear-gradient(90deg,var(--neon-pink),var(--neon-violet)) !important;color:#fff !important;border:1.5px solid #ff9cf7 !important;box-shadow:0 0 16px rgba(255,61,240,.55) !important;border-radius:12px !important}
+[data-store-filter]{background:#171134 !important;color:var(--muted) !important;border:1.5px solid #5b46c8 !important;box-shadow:none !important}
+[data-store-filter].active{background:linear-gradient(90deg,var(--neon-pink),var(--neon-violet)) !important;color:#fff !important;border-color:#ff9cf7 !important;box-shadow:0 0 14px rgba(255,61,240,.55) !important}
+#lang-btn{background:#221a4a !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan) !important}
+#game-hud .player-tag,#game-hud .player-tag.me{background:linear-gradient(160deg,#1a1240,#120c30) !important}
+.tabs{background:transparent !important;border:0 !important;box-shadow:none !important}
