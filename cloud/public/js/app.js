@@ -390,7 +390,7 @@ const App = {
     document.getElementById("topbar").classList.remove("hidden");
     document.getElementById("seo-intro")?.classList.add("hidden");
     document.getElementById("coin-chip").textContent = "🪙 " + this.me.coins;
-    document.getElementById("rank-chip").textContent = this.me.rank + " · " + this.me.rating;
+    { const rc = document.getElementById("rank-chip"); rc.textContent = this.me.rank; const rr = document.createElement("span"); rr.className = "rk-r"; rr.textContent = " · " + this.me.rating; rc.appendChild(rr); }
     const pic = document.getElementById("user-pic");
     if (this.me.picture) { pic.src = this.me.picture; pic.classList.remove("hidden"); }
     else { pic.removeAttribute("src"); pic.classList.add("hidden"); }

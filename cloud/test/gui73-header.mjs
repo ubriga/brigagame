@@ -20,7 +20,12 @@ for(const vp of VPS){const [w,h]=vp,mobile=w<900;const p=await open(tokUser,vp);
   if(mobile){for(const id of ['lang-btn','gfx-btn','install-btn'])assert.equal(await vis(p,'#'+id),false,`${id} hidden on mobile ${hash} @${w}`);
    const fixed=await p.evaluate(()=>[...document.querySelectorAll('body *')].filter(e=>{const c=getComputedStyle(e);const r=e.getBoundingClientRect();return c.position==='fixed'&&c.display!=='none'&&r.width>innerWidth*0.9&&r.height>20}).map(e=>e.id||e.tagName));
    assert.deepEqual(fixed,['tabbar'],`only tabbar is a full-width fixed bar @${w} ${hash}: ${fixed}`);
-   assert.ok(await vis(p,'#logout-btn'),`logout visible @${w}`);}
+   assert.ok(await vis(p,'#logout-btn'),`logout visible @${w}`);
+   for(const id of ['coin-chip','rank-chip','mute-btn'])assert.ok(await vis(p,'#'+id),`${id} visible on mobile ${hash} @${w}`);
+   const ch=await p.evaluate(()=>{const ids=['coin-chip','streak-chip','rank-chip','mute-btn','logout-btn'];const rs=ids.map(i=>{const e=document.getElementById(i);const r=e.getBoundingClientRect();return {i,vis:r.width>0&&getComputedStyle(e).display!=='none',l:r.left,r:r.right,t:r.top,b:r.bottom,txt:e.innerText.trim()}}).filter(x=>x.vis);return {iw:innerWidth,rs}});
+   for(const x of ch.rs)assert.ok(x.l>=-1&&x.r<=ch.iw+1&&x.t>=0&&x.b<=140,`chip inside viewport ${x.i} @${w} ${JSON.stringify(x)}`);
+   for(let i=0;i<ch.rs.length;i++)for(let j=i+1;j<ch.rs.length;j++){const a=ch.rs[i],c=ch.rs[j];const ov=Math.min(a.r,c.r)-Math.max(a.l,c.l)>2&&Math.min(a.b,c.b)-Math.max(a.t,c.t)>2;assert.ok(!ov,`chips overlap ${a.i}/${c.i} @${w} ${hash}`);}
+   const rk=ch.rs.find(x=>x.i==='rank-chip');assert.ok(rk.txt.length>0&&(w>640||!rk.txt.includes('·')),`rank text name only @${w}: ${rk.txt}`);}
   else{for(const id of ['lang-btn','gfx-btn','logout-btn'])assert.ok(await vis(p,'#'+id),`${id} on desktop @${w}`);}}
  await p.screenshot({path:`/downloads/qa73-header-${w}x${h}.png`});await p.context().close();console.log('ok',w,h);}
 await b.close();console.log('GUI73 PASS');
