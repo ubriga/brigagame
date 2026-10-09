@@ -357,7 +357,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   #topbar nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 13px}
   input,select,textarea{font-size:16px}
   .user-chip{justify-content:flex-end;min-width:0;gap:5px}
-  .user-chip .rank{display:none}
+  .user-chip .rank{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30vw;font-size:12px}
+  .user-chip .rank .rk-r{display:none}
   #install-btn,#lang-btn,#mute-btn,#logout-btn{min-height:44px;min-width:44px}
   .store-category-bar button,.workshop-jump a,.tabs button{min-height:44px}
   button.btn,a.btn{min-height:44px}
