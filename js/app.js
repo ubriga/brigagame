@@ -1590,11 +1590,35 @@ const App = {
 
   // Compact standalone copy of the in-game tower renderer, for the live
   // customization preview: full-HP tower, animated glow.
+  /* 3D half of the split skin cards: drawn lazily when the card scrolls into view. */
+  skin3dCards(view, catalog) {
+    const cvs = [...view.querySelectorAll("canvas[data-skin3d]")].filter(c => !c.dataset.rendered);
+    if (!cvs.length) return;
+    const note = (cv, txt) => { const x = cv.getContext("2d"); x.clearRect(0, 0, cv.width, cv.height); x.fillStyle = "rgba(255,233,196,.7)"; x.font = "bold 22px sans-serif"; x.textAlign = "center"; x.fillText(txt, cv.width / 2, cv.height / 2); cv.dataset.rendered = "1"; };
+    if (typeof Skins3D === "undefined" || !Skins3D.capable()) { cvs.forEach(cv => note(cv, "3D לא זמין")); return; }
+    if (Skins3D.enabled() === false) { cvs.forEach(cv => note(cv, "3D כבוי")); return; }
+    const draw = cv => {
+      if (cv.dataset.rendered) return; cv.dataset.rendered = "1";
+      const it = catalog[cv.dataset.skin3d]; if (!it) return;
+      Skins3D.preview(cv, { colors: it.colors, ...(it.style || {}) }).then(ok => { if (ok === false) note(cv, "3D לא זמין"); });
+    };
+    if (!("IntersectionObserver" in window)) { cvs.forEach(draw); return; }
+    const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { io.unobserve(e.target); draw(e.target); } }), { rootMargin: "200px" });
+    cvs.forEach(cv => io.observe(cv));
+  },
+
   drawSkinPreview(canvas, style, t) {
     const c = canvas.getContext("2d");
     const BLOCK = 26, ROWS = 6, COLS = 4;
-    const W = canvas.width, H = canvas.height, ground = H - 20;
+    let W = canvas.width, H = canvas.height;
+    c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, W, H);
+    if (canvas.dataset.fit) {   // split shop card: fit the tower and its ornaments into the half
+      const k = Math.min(W / 200, H / 250);
+      c.setTransform(k, 0, 0, k, (W - 200 * k) / 2, (H - 250 * k) / 2);
+      W = 200; H = 250;
+    }
+    const ground = H - 20;
     const cols = style.colors || ["#3b82f6", "#1e3a8a"];
     const fill = style.fill || cols;
     const tx = (W - COLS * BLOCK) / 2;
@@ -1689,7 +1713,7 @@ const App = {
         } else {
           const owned = !!inv;
           const tierName = { common: "רגיל", rare: "נדיר", epic: "אפי", legendary: "אגדי" }[it.tier] || "רגיל";
-          body = `<div class="skin-card-art"><canvas class="skin-card-preview" width="220" height="150" data-skin-preview="${id}"></canvas>${it.coming_soon && it.available === false ? '<span class="coming-ribbon">בקרוב</span>' : ''}</div>
+          body = `<div class="skin-card-art skin-split"><canvas class="skin-card-preview sp2d" width="240" height="480" data-fit="1" data-skin-preview="${id}"></canvas><canvas class="skin-card-preview sp3d" width="240" height="480" data-skin3d="${id}"></canvas><span class="sp-lbl l2">2D</span><span class="sp-lbl l3">3D</span>${it.coming_soon && it.available === false ? '<span class="coming-ribbon">בקרוב</span>' : ''}</div>
                   <span class="shop-tier tier-${esc(it.tier || "common")}">${tierName}</span>
                   <p class="${owned ? "owned-tag" : "price"}">${owned ? (inv.equipped ? "✓ המראה הפעיל שלך" : "בבעלותך - לחץ להחיל") : "🪙 " + it.price}</p>`;
         }
@@ -1709,12 +1733,12 @@ const App = {
     const setStoreFilter = kind => {
       view.querySelectorAll("[data-store-filter]").forEach(b => b.classList.toggle("active", b.dataset.storeFilter === kind));
       view.querySelectorAll("[data-store-section]").forEach(sec => sec.classList.toggle("hidden", kind !== "all" && sec.dataset.storeSection !== kind));
-      requestAnimationFrame(() => view.querySelectorAll("canvas[data-skin-preview]").forEach(canvas => {
+      requestAnimationFrame(() => { view.querySelectorAll("canvas[data-skin-preview]").forEach(canvas => {
         if (canvas.dataset.rendered) return;
         const it=catalog[canvas.dataset.skinPreview];
         try { this.drawSkinPreview(canvas,{colors:it.colors,...(it.style||{})},0); canvas.dataset.rendered="1"; }
         catch(e){ console.error("skin preview",canvas.dataset.skinPreview,e); }
-      }));
+      }); this.skin3dCards(view, catalog); });
     };
     view.querySelectorAll("[data-store-filter]").forEach(b => b.onclick=()=>setStoreFilter(b.dataset.storeFilter));
     view.querySelector("#store-refresh").onclick = () => this.vStore(view, seq);
@@ -1723,6 +1747,7 @@ const App = {
       try { this.drawSkinPreview(canvas, { colors: it.colors, ...(it.style || {}) }, 0); canvas.dataset.rendered="1"; }
       catch (e) { console.error("skin preview", canvas.dataset.skinPreview, e); }
     });
+    this.skin3dCards(view, catalog);
     document.getElementById("coupon-btn").onclick = async () => {
       const code = document.getElementById("coupon-in").value.trim();
       const { status: s, data: d } = await API.post("/api/coupons/redeem", { code });
