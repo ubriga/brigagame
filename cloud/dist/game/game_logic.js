@@ -18,8 +18,9 @@ export const GROUND_Y = 520;
  * back wall 116x176 + top housing to 184. Shots must stop where the press
  * is seen, so the box matches the render exactly (was 68x105 - shots flew
  * through the upper half and the sides of the visible press). */
-export const OBSTACLE_W = 116;
-export const OBSTACLE_H = 184;
+export const OBSTACLE_SCALE = 0.6; // v71: obstacle shrunk 40% (hitbox and model together)
+export const OBSTACLE_W = Math.round(116 * OBSTACLE_SCALE); // 70
+export const OBSTACLE_H = Math.round(184 * OBSTACLE_SCALE); // 110
 export const BLOCK = 26;
 export const TOWER_COLS = 4;
 export const TOWER_ROWS = 6;
@@ -56,11 +57,12 @@ export function scaleObstacleMotion(dyn, ctx) {
         depthM *= Math.max(0, 1 + num(d[`v_kind_depth_pct_${ctx.kind}`], 0) / 100);
         speedM *= Math.max(0.1, 1 + num(d[`v_kind_speed_pct_${ctx.kind}`], 0) / 100);
     }
-    const lo = num(d.v_min_lift, 0), hi = num(d.v_max_lift, 90);
+    // Admin lift/speed values are authored for the original 184px obstacle; scale them with it so the motion keeps its proportions.
+    const lo = num(d.v_min_lift, 0) * OBSTACLE_SCALE, hi = num(d.v_max_lift, 90) * OBSTACLE_SCALE;
     const minLift = Math.max(-OBSTACLE_H, lo < 0 ? lo * depthM : lo);
     const maxLift = Math.max(minLift, Math.max(-OBSTACLE_H, hi < 0 ? hi * depthM : hi));
     return { min_lift: Math.round(minLift * 10) / 10, max_lift: Math.round(maxLift * 10) / 10,
-        v_speed: Math.round(Math.max(1, num(d.v_speed, 14) * speedM) * 10) / 10 };
+        v_speed: Math.round(Math.max(1, num(d.v_speed, 14) * OBSTACLE_SCALE * speedM) * 10) / 10 };
 }
 /** Re-scale an already created state's obstacle motion (called by match creation once difficulty/tile are known). */
 export function applyObstacleCtx(state, dyn, ctx) {

@@ -144,7 +144,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       const controls = await getControls(env);
       if ((controls as any).auth_flow?.redirect_enabled !== true)
         return json({ error: "redirect_disabled", error_he: "דרך ההתחברות הזו כבויה כרגע." }, 403);
-      const state = crypto.randomUUID() + (url.searchParams.get("mo") === "1" ? "~1" : "~0");
+      const state = (url.searchParams.get("n2") === "1" ? "n" : "") + crypto.randomUUID() + (url.searchParams.get("mo") === "1" ? "~1" : "~0");
       await env.DB.prepare("INSERT INTO oauth_states (state, created_at, expires_at) VALUES (?,?,?)")
         .bind(state, new Date().toISOString(), Date.now() / 1000 + 600).run();
       const redirectUri = new URL("/api/auth/google/callback", url.origin).toString();
@@ -208,7 +208,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
           + " VALUES (?, 'google_auth_attempt', 'auth', '', ?, ?)")
           .bind(Number(user.id), JSON.stringify({ result: "ok", via: "redirect" }), new Date().toISOString()).run()
           .catch(() => {});
-        return Response.redirect(frontendBase(env, url) + "/#/auth?token=" + encodeURIComponent(token), 302);
+        return Response.redirect(frontendBase(env, url) + (state.startsWith("n") ? "/?nav2=1" : "/") + "#/auth?token=" + encodeURIComponent(token), 302);
       } catch (e) {
         console.error("oauth_callback_fail", String((e as any)?.message ?? e));
         return fail("שירות ההתחברות לא זמין כרגע. נסה שוב בעוד רגע.");

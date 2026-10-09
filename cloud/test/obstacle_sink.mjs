@@ -12,8 +12,8 @@ for (let t = 1000; t < 1000 + 40; t += 0.05) {
   if (prev !== null) maxStep = Math.max(maxStep, Math.abs(o.lift - prev)); prev = o.lift;
   assert.ok(o.y + o.h <= gl.GROUND_Y - o.lift + 0.01);
 }
-assert.ok(lo <= -119 && hi >= 29, `range ${lo}..${hi}`);
-assert.ok(maxStep < 2.0, `step ${maxStep}`);           // no jumps: 20px/s peak ~31px/s * 0.05s
+assert.ok(lo <= -71 && hi >= 17, `range ${lo}..${hi}`);
+assert.ok(maxStep < 1.3, `step ${maxStep}`);           // no jumps: 20px/s peak ~31px/s * 0.05s
 // 2. scaling
 const base = gl.scaleObstacleMotion(dyn, {});
 const easy = gl.scaleObstacleMotion(dyn, { difficulty: "easy" });
@@ -22,7 +22,7 @@ assert.ok(easy.min_lift < base.min_lift && hard.min_lift > base.min_lift && easy
 const rare = gl.scaleObstacleMotion(dyn, { rarity: 4, kind: "fortress" });
 assert.ok(rare.min_lift > base.min_lift, "rare fortress sinks less");
 assert.ok(gl.scaleObstacleMotion({ ...dyn, v_min_lift: -500 }, { difficulty: "easy" }).min_lift >= -gl.OBSTACLE_H);
-assert.equal(base.max_lift, 30);
+assert.equal(base.max_lift, 18);
 // 3. a sunk press does not block, a risen one does (flat shot straight through the press column)
 function shotThrough(lift) {
   const s = JSON.parse(JSON.stringify(st));
@@ -32,9 +32,9 @@ function shotThrough(lift) {
   const [x, y, pts] = gl.simulate(s, "p1", 14, 66, "standard", [], undefined, 1000);
   return { x, y, blocked: x !== null && x >= 450 && x <= 450 + gl.OBSTACLE_W && y < gl.GROUND_Y - 0.5, pts };
 }
-for (const L of [-184, -150]) { const r = shotThrough(L); assert.ok(!r.blocked, `lift ${L} should not block (${r.x},${r.y})`); }
-const up = shotThrough(30); const mid = shotThrough(-20);
+for (const L of [-110, -90]) { const r = shotThrough(L); assert.ok(!r.blocked, `lift ${L} should not block (${r.x},${r.y})`); }
+const up = shotThrough(18); const mid = shotThrough(-12);
 console.log("up", up.x?.toFixed(0), up.y?.toFixed(0), "mid", mid.x?.toFixed(0), mid.y?.toFixed(0));
 // 4. the ground is never crossed
-for (const L of [-184, -120, 0, 30]) { const r = shotThrough(L); assert.ok(r.pts.every(p => p[1] <= gl.GROUND_Y + 0.01)); }
+for (const L of [-110, -72, 0, 18]) { const r = shotThrough(L); assert.ok(r.pts.every(p => p[1] <= gl.GROUND_Y + 0.01)); }
 console.log("obstacle_sink ok");

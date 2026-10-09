@@ -1,6 +1,6 @@
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
 /* Brigagame service worker: offline shell fallback without stale deploys. */
-const RELEASE = "119-nav270";
+const RELEASE = "120-nav271";
 const SHELL_CACHE = `brigagame-shell-${RELEASE}`;
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest",
