@@ -750,9 +750,13 @@ const App = {
       google.accounts.id.renderButton(document.getElementById("gsi-btn"),
         { theme: "filled_black", size: "large", text: "signin_with", locale: "iw" });
     };
+    // The Google redirect flow can land on another origin (workers.dev ->
+    // github.io), so a ?nav2=1 preview is handed to the server and back.
+    const nav2Preview = () => { try { return localStorage.getItem("bg_nav2") === "1" || sessionStorage.getItem("bg_nav2") === "1"; } catch (e) { return false; } };
     const redirectStart = () => {
       clearError(); lastMethod = "redirect";
-      location.href = CONFIG.API_BASE + "/api/auth/google/start?mo=" + (document.getElementById("mail-optin").checked ? "1" : "0");
+      location.href = CONFIG.API_BASE + "/api/auth/google/start?mo=" + (document.getElementById("mail-optin").checked ? "1" : "0")
+        + (nav2Preview() ? "&n2=1" : "");
     };
     document.getElementById("login-retry").onclick = () => {
       if (lastMethod === "redirect") return redirectStart();

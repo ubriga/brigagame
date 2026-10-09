@@ -35,12 +35,14 @@
   // ---------------- state ----------------
   try {
     const q = new URLSearchParams(location.search).get("nav2");
-    if (q === "1") sessionStorage.setItem("bg_nav2", "1");
-    else if (q === "0") sessionStorage.removeItem("bg_nav2");
+    // localStorage so the preview survives login, reloads and new tabs on this
+    // origin; ?nav2=0 clears it. (An old sessionStorage value is still honored.)
+    if (q === "1") localStorage.setItem("bg_nav2", "1");
+    else if (q === "0") { localStorage.removeItem("bg_nav2"); sessionStorage.removeItem("bg_nav2"); }
   } catch (e) { /* storage blocked: preview unavailable, flag still works */ }
   A.navV2 = function () {
     let pre = false;
-    try { pre = sessionStorage.getItem("bg_nav2") === "1"; } catch (e) { /* ignore */ }
+    try { pre = localStorage.getItem("bg_nav2") === "1" || sessionStorage.getItem("bg_nav2") === "1"; } catch (e) { /* ignore */ }
     return !!(this.me && (this.ux && this.ux.nav2 === true || pre));
   };
 

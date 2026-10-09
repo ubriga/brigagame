@@ -40,7 +40,9 @@ var BrigaPhysics = (() => {
   // src/game/game_logic.ts
   var WORLD_W = 1e3;
   var GROUND_Y = 520;
-  var OBSTACLE_H = 184;
+  var OBSTACLE_SCALE = 0.6;
+  var OBSTACLE_W = Math.round(116 * OBSTACLE_SCALE);
+  var OBSTACLE_H = Math.round(184 * OBSTACLE_SCALE);
   var BLOCK = 26;
   var TOWER_X = { p1: 140, p2: 760 };
   var GRAVITY = 700;

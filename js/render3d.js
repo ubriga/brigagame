@@ -624,13 +624,14 @@ const Render3D = {
     /* Steam press obstacle (visual-only, option ב): frame + cyclic piston,
      * steam puffs at slam, pulsing warning lamp. Lazy-built once the snap's
      * obstacle is known; the server keeps owning the (invisible) hitbox. */
+    const OBS_K = 0.6;   // v71: press model scaled to the 40% smaller hitbox (70x110)
     const mdls = Render3D._models;
     if (!Render3D._press && mdls && mdls.bg && mdls.bg.pressFrame && mdls.bg.pressPiston) try {
       const ob0 = (game.obstacleNow ? game.obstacleNow() : null) || (game.snap && game.snap.obstacle);
       if (ob0) {
         const sc = Render3D._scene, cx = ob0.x + ob0.w / 2;
         const frame = mdls.bg.pressFrame.scene.clone(true);
-        frame.position.set(cx, 0, 0); sc.add(frame);
+        frame.position.set(cx, 0, 0); frame.scale.setScalar(OBS_K); sc.add(frame);
         const piston = mdls.bg.pressPiston.scene.clone(true);
         // The press sinks below the ground line: clip everything under y=0 so only the part above ground shows.
         const clipPlane = new T.Plane(new T.Vector3(0, 1, 0), 0);
@@ -640,29 +641,29 @@ const Render3D = {
           n.material = Array.isArray(n.material) ? mats : mats[0];
         });
         if (Render3D._r) Render3D._r.localClippingEnabled = true;
-        piston.position.set(cx, 2, 0); sc.add(piston);
+        piston.position.set(cx, 2 * OBS_K, 0); piston.scale.setScalar(OBS_K); sc.add(piston);
         const lamp = new T.Sprite(new T.SpriteMaterial({
           map: Render3D._glowTex, color: 0xffb35c, transparent: true, opacity: 0.3,
           blending: T.AdditiveBlending, depthWrite: false, fog: false }));
-        lamp.scale.set(44, 44, 1); lamp.position.set(cx, 190, 14); sc.add(lamp);
+        lamp.scale.set(44 * OBS_K, 44 * OBS_K, 1); lamp.position.set(cx, 190 * OBS_K, 14 * OBS_K); sc.add(lamp);
         const puffs = [];
-        for (const px of [-34, 0, 34]) {
+        for (const px of [-34 * OBS_K, 0, 34 * OBS_K]) {
           const sp = new T.Sprite(new T.SpriteMaterial({
             map: Render3D._glowTex, color: 0xcfd8e3, transparent: true, opacity: 0,
             blending: T.NormalBlending, depthWrite: false, fog: false }));
-          sp.scale.set(26, 26, 1); sp.position.set(cx + px, 178, 8); sc.add(sp);
+          sp.scale.set(26 * OBS_K, 26 * OBS_K, 1); sp.position.set(cx + px, 178 * OBS_K, 8 * OBS_K); sc.add(sp);
           puffs.push({ sp, life: 0, x: cx + px });
         }
         let rail = null;
         if (ob0.motion && ob0.motion.enabled && ob0.motion.max_x > ob0.motion.min_x) {
           rail = new T.Mesh(
-            new T.BoxGeometry(ob0.motion.max_x - ob0.motion.min_x + 130, 5, 30),
+            new T.BoxGeometry(ob0.motion.max_x - ob0.motion.min_x + 130 * OBS_K, 5, 30 * OBS_K),
             new T.MeshStandardMaterial({ color: 0x3d2f1c, roughness: 0.6, metalness: 0.4 }));
           rail.position.set((ob0.motion.min_x + ob0.motion.max_x) / 2 + ob0.w / 2, 2.5, 0);
           sc.add(rail);
         }
-        Render3D._press = { frame, piston, lamp, puffs, rail, top: 89, bot: 2,
-          period: 3600, t0: performance.now(), prevPhase: 0, offs: [-34, 0, 34] };
+        Render3D._press = { frame, piston, lamp, puffs, rail, top: 89 * OBS_K, bot: 2 * OBS_K,
+          period: 3600, t0: performance.now(), prevPhase: 0, offs: [-34 * OBS_K, 0, 34 * OBS_K] };
         // top: piston cycle is capped so the piston never rises past the 184-tall
         // collision silhouette (89 + 95 model height = 184).
       }
@@ -675,10 +676,10 @@ const Render3D = {
         const lift = obL.lift || 0;   // server vertical raise/lower (0 = on ground)
         pr.frame.position.x = cx; pr.frame.position.y = lift;
         pr.piston.position.x = cx; pr.lamp.position.x = cx;
-        pr.lamp.position.y = 190 + lift;
+        pr.lamp.position.y = 190 * OBS_K + lift;
         for (let i = 0; i < pr.puffs.length; i++) {
           pr.puffs[i].sp.position.x = cx + pr.offs[i];
-          pr.puffs[i].baseY = 178 + lift;
+          pr.puffs[i].baseY = 178 * OBS_K + lift;
         }
         pr._lift = lift;
       }
@@ -696,10 +697,10 @@ const Render3D = {
       pr.piston.position.y = y + (pr._lift || 0);
       const holding = phase >= 0.35 && phase < 0.55;
       const warn = obL && obL.warning;
-      const vis = Math.max(0, Math.min(1, ((pr._lift || 0) + 60) / 60));   // lamp and steam fade out as the press sinks
+      const vis = Math.max(0, Math.min(1, ((pr._lift || 0) + 60 * OBS_K) / (60 * OBS_K)));   // lamp and steam fade out as the press sinks
       pr.lamp.material.opacity = ((holding || warn) ? 0.55 + 0.35 * Math.sin(nowMs / 85) : 0.22) * vis;
       if (pr.prevPhase < 0.63 && phase >= 0.63)   // slam landed → steam burst
-        for (const p of pr.puffs) { p.life = (pr._lift || 0) > -30 ? 1 : 0; p.sp.position.y = p.baseY ?? 178; }
+        for (const p of pr.puffs) { p.life = (pr._lift || 0) > -30 * OBS_K ? 1 : 0; p.sp.position.y = p.baseY ?? 178 * OBS_K; }
       pr.prevPhase = phase;
       const dt2 = Math.min(0.25, Render3D._bgT2 ? (nowMs - Render3D._bgT2) / 1000 : 0.016);
       for (const p of pr.puffs) {
