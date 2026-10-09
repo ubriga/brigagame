@@ -114,7 +114,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     graphics_pack: { enabled: [null, null, "bool"], low_spec_default: [null, null, "bool"],
       max_particles: [16, 96, "int"], airship_motion: [null, null, "bool"],
       webgl3d_enabled: [null, null, "bool"], webgl3d_adaptive: [null, null, "bool"],
-      webgl3d_min_fps: [30, 60, "int"] },
+      webgl3d_min_fps: [30, 60, "int"], skins3d_enabled: [null, null, "bool"] },
     coatings: {
       enabled: [null, null, "bool"], max_level: [1, 3, "int"], build_minutes: [0.01, 10080, "float"],
       wood_price: [0, 100000, "int"], wood_minutes: [0.01, 10080, "float"], wood_hp: [1, 10000, "float"],

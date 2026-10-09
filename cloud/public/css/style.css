@@ -337,7 +337,12 @@ html[dir="ltr"] body{text-align:left}html[dir="ltr"] .coming-ribbon{right:auto;l
 /* Premium skins show real geometry in store cards, not color-only swatches. */
 .skin-card-art { position:relative; }
 .skin-card-preview { width:100%; height:150px; display:block; border-radius:10px; background:radial-gradient(circle at 50% 35%,rgba(245,158,59,.14),rgba(17,9,4,.8)); }
-@media (max-width:640px) { .skin-card-preview { height:135px; } }
+.skin-split { direction:ltr; display:flex; aspect-ratio:1/1; width:100%; border-radius:10px; overflow:hidden; background:radial-gradient(circle at 50% 35%,rgba(245,158,59,.14),rgba(17,9,4,.8)); }
+.skin-split .skin-card-preview { width:50%; height:100%; border-radius:0; background:none; }
+.skin-split .sp3d { border-inline-start:1px solid rgba(255,200,90,.28); }
+.skin-split .sp-lbl { position:absolute; top:6px; font-size:11px; font-weight:700; padding:1px 6px; border-radius:6px; background:rgba(17,9,4,.7); color:#ffe9c4; letter-spacing:.5px; }
+.skin-split .sp-lbl.l2 { left:6px; } .skin-split .sp-lbl.l3 { right:6px; }
+@media (max-width:640px) { .skin-card-preview { height:135px; } .skin-split .skin-card-preview { height:100%; } }
 /* Timed coating queue and lightweight worker animation. */
 .coating-grid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:14px}.build-job{position:relative;padding:12px 120px 12px 12px;margin:8px 0;border:1px solid #784320;border-radius:10px;background:#341b0b}.worker-scene{position:absolute;right:12px;top:5px;display:flex;gap:8px;font-size:25px}.worker-scene span:nth-child(2){animation:hammer .65s ease-in-out infinite alternate;transform-origin:bottom left}.worker-scene span:first-child{animation:workerBob .8s ease-in-out infinite alternate}.worker-scene span:last-child{animation:workerBob .8s .35s ease-in-out infinite alternate}@keyframes hammer{to{transform:rotate(-32deg) translateY(2px)}}@keyframes workerBob{to{transform:translateY(-3px)}}.coating-wood{border-color:#a16207}.coating-tin{border-color:#b8ac94}.coating-iron{border-color:#725a3e}@media(max-width:640px){.coating-grid{grid-template-columns:1fr}.build-job{padding-right:95px}}
 /* Store navigation and a discoverable tower workshop. */

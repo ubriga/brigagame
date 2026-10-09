@@ -278,6 +278,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
           enabled: gp.webgl3d_enabled === true,
           adaptive: gp.webgl3d_adaptive !== false,
           min_fps: Number(gp.webgl3d_min_fps ?? 45),
+          skins3d: gp.skins3d_enabled !== false,
         },
       }; })(),
       daily_available: streakCfg.enabled ? false : u.last_daily !== today(),

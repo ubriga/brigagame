@@ -28,7 +28,7 @@ database_id = "SET_LOCALLY_AT_DEPLOY"  # real id kept out of the repo
 #   GOOGLE_CLIENT_ID, SESSION_SIGNING_KEY
 [vars]
 FRONTEND_ORIGIN = "https://ubriga.github.io/brigagame"
-SERVER_VERSION = "73"
+SERVER_VERSION = "74"
 ALLOWED_ORIGINS = "https://brigagame.ubriga.workers.dev"
 
 # Fixed-cadence mail drip: Sun-Thu 07:17 UTC (10:17 Israel). Sends only approved campaigns.

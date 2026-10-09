@@ -114,6 +114,10 @@ const Clockwork = {
     const hpFrac = hpInfo && hpInfo.max ? Math.max(0, hpInfo.hp / hpInfo.max) : 1;
     const t = g.idleClock, low = mode === "low";
     const p1 = side === "p1";
+    const rawSkin = g.snap && g.snap.skins && g.snap.skins[side];
+    const skin = (rawSkin && typeof Skins3D !== "undefined" && !Skins3D.isDefault(rawSkin)) ? Skins3D.norm(rawSkin) : null;
+    if (skin && typeof PremiumTowerArt !== "undefined")
+      PremiumTowerArt.draw(c, skin.geometry, { x: towerX, y: towerY, w, h, ground: g.GROUND }, skin, t * 1000, side, "back");
 
     // hit wobble + low-HP shudder (frozen in low-spec)
     let wob = 0;
@@ -152,7 +156,7 @@ const Clockwork = {
       if (sheet) {
         const sc = p1 ? col : (cols - 1 - col);
         c.globalAlpha = .94 + .06 * frac;
-        c.drawImage(sheet, sc * 26, r * 26, 26, 26, x, y, B, B);
+        c.drawImage(skin ? Skins3D.tinted2D(sheet, sc * 26, r * 26, skin, r / Math.max(1, rows - 1)) : sheet, skin ? 0 : sc * 26, skin ? 0 : r * 26, 26, 26, x, y, B, B);
       } else {
         const spr = variants[(r * 7 + col * 3) % 3];
         c.globalAlpha = .55 + .45 * frac;
@@ -217,6 +221,18 @@ const Clockwork = {
       c.restore();
     };
     winAt(1, 1, 0); winAt(3, 2, 2.1);
+
+    // cosmetic tower skin: emblem + front ornaments (same art as the plain 2D renderer)
+    if (skin) {
+      if (skin.emblem) {
+        c.save(); c.textAlign = "center"; c.textBaseline = "middle";
+        c.font = `bold ${Math.round(B * 1.35)}px sans-serif`;
+        c.fillStyle = skin.frame; c.shadowColor = skin.glow || "transparent"; c.shadowBlur = 12;
+        c.globalAlpha = .82; c.fillText(skin.emblem, towerX + w / 2, g.GROUND - h / 2); c.restore();
+      }
+      if (typeof PremiumTowerArt !== "undefined")
+        PremiumTowerArt.draw(c, skin.geometry, { x: towerX, y: towerY, w, h, ground: g.GROUND }, skin, t * 1000, side, "front");
+    }
 
     // chimney on the top-left alive cell + rhythmic steam puffs
     let chimCol = -1;

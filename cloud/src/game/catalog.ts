@@ -2191,7 +2191,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "airship_motion": true,
     "webgl3d_enabled": false,
     "webgl3d_adaptive": true,
-    "webgl3d_min_fps": 45
+    "webgl3d_min_fps": 45,
+    "skins3d_enabled": true
   },
   "coatings": {
     "enabled": true,

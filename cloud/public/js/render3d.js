@@ -607,6 +607,8 @@ const Render3D = {
       const d = { rows: tw.length || game.TROWS };
       pivot.position.y = d.rows * game.BLOCK + 10;
     }
+    // Cosmetic tower skins (3D versions of the shop skins); never touches logic.
+    if (typeof Skins3D !== "undefined") try { Skins3D.applyMatch(game); Skins3D.tick(performance.now()); } catch (e) { if (!Render3D._skinErr) { Render3D._skinErr = String(e); console.warn("[skins3d]", e); } }
     // Stage-3 atmosphere motion: wall-clock dt, a few writes per frame.
     const bm = Render3D._bgMotion;
     if (bm && bm.length) {
@@ -760,6 +762,7 @@ const Render3D = {
     if (Render3D._models) Render3D._modelCache = Render3D._models;
     Render3D._glowTex = null;
     Render3D._host = null; Render3D._syncBox = null;
+    Render3D._skinState = null;
     Render3D._models = null; Render3D._bgMotion = null; Render3D._bgT = 0;
     Render3D._composer = null; Render3D._bloom = null;
     Render3D._scene = null; Render3D._cam = null;
