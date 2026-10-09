@@ -975,7 +975,7 @@ const App = {
       <textarea id="contact-message" rows="6" maxlength="2000" placeholder="מה קרה, באיזה מסך, ומה ציפיתם שיקרה?"></textarea>
       ${identified ? `<p class="sub">הפנייה משויכת אוטומטית לחשבון שלך (${esc(u.name)}) והתשובה תגיע למייל של החשבון.</p>`
         : `<label>מייל לתשובה</label><input id="contact-email" type="email" maxlength="200" placeholder="you@example.com" dir="ltr" style="text-align:left">`}
-      <input data-hp name="${this._hpName || (this._hpName = "f" + Math.random().toString(36).slice(2, 10))}" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0">`;
+      <input data-hp name="${this._hpName || (this._hpName = "f" + Math.random().toString(36).slice(2, 10))}" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;clip-path:inset(50%)">`;
   },
 
   _contactWireSend(root, u, screen, onSuccess) {

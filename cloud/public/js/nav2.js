@@ -102,7 +102,58 @@
   new MutationObserver(() => A.nav2Sync()).observe($("topbar"), { attributes: true, attributeFilter: ["class"] });
 
   const origRoute = A.route;
-  A.route = function () { const r = origRoute.apply(this, arguments); this.nav2Sync(); return r; };
+  A.route = function () {
+    const h = location.hash || "#/lobby";
+    if (h !== this._n2Cur) { this._n2Prev = this._n2Cur; this._n2Cur = h; }
+    const r = origRoute.apply(this, arguments); this.nav2Sync(); this.nav2Back(); return r;
+  };
+
+  // ---------------- back bar on every inner screen ----------------
+  // Inner screens (store, ranking, workshop, war, messages, tags, contact, admin)
+  // get one consistent "back" button at the top; lobby and Me are the two homes.
+  const INNER = /^#\/(store|leaderboard|custom|war|messages|tags|contact|admin)/;
+  A.nav2Back = function () {
+    const view = $("view"); if (!view) return;
+    const hash = location.hash || "";
+    const old = view.querySelector(":scope > .n2-back");
+    if (!this.navV2() || !INNER.test(hash)) { if (old) old.remove(); return; }
+    if (old) return;
+    const rtl = (document.documentElement.getAttribute("dir") || "rtl") === "rtl";
+    const b = document.createElement("button"); b.type = "button"; b.className = "n2-back"; b.id = "n2-back";
+    const en = (document.documentElement.lang || "he") !== "he";
+    b.setAttribute("aria-label", en ? "Back" : "חזרה");
+    b.innerHTML = `<span aria-hidden="true">${rtl ? "→" : "←"}</span><b>${en ? "Back" : "חזרה"}</b>`;
+    b.onclick = () => {
+      try { Sfx.play("click"); } catch (x) { /* ignore */ }
+      const prev = this._n2Prev;
+      const ok = prev && prev !== hash && !/^#\/(game|login|auth|invite)/.test(prev) && !INNER.test(prev) === !INNER.test(prev);
+      const fallback = /^#\/(messages|tags|admin)/.test(hash) ? "#/me" : "#/lobby";
+      location.hash = ok ? prev : fallback;
+    };
+    view.insertBefore(b, view.firstChild);
+  };
+  // Dialog overlays (how-to, nickname, contact): add a visible X, close on backdrop tap and Esc.
+  // The forced first-login nickname dialog (no cancel/skip-less) stays modal by design.
+  function overlayClose(ov) {
+    if (!ov || ov.querySelector(":scope .n2-x")) return;
+    if (ov.id === "nick-ov" && !ov.querySelector("#nick-cancel")) return;
+    const card = ov.querySelector(".howto-card, .contact-card, :scope > div") || ov;
+    const en = (document.documentElement.lang || "he") !== "he";
+    const x = document.createElement("button"); x.type = "button"; x.className = "n2-x"; x.setAttribute("aria-label", en ? "Close" : "סגירה"); x.textContent = "✕";
+    const close = () => { const own = ov.querySelector("#howto-close, #nick-cancel, #contact-back, #contact-cancel"); if (own) own.click(); else ov.remove(); };
+    x.onclick = (e) => { e.stopPropagation(); try { Sfx.play("click"); } catch (z) { /* ignore */ } close(); };
+    if (getComputedStyle(card).position === "static") card.style.position = "relative";
+    card.insertBefore(x, card.firstChild);
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+  }
+  new MutationObserver(() => { for (const id of ["howto-ov", "nick-ov"]) overlayClose(document.getElementById(id)); }).observe(document.body, { childList: true });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const ov = document.getElementById("howto-ov") || document.getElementById("contact-overlay") || document.getElementById("nick-ov");
+    (ov?.querySelector(".n2-x") || ov?.querySelector("#contact-close"))?.click();
+  });
+  new MutationObserver(() => { if (A.nav2Back) A.nav2Back(); }).observe($("view"), { childList: true });
+  window.addEventListener("hashchange", () => { A.nav2Back && A.nav2Back(); });
   const origSetMe = A.setMe;
   A.setMe = function () { const r = origSetMe.apply(this, arguments); this.nav2Sync(); return r; };
   const origUnread = A.setUnread;
