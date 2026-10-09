@@ -54,7 +54,7 @@ body.nav2 #fs-inline { margin: 6px auto 10px; max-width: 560px; padding: 8px 12p
   body.nav2 #topbar nav { display: none; }
   body.nav2 #topbar { grid-template-columns: 1fr; }
   body.nav2 #topbar .user-chip { justify-content: space-between; width: 100%; }
-  body.nav2 #lang-btn, body.nav2 #gfx-btn, body.nav2 #install-btn,
+  body.nav2 #lang-btn, body.nav2 #gfx-btn, body.nav2 #install-btn { display: none !important; }
   body.nav2:not(.game-active):not(.fs-mode):not(.login-active) #tabbar {
     display: flex; position: fixed; z-index: 70; left: 0; right: 0; bottom: 0;
     height: calc(62px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);
