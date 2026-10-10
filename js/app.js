@@ -68,6 +68,15 @@ const App = {
     Sfx.preload();
     // Shabbat/holiday lockdown: the server is authoritative and refuses every
     // regular API call while active; this check only picks the first screen.
+    // A fresh Google login lands on #/auth?token=...; store the token BEFORE the
+    // lockdown check, otherwise the check below rewrites the hash to #/login and
+    // the owner's new session is lost (could not sign back in during lockdown).
+    try {
+      if (location.hash.startsWith("#/auth")) {
+        const t0 = new URLSearchParams((location.hash.split("?")[1] || "")).get("token");
+        if (t0) API.setToken(t0, localStorage.getItem("bg_remember") !== "0");
+      }
+    } catch (_) {}
     try {
       const lockRes = await API.get("/api/lockdown");
       if (lockRes.status === 200 && lockRes.data && lockRes.data.active) {
