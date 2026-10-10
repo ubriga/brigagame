@@ -321,3 +321,7 @@ CREATE TABLE IF NOT EXISTS user_econ (
   bot_wins_day TEXT, bot_wins_n INTEGER NOT NULL DEFAULT 0,
   cap_wood INTEGER NOT NULL DEFAULT 0, cap_iron INTEGER NOT NULL DEFAULT 0, cap_stone INTEGER NOT NULL DEFAULT 0
 );
+
+-- Admin broadcast popup: per-player "already shown" marks (also created lazily by the Worker).
+CREATE TABLE IF NOT EXISTS broadcast_seen (user_id INTEGER NOT NULL, bid INTEGER NOT NULL,
+  last_shown INTEGER NOT NULL, PRIMARY KEY (user_id, bid));

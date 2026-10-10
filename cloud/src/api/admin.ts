@@ -12,6 +12,7 @@ import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
 import { json } from "./routes.js";
 import { handleMailAdmin, sendGameMail } from "./mail.js";
+import { getBroadcastCfg, sanitizeBroadcast, invalidateBroadcastCache } from "./broadcast.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
@@ -493,6 +494,31 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       .bind(JSON.stringify({ on, message })).run();
     await audit(env, request, Number(u.id), "admin.maintenance", "", "", { on, message });
     return json({ ok: true, maintenance: await getMaintenance(env) });
+  }
+
+  // GET|POST /api/admin/broadcast-popup - popup message shown to players at game open
+  if (path === "/api/admin/broadcast-popup" && method === "GET") {
+    return json({ broadcast: await getBroadcastCfg(env, true) });
+  }
+  if (path === "/api/admin/broadcast-popup" && method === "POST") {
+    const body: any = await request.json().catch(() => ({}));
+    const prev = await getBroadcastCfg(env, true);
+    const next = sanitizeBroadcast({ ...body, id: prev.id });
+    if (next.on && !next.message)
+      return json({ error: "message_required", error_he: "אי אפשר להפעיל הודעה בלי טקסט." }, 400);
+    // A new id means "a new broadcast": everybody is eligible again. It changes
+    // on activation, on a text/audience/frequency edit, or an explicit resend.
+    const changed = next.message !== prev.message || next.audience !== prev.audience
+      || next.mode !== prev.mode || next.interval_min !== prev.interval_min;
+    if (next.on && (!prev.on || changed || body.resend === true)) next.id = prev.id + 1;
+    await db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('broadcast_popup', ?)"
+      + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .bind(JSON.stringify(next)).run();
+    invalidateBroadcastCache();
+    await audit(env, request, Number(u.id), "admin.broadcast_popup", "", "",
+      { on: next.on, audience: next.audience, mode: next.mode, interval_min: next.interval_min, id: next.id, len: next.message.length });
+    return json({ ok: true, broadcast: next });
   }
 
   // GET /api/admin/contact-reports - latest player contact/bug submissions.

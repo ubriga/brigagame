@@ -99,10 +99,10 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
   view.innerHTML = `
     <h1>🛠️ ניהול</h1>
     <div class="tabs">
-      ${["stats", "users", "contact", "gameplay", "coatings", "store", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "mail", "nicks"].map(t =>
+      ${["stats", "users", "contact", "gameplay", "coatings", "store", "cosmetics", "audit", "broadcast", "coupons", "matches", "maintenance", "popup", "mail", "nicks"].map(t =>
         `<button data-tab="${t}" class="${t === tab ? "active" : ""}">${{
           stats: "סטטיסטיקות", users: "משתמשים", contact: "📮 פניות", gameplay: "שליטת משחק", coatings: "ציפויים", store: "חנות", cosmetics: "קוסמטיקה", audit: "יומן פעילות", broadcast: "שידור הודעה",
-          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", mail: "📧 עדכוני מייל", nicks: "✏️ כינויים" }[t]}</button>`).join("")}
+          coupons: "קופונים", matches: "משחקים", maintenance: "תחזוקה", popup: "📣 הודעה קופצת", mail: "📧 עדכוני מייל", nicks: "✏️ כינויים" }[t]}</button>`).join("")}
     </div>
     <div id="admin-body"></div>`;
   view.querySelectorAll(".tabs button").forEach(b =>
@@ -627,6 +627,42 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       if (s === 200) { App.setMaintenance(d.maintenance); toast("נשמר"); }
       else toast("שגיאה");
     };
+  } else if (tab === "popup") {
+    const { data: pd } = await API.get("/api/admin/broadcast-popup");
+    const bp = (pd && pd.broadcast) || { on: false, message: "", audience: "all", mode: "once", interval_min: 60 };
+    const sel = (v, o) => (v === o ? "selected" : "");
+    body.innerHTML = `<div class="card">
+      <h2>📣 הודעה קופצת לשחקנים</h2>
+      <p class="sub">חלון הודעה ברור שמופיע בפתיחת המשחק, עם כפתור סגירה. לא מופיע באמצע קרב.</p>
+      <label>נוסח ההודעה (עד 500 תווים)</label>
+      <textarea id="bp-msg" maxlength="500" rows="5" style="width:100%">${esc(bp.message || "")}</textarea>
+      <label>למי להציג</label>
+      <select id="bp-aud"><option value="all" ${sel(bp.audience, "all")}>כולם (כולל אורחים)</option>
+        <option value="registered" ${sel(bp.audience, "registered")}>רשומים בלבד</option></select>
+      <label>באיזו תדירות תופיע שוב לאותו שחקן</label>
+      <select id="bp-mode"><option value="once" ${sel(bp.mode, "once")}>פעם אחת בלבד</option>
+        <option value="session" ${sel(bp.mode, "session")}>בכל פתיחת משחק</option>
+        <option value="interval" ${sel(bp.mode, "interval")}>כל X דקות</option></select>
+      <div id="bp-int-wrap" class="${bp.mode === "interval" ? "" : "hidden"}"><label>כל כמה דקות (5 עד 1440)</label>
+        <input id="bp-int" type="number" min="5" max="1440" value="${esc(String(bp.interval_min || 60))}"></div>
+      <p class="sub" id="bp-state">${bp.on ? "מצב נוכחי: פעילה" : "מצב נוכחי: כבויה"}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn primary" id="bp-on">▶ הפעל / עדכן</button>
+        <button class="btn" id="bp-resend">🔁 הצג שוב לכולם</button>
+        <button class="btn" id="bp-off">⏹ בטל (נעלמת לכולם)</button></div></div>`;
+    const bpSave = async (on, resend) => {
+      const { status: s2, data: d2 } = await API.post("/api/admin/broadcast-popup", {
+        on, resend: !!resend, message: document.getElementById("bp-msg").value,
+        audience: document.getElementById("bp-aud").value, mode: document.getElementById("bp-mode").value,
+        interval_min: Number(document.getElementById("bp-int").value) });
+      if (s2 === 200) { document.getElementById("bp-state").textContent = d2.broadcast.on ? "מצב נוכחי: פעילה" : "מצב נוכחי: כבויה"; toast(on ? "ההודעה פעילה" : "ההודעה בוטלה"); }
+      else toast((d2 && d2.error_he) || "שגיאה");
+    };
+    document.getElementById("bp-mode").onchange = (e) =>
+      document.getElementById("bp-int-wrap").classList.toggle("hidden", e.target.value !== "interval");
+    document.getElementById("bp-on").onclick = () => bpSave(true, false);
+    document.getElementById("bp-resend").onclick = () => bpSave(true, true);
+    document.getElementById("bp-off").onclick = () => bpSave(false, false);
   } else if (tab === "broadcast") {
     body.innerHTML = `<div class="card">
       <label>כותרת</label><input id="bc-title">

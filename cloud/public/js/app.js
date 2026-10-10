@@ -183,6 +183,7 @@ const App = {
       if (typeof data.unread_messages === "number")
         this.setUnread(data.unread_messages);
       if (data.maintenance) this.setMaintenance(data.maintenance);
+      this.setBroadcast(data.broadcast || null);
     };
     beat();
     this._pulse = setInterval(beat, CONFIG.PRESENCE_PULSE_MS || 8000);
@@ -331,6 +332,44 @@ const App = {
     ov.querySelector(".maint-ok").onclick = () => ov.remove();
   },
 
+  // Admin broadcast popup: a clear window at game open with a close button.
+  // The server decides who is eligible and when (audience, once / every open /
+  // every N minutes); the client shows it outside matches and reports back.
+  // A cancelled broadcast arrives as null and removes the window for everyone.
+  setBroadcast(b) {
+    const open = document.getElementById("bcast-popup");
+    if (!b) { this._bcast = null; open?.remove(); return; }       // cancelled / off
+    if (!b.message) {                                               // not eligible right now
+      this._bcast = null;
+      if (open && open.dataset.bid !== String(b.id)) open.remove();  // replaced by a newer one
+      return;
+    }
+    if (open && open.dataset.bid !== String(b.id)) open.remove();
+    this._bcast = b;
+    this.showBroadcast();
+  },
+
+  showBroadcast() {
+    const b = this._bcast;
+    if (!b || document.getElementById("bcast-popup")) return;
+    if (!this.me || (location.hash || "").startsWith("#/game")) return;
+    if (b.mode === "session") {
+      try { if (sessionStorage.getItem("bg_bcast_sess") === String(b.id)) return; } catch {}
+    }
+    const ov = document.createElement("div");
+    ov.id = "bcast-popup"; ov.dataset.bid = String(b.id); ov.setAttribute("role", "alertdialog"); ov.setAttribute("aria-modal", "true");
+    ov.innerHTML = `<div class="bcast-box"><button class="bcast-x" aria-label="סגירה">✕</button>
+      <div class="bcast-ico">📣</div><h3>הודעה מההנהלה</h3>
+      <p class="bcast-msg" data-i18n-skip>${esc(b.message)}</p><button class="btn primary bcast-ok">הבנתי</button></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.querySelector(".bcast-ok").onclick = close;
+    ov.querySelector(".bcast-x").onclick = close;
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    try { sessionStorage.setItem("bg_bcast_sess", String(b.id)); } catch {}
+    API.post("/api/broadcast/seen", { id: b.id }).catch(() => {});
+  },
+
   // Drop per-account UI when a session ends. Guest upgrade keeps its token
   // and therefore does not use this path.
   clearSessionState() {
@@ -374,6 +413,7 @@ const App = {
     this.scheduleGuestPrompt();
     if (this.me) this.me.invite_enabled = data.invite_enabled === true;
     this.setMaintenance(data.maintenance);
+    this.setBroadcast(data.broadcast || null);
     this._daily = data.daily_available; this._streak = data.streak;
     this._loginStreak = data.login_streak || null;
     const streakChip = document.getElementById("streak-chip");

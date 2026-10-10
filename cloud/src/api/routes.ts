@@ -15,6 +15,7 @@ import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStrea
 import { limited } from "./ratelimit.js";
 import { getGuestCfg, guestExpiresAt, guestExpired, sweepExpiredGuests } from "./guest.js";
 import { validateNick, shownName, DEFAULT_CHANGE_PRICE } from "../nickname.js";
+import { broadcastFor, markBroadcastShown } from "./broadcast.js";
 import type { Env } from "../do/MatchRoom";
 
 
@@ -267,6 +268,7 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       user: publicUser(u, env), server_version: env.SERVER_VERSION,
       bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
       maintenance, inventory: inv,
+      broadcast: await broadcastFor(env, u).catch(() => null),
       invite_enabled: controls.invite_system?.enabled === true,
       ux: controls.ux_onboarding ?? {},
       graphics: (() => { const gp = controls.graphics_pack ?? {}; return {
@@ -707,6 +709,19 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
     return json({ messages: out });
   }
 
+  // POST /api/broadcast/seen - the player was shown the admin popup
+  if (path === "/api/broadcast/seen" && method === "POST") {
+    const u = await needAuth();
+    if (!u) return json({ error: "unauthorized" }, 401);
+    const rl = await limited(env, request, "state", u);
+    if (rl) return rl;
+    const body: any = await request.json().catch(() => ({}));
+    const bid = Math.trunc(Number(body.id));
+    if (!isFinite(bid) || bid < 0) return json({ error: "bad_id" }, 400);
+    await markBroadcastShown(env, Number(u.id), bid);
+    return json({ ok: true });
+  }
+
   // POST /api/presence/ping
   if (path === "/api/presence/ping" && method === "POST") {
     const u = await needAuth();
@@ -742,7 +757,8 @@ export async function handleApi(env: Env, request: Request, path: string, ctx: E
       await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
     }
     const out: any = { ok: true, offer: null, unread_messages: (unread as any)?.c ?? 0,
-      server_version: env.SERVER_VERSION, maintenance };
+      server_version: env.SERVER_VERSION, maintenance,
+      broadcast: await broadcastFor(env, u).catch(() => null) };
     if (offer) {
       out.offer = { match_id: offer.match_id, expires_in: Math.max(1, Math.trunc(offer.expires_at - now)) };
       const tb: any = await env.DB.prepare(
