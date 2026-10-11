@@ -666,3 +666,11 @@ body.fs-mode.game-active.side-collapsed #shot-clock { font-size: 12px; text-alig
 #start-cd { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(8,6,20,.45); pointer-events: auto; touch-action: none; }
 #start-cd b { font-size: min(28vmin, 140px); color: #fff; text-shadow: 0 0 24px #ff3df2, 0 0 48px #7c4dff; animation: cdpop 1s ease-out; }
 @keyframes cdpop { from { transform: scale(1.6); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+
+/* v80: landscape side panel takes ~22% of the width (min 150px) instead of ~30%; the leftover space is centred. */
+@media (orientation: landscape) and (min-width: 640px) {
+  body.fs-mode.game-active:not(.side-collapsed) #view {
+    grid-template-columns: min(calc((100dvh - 56px) * 1.785714), calc(100vw - clamp(150px, 22vw, 320px) - 16px)) clamp(150px, 22vw, 320px);
+    justify-content: center;
+  }
+}
