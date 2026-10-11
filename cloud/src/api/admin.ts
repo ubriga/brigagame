@@ -510,7 +510,10 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     // A new id means "a new broadcast": everybody is eligible again. It changes
     // on activation, on a text/audience/frequency edit, or an explicit resend.
     const changed = next.message !== prev.message || next.audience !== prev.audience
-      || next.mode !== prev.mode || next.interval_min !== prev.interval_min;
+      || next.mode !== prev.mode || next.interval_min !== prev.interval_min
+      || next.start_at !== prev.start_at || next.end_at !== prev.end_at;
+    if (next.start_at && next.end_at && next.end_at <= next.start_at)
+      return json({ error: "bad_schedule", error_he: "זמן הסיום חייב להיות אחרי זמן ההתחלה." }, 400);
     if (next.on && (!prev.on || changed || body.resend === true)) next.id = prev.id + 1;
     await db.prepare(
       "INSERT INTO settings (key, value) VALUES ('broadcast_popup', ?)"
@@ -518,7 +521,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       .bind(JSON.stringify(next)).run();
     invalidateBroadcastCache();
     await audit(env, request, Number(u.id), "admin.broadcast_popup", "", "",
-      { on: next.on, audience: next.audience, mode: next.mode, interval_min: next.interval_min, id: next.id, len: next.message.length });
+      { on: next.on, audience: next.audience, mode: next.mode, interval_min: next.interval_min, start_at: next.start_at, end_at: next.end_at, id: next.id, len: next.message.length });
     return json({ ok: true, broadcast: next });
   }
 

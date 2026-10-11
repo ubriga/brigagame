@@ -13,8 +13,9 @@ import type { Env } from "../do/MatchRoom";
 export interface BroadcastCfg {
   on: boolean; message: string; audience: "all" | "registered";
   mode: "once" | "session" | "interval"; interval_min: number; id: number;
+  start_at: number; end_at: number; // epoch seconds, 0 = no limit (admin enters Israel time)
 }
-const DEFAULT: BroadcastCfg = { on: false, message: "", audience: "all", mode: "once", interval_min: 60, id: 0 };
+const DEFAULT: BroadcastCfg = { on: false, message: "", audience: "all", mode: "once", interval_min: 60, id: 0, start_at: 0, end_at: 0 };
 
 export const MAX_MESSAGE = 500;
 export const MIN_INTERVAL = 5;
@@ -30,6 +31,8 @@ export function sanitizeBroadcast(d: any): BroadcastCfg {
     mode,
     interval_min: isFinite(im) ? Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, im)) : DEFAULT.interval_min,
     id: Math.max(0, Math.trunc(Number(d?.id)) || 0),
+    start_at: Math.max(0, Math.trunc(Number(d?.start_at)) || 0),
+    end_at: Math.max(0, Math.trunc(Number(d?.end_at)) || 0),
   };
 }
 
@@ -62,6 +65,8 @@ export function ensureBroadcastSchema(env: Env): Promise<void> {
 export async function broadcastFor(env: Env, user: any): Promise<null | { id: number; message: string; mode: string; hidden?: boolean }> {
   const cfg = await getBroadcastCfg(env);
   if (!cfg.on || !cfg.message) return null;
+  const nowS = Date.now() / 1000;
+  if ((cfg.start_at && nowS < cfg.start_at) || (cfg.end_at && nowS >= cfg.end_at)) return null; // outside its schedule
   if (cfg.audience === "registered" && user?.is_guest) return { id: cfg.id, message: "", mode: cfg.mode, hidden: true };
   if (cfg.mode !== "session") {
     await ensureBroadcastSchema(env);

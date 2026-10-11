@@ -1,4 +1,21 @@
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
+
+// Israel-time helpers for the popup schedule (the admin always thinks in Asia/Jerusalem time).
+function ilParts(ms) {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const o = {}; for (const p of f.formatToParts(new Date(ms))) o[p.type] = p.value; return o;
+}
+function ilLocal(sec) {
+  if (!sec) return "";
+  const o = ilParts(sec * 1000); return `${o.year}-${o.month}-${o.day}T${o.hour}:${o.minute}`;
+}
+function ilEpoch(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(str || ""); if (!m) return 0;
+  const want = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  let t = want;
+  for (let i = 0; i < 3; i++) { const o = ilParts(t); t += want - Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour, +o.minute); }
+  return Math.floor(t / 1000);
+}
 // Loaded on demand, only after the server confirms elevated access for the
 // signed-in account. Registers the management route, nav entry, translations
 // and styles. Nothing here ships inside the regular client bundle.
@@ -645,6 +662,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <option value="interval" ${sel(bp.mode, "interval")}>כל X דקות</option></select>
       <div id="bp-int-wrap" class="${bp.mode === "interval" ? "" : "hidden"}"><label>כל כמה דקות (5 עד 1440)</label>
         <input id="bp-int" type="number" min="5" max="1440" value="${esc(String(bp.interval_min || 60))}"></div>
+      <label>תזמון (שעון ישראל, לא חובה). ריק = ללא הגבלה</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><div><span class="sub">התחלה</span><br><input id="bp-start" type="datetime-local" value="${esc(ilLocal(bp.start_at))}"></div>
+        <div><span class="sub">סיום</span><br><input id="bp-end" type="datetime-local" value="${esc(ilLocal(bp.end_at))}"></div></div>
       <p class="sub" id="bp-state">${bp.on ? "מצב נוכחי: פעילה" : "מצב נוכחי: כבויה"}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
         <button class="btn primary" id="bp-on">▶ הפעל / עדכן</button>
@@ -654,7 +674,8 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const { status: s2, data: d2 } = await API.post("/api/admin/broadcast-popup", {
         on, resend: !!resend, message: document.getElementById("bp-msg").value,
         audience: document.getElementById("bp-aud").value, mode: document.getElementById("bp-mode").value,
-        interval_min: Number(document.getElementById("bp-int").value) });
+        interval_min: Number(document.getElementById("bp-int").value),
+        start_at: ilEpoch(document.getElementById("bp-start").value), end_at: ilEpoch(document.getElementById("bp-end").value) });
       if (s2 === 200) { document.getElementById("bp-state").textContent = d2.broadcast.on ? "מצב נוכחי: פעילה" : "מצב נוכחי: כבויה"; toast(on ? "ההודעה פעילה" : "ההודעה בוטלה"); }
       else toast((d2 && d2.error_he) || "שגיאה");
     };

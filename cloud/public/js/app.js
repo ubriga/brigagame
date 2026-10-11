@@ -354,7 +354,8 @@ const App = {
     if (!b || document.getElementById("bcast-popup")) return;
     if (!this.me || (location.hash || "").startsWith("#/game")) return;
     if (b.mode === "session") {
-      try { if (sessionStorage.getItem("bg_bcast_sess") === String(b.id)) return; } catch {}
+      // "every game open": once per page load / app open (a reload or reopening the app shows it again).
+      if (this._bcastShownLoad === String(b.id)) return;
     }
     const ov = document.createElement("div");
     ov.id = "bcast-popup"; ov.dataset.bid = String(b.id); ov.setAttribute("role", "alertdialog"); ov.setAttribute("aria-modal", "true");
@@ -366,7 +367,7 @@ const App = {
     ov.querySelector(".bcast-ok").onclick = close;
     ov.querySelector(".bcast-x").onclick = close;
     ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
-    try { sessionStorage.setItem("bg_bcast_sess", String(b.id)); } catch {}
+    this._bcastShownLoad = String(b.id);
     API.post("/api/broadcast/seen", { id: b.id }).catch(() => {});
   },
 
