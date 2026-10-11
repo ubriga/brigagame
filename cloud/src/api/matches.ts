@@ -12,7 +12,7 @@ import { limited } from "./ratelimit.js";
 import { d1, getControls } from "../util.js";
 import { resolvePractice } from "../game/finalize.js";
 import { reapDanglingBattles } from "../game/territory.js";
-import { towerHp, obstacleAt, cooldownFor, shotClockFor, turnDeadline } from "../game/game_logic.js";
+import { towerHp, obstacleAt, cooldownFor, turnDeadline } from "../game/game_logic.js";
 import { rankFor } from "../game/economy.js";
 import { rankPayload, rankForLevel } from "../game/ranks.js";
 import { CATALOG, DEFAULT_SKIN } from "../game/catalog.js";

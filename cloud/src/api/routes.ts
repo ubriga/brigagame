@@ -7,7 +7,7 @@
  * table exists in the schema; wire before public launch.
  */
 import { currentUser, sha256Hex } from "../auth.js";
-import { CATALOG, DEFAULT_SKIN, COATING_ORDER, COATING_NAMES } from "../game/catalog.js";
+import { CATALOG, COATING_ORDER, COATING_NAMES } from "../game/catalog.js";
 import { DAILY_BASE, DAILY_STREAK_STEP, DAILY_CAP, rankFor } from "../game/economy.js";
 import { rankPayload } from "../game/ranks.js";
 import { addCoins } from "../game/finalize.js";

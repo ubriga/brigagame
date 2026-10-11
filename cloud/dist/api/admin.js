@@ -244,7 +244,6 @@ export async function handleAdminApi(env, request, path) {
         if (rows.length > 400)
             return json({ error: "too_many", error_he: "יותר מ-400 משתמשים - צמצמו את הסינון." }, 400);
         let detail = {};
-        let note = "";
         if (action === "coins") {
             const delta = Number.parseInt(String(body.delta ?? 0), 10);
             if (!Number.isFinite(delta) || delta === 0 || Math.abs(delta) > 10000)
@@ -703,7 +702,6 @@ export async function handleAdminApi(env, request, path) {
     if (path === "/api/admin/gameplay-controls" && method === "GET") {
         const controls = await getControls(env);
         controls.territory = { ...TERRITORY_DEFAULTS, ...(controls.territory ?? {}) };
-        const af = controls.auth_flow ?? {};
         if (controls.mail_updates) {
             controls.mail_updates.gmail_app_password_set = Boolean(String(controls.mail_updates.gmail_app_password ?? ""));
             controls.mail_updates.gmail_app_password = "";

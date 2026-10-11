@@ -308,7 +308,6 @@ export class MatchRoom {
         const sess = this.sessions.find((s) => s.ws === ws);
         if (!sess || !this.match || this.match.status !== "active")
             return;
-        const m = this.match;
         try {
             switch (msg.type) {
                 case "fire":

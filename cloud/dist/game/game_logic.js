@@ -308,7 +308,6 @@ export function simulate(state, side, angleDeg, power, weapon, events, _targetSi
     let [x, y] = muzzle(state, side);
     let vx = facing * speed * Math.cos(angle);
     let vy = -speed * Math.sin(angle);
-    const w = WEAPONS[weapon];
     const points = timedPath ? [[x, y, 0]] : [];
     let t = 0;
     const homing = weapon === "homing_missile";

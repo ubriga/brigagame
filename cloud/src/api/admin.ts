@@ -250,7 +250,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       "SELECT id, name, email FROM users WHERE is_guest = 0 AND lower(email) != lower(?) AND (email LIKE ? OR name LIKE ?) ORDER BY id LIMIT 401")
       .bind(String(env.ADMIN_EMAIL ?? ""), term, term).all()).results as any[]);
     if (rows.length > 400) return json({ error: "too_many", error_he: "יותר מ-400 משתמשים - צמצמו את הסינון." }, 400);
-    let detail: any = {}; let note = "";
+    let detail: any = {};
     if (action === "coins") {
       const delta = Number.parseInt(String(body.delta ?? 0), 10);
       if (!Number.isFinite(delta) || delta === 0 || Math.abs(delta) > 10000) return json({ error: "bad_delta", error_he: "סכום לא תקין (עד 10,000 לשחקן)." }, 400);
@@ -668,7 +668,6 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   if (path === "/api/admin/gameplay-controls" && method === "GET") {
     const controls: any = await getControls(env);
     controls.territory = { ...TERRITORY_DEFAULTS, ...(controls.territory ?? {}) };
-    const af = controls.auth_flow ?? {};
     if (controls.mail_updates) {
       controls.mail_updates.gmail_app_password_set = Boolean(String(controls.mail_updates.gmail_app_password ?? ""));
       controls.mail_updates.gmail_app_password = "";

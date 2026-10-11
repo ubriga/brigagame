@@ -9,8 +9,8 @@
  */
 import { combatSnapshot } from "../game/snapshot.js";
 import {
-  newState, fireWeapon, towerHp, obstacleAt, TOWER_X_RANGE,
-  aiChooseShot, shotClockFor, turnDeadline, shieldBlocked, type PlayerMods, defaultRng,
+  TOWER_X_RANGE,
+  aiChooseShot, turnDeadline, shieldBlocked, defaultRng,
 } from "../game/game_logic.js";
 import { botChooseWeapon, applyBotTactics, executeShot } from "../game/bot.js";
 import { finalizeMatch, resolveTimeLimit, MATCH_DURATION_SECONDS } from "../game/finalize.js";
@@ -299,7 +299,6 @@ export class MatchRoom {
     try { msg = JSON.parse(String(message)); } catch { return; }
     const sess = this.sessions.find((s) => s.ws === ws);
     if (!sess || !this.match || this.match.status !== "active") return;
-    const m = this.match;
     try {
       switch (msg.type) {
         case "fire":
