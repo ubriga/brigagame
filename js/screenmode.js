@@ -48,12 +48,15 @@ const ScreenMode = {
     if (ib) ib.textContent = this.label(on);
     window.dispatchEvent(new Event("resize"));
   },
+  pref(v) { try { if (typeof Consent !== "undefined") { if (v === undefined) return Consent.getPref("bg_fs_off"); Consent.setPref("bg_fs_off", v); } } catch (e) {} },
   async enter(byUser) {
+    if (byUser) this.pref("0");
     this.byUser = !!byUser;
     this.apply(true);
     await this.tryFullscreen();
   },
   async exit() {
+    this.pref("1");
     this.byUser = false;
     this.apply(false);
     await this.release();
@@ -94,6 +97,9 @@ const ScreenMode = {
     // No automatic entering/leaving: orientation and resize events (rotation
     // lock, Google sign-in redirects, address bar) made the mode flap on some
     // phones. The mode changes only when the user taps the button.
+    // v79: on touch devices the full-screen layout is the default (layout only; real browser
+    // fullscreen still needs a tap). Leaving it is remembered and respected.
+    if (this.isTouch() && this.pref() !== "1") this.apply(true);
     setInterval(() => { if (this.floatBtn) this.floatBtn.style.display = /^#\/lobby/.test(location.hash) ? "none" : ""; this.tickLobby(); }, 500);
   }
 };

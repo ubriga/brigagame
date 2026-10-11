@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ubriga.github.io/brigagame/sitemap.xml
+Sitemap: https://brigagame.brigastudio.com/sitemap.xml

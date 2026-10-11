@@ -1,4 +1,21 @@
 /* Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame) */
+
+// Israel-time helpers for the popup schedule (the admin always thinks in Asia/Jerusalem time).
+function ilParts(ms) {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const o = {}; for (const p of f.formatToParts(new Date(ms))) o[p.type] = p.value; return o;
+}
+function ilLocal(sec) {
+  if (!sec) return "";
+  const o = ilParts(sec * 1000); return `${o.year}-${o.month}-${o.day}T${o.hour}:${o.minute}`;
+}
+function ilEpoch(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(str || ""); if (!m) return 0;
+  const want = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  let t = want;
+  for (let i = 0; i < 3; i++) { const o = ilParts(t); t += want - Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour, +o.minute); }
+  return Math.floor(t / 1000);
+}
 // Loaded on demand, only after the server confirms elevated access for the
 // signed-in account. Registers the management route, nav entry, translations
 // and styles. Nothing here ships inside the regular client bundle.
@@ -131,6 +148,14 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       </table></div>`;
   } else if (tab === "users") {
     body.innerHTML = `<div id="online-box"></div>
+      <details class="card" id="bulk-box" style="margin-bottom:12px"><summary><b>⚠️ פעולה על כמה שחקנים בבת אחת</b></summary>
+        <p class="sub">הפעולה חלה על כל השחקנים הרשומים שמתאימים לשדה החיפוש שלמטה (ריק = כל הרשומים). קודם בדיקה יבשה שמראה כמה יושפעו, ורק אחר כך ביצוע עם אישור. האדמין והאורחים לא נכללים. עד 400 שחקנים בפעולה.</p>
+        <select id="bk-act"><option value="coins">🪙 מטבעות (±)</option><option value="item">🎁 מתנת תחמושת</option><option value="message">✉️ הודעה פנימית</option>
+          <option value="ban">⏸️ חסימה לשעות</option><option value="suspend">🚫 השהיה</option><option value="lift">✓ שחרור</option></select>
+        <input id="bk-a" placeholder="סכום / כמות / שעות / נוסח" style="margin-top:6px">
+        <input id="bk-b" placeholder="מזהה פריט (לתחמושת בלבד), למשל double_bomb" style="margin-top:6px">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" id="bk-dry">🔍 בדיקה יבשה</button><button class="btn" id="bk-go" disabled>בצע</button></div>
+        <p class="sub" id="bk-out"></p></details>
       <input id="uq" placeholder="חיפוש לפי שם או אימייל">
       <div id="ulist" style="margin-top:10px"></div>`;
     const loadOnline = async () => {
@@ -190,6 +215,35 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         else toast("שגיאה");
       });
     };
+    {
+      let last = null;
+      const req = (dry, count) => {
+        const act = document.getElementById("bk-act").value, a = document.getElementById("bk-a").value, bb = document.getElementById("bk-b").value.trim();
+        const o = { action: act, q: document.getElementById("uq").value, dry_run: dry, confirm_count: count };
+        if (act === "coins") { o.delta = parseInt(a, 10) || 0; o.reason = "admin_bulk"; }
+        else if (act === "item") { o.item_id = bb; o.qty = parseInt(a, 10) || 0; }
+        else if (act === "ban") o.hours = parseInt(a, 10) || 24;
+        else if (act === "message") o.text = a;
+        return API.post("/api/admin/users/bulk", o);
+      };
+      const out = document.getElementById("bk-out"), go = document.getElementById("bk-go");
+      document.getElementById("bk-dry").onclick = async () => {
+        go.disabled = true; last = null;
+        const { status, data } = await req(true, 0);
+        if (status !== 200) { out.textContent = (data && data.error_he) || "שגיאה"; return; }
+        last = data.count; out.textContent = `בדיקה יבשה: יושפעו ${data.count} שחקנים${data.sample.length ? " (למשל: " + data.sample.join(", ") + ")" : ""}. לא בוצע דבר.`;
+        go.disabled = data.count === 0;
+      };
+      go.onclick = async () => {
+        if (last == null) return;
+        if (!confirm(`לבצע על ${last} שחקנים? אי אפשר לבטל.`)) return;
+        const { status, data } = await req(false, last);
+        go.disabled = true; last = null;
+        out.textContent = status === 200 ? `בוצע על ${data.count} שחקנים.` : ((data && data.error_he) || "שגיאה");
+        if (status === 200) load();
+      };
+      ["bk-act", "bk-a", "bk-b", "uq"].forEach(id => document.getElementById(id).addEventListener("input", () => { go.disabled = true; last = null; }));
+    }
     document.getElementById("uq").oninput = () => load();
     load();
   } else if (tab === "contact") {
@@ -242,7 +296,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.redirect_enabled" ${c.auth_flow.redirect_enabled ? "checked" : ""} style="width:auto">כניסה עם חשבון גוגל (דף מלא)</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.email_code_enabled" ${c.auth_flow.email_code_enabled ? "checked" : ""} style="width:auto">כניסה עם קוד למייל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.pwa_email_hint" ${c.auth_flow.pwa_email_hint !== false ? "checked" : ""} style="width:auto">הסבר PWA: הדגשת קוד מייל באפליקציה המותקנתת</label>
-        <div class="sub" style="font-size:12px">קודי הכניסה, התראות טופס הקשר ותשובות האדמין נשלחים מחשבון ה-Gmail של המשחק. הכתובת והסיסמה מוגדרות בלשונית "עדכוני מייל".</div></div>
+        <div class="sub" style="font-size:12px">קודי הכניסה, התראות טופס הקשר ותשובות האדמין נשלחים דרך שרת הדואר של המשחק (Brevo, כתובות brigastudio.com). ההגדרות בלשונית "עדכוני מייל".</div></div>
       <div class="card"><h2>📨 הזמנת חבר (א1)</h2><p class="sub">כפתור "הזמן חבר" בלובי ובסיום משחק מייצר קישור אישי. כשהחבר נכנס דרך הקישור (נרשם או מתחבר), המזמין מקבל תג באופן אוטומטי והתג מוצג בעמוד התגים. מכסה יומית = כמה הזמנות כל שחקן יכול ליצור ביום. שם התג = התג שהמזמין מקבל. נוסח ההזמנה = הטקסט שמחוך לקישור בשיתוף; {name} מוחלף בשם המזמין.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="invite_system.enabled" ${c.invite_system && c.invite_system.enabled ? "checked" : ""} style="width:auto">מערכת ההזמנות פעילה</label>
         <label>מכסת הזמנות ליום</label><input type="number" min="1" max="100" step="1" value="${c.invite_system ? c.invite_system.max_per_day : 5}" data-control="invite_system.max_per_day">
@@ -268,7 +322,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       <div class="card"><h2>🛟 טופס יצירת קשר / דיווח תקלות</h2><p class="sub">כפתור "דיווח על תקלה / צור קשר" בלובי ובתפריט פותח טופס עם סוג פנייה, טקסט חופשי ופרטים טכניים אוטומטיים (גרסה, דפדפן, מסך). שחקנים רשומים מזוהים אוטומטית; אורחים ומבקרים משאירים מייל לתשובה. כל פנייה נשלחת מיידית במייל לכתובת היעד ונשמרת גם בלשונית "📮 פניות". מגבלות = כמה פניות מותר לשחקן רשום / לאורח (לפי IP) בשעה, כולל הגנה מבוטים.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.enabled" ${c.contact_form && c.contact_form.enabled !== false ? "checked" : ""} style="width:auto">טופס יצירת קשר פעיל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.reply_enabled" ${c.contact_form && c.contact_form.reply_enabled !== false ? "checked" : ""} style="width:auto">מנגנון תשובות לשחקנים פעיל (שליחת תשובה במייל מלשונית "📮 פניות")</label>
-        <label>כתובת מייל יעד לפניות</label><input type="text" maxlength="300" dir="ltr" style="text-align:left" value="${esc(c.contact_form ? c.contact_form.destination_email : "brigagame2026@gmail.com")}" data-control="contact_form.destination_email">
+        <label>כתובת מייל יעד לפניות</label><input type="text" maxlength="300" dir="ltr" style="text-align:left" value="${esc(c.contact_form ? c.contact_form.destination_email : "brigagame-admin@brigastudio.com")}" data-control="contact_form.destination_email">
         <label>מגבלת פניות לשחקן רשום בשעה</label><input type="number" min="1" max="50" step="1" value="${c.contact_form ? c.contact_form.user_max_per_hour : 5}" data-control="contact_form.user_max_per_hour">
         <label>מגבלת פניות לאורח בשעה (לפי IP)</label><input type="number" min="1" max="20" step="1" value="${c.contact_form ? c.contact_form.guest_max_per_hour : 2}" data-control="contact_form.guest_max_per_hour">
         <label>אורך הודעה מרבי (תווים)</label><input type="number" min="100" max="5000" step="100" value="${c.contact_form ? c.contact_form.max_length : 2000}" data-control="contact_form.max_length"></div>
@@ -347,7 +401,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
           ${cb("enabled", "המלחמה פעילה")}
           ${nb("map_size", "גודל מפה (צלעות)", 8, 60, 1)}${nb("base_yield_per_hour", "הפקה בסיסית לשעה לאריח", 0, 1000, 0.5)}
           ${nb("store_cap", "תקרת אגירה לכל חומר", 10, 100000, 10)}${nb("accrual_cap_hours", "שעות צבירה מרביות כשלא מחובר", 1, 168, 1)}
-          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}
+          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}${nb("home_income_per_hour", "הכנסת אריח בית (מכל חומר, לשעה)", 0, 100, 0.5)}
         </div></div>
         <div class="card"><h2>⚔️ טריטוריות: תקיפה והגנה</h2><div class="grid-fields">
           ${nb("attack_cost_per_rarity", "עלות תקיפה לכל דרגת נדירות", 0, 10000, 1)}${nb("daily_attack_cap", "תקיפות מרביות ביום", 0, 100, 1)}
@@ -645,6 +699,9 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <option value="interval" ${sel(bp.mode, "interval")}>כל X דקות</option></select>
       <div id="bp-int-wrap" class="${bp.mode === "interval" ? "" : "hidden"}"><label>כל כמה דקות (5 עד 1440)</label>
         <input id="bp-int" type="number" min="5" max="1440" value="${esc(String(bp.interval_min || 60))}"></div>
+      <label>תזמון (שעון ישראל, לא חובה). ריק = ללא הגבלה</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><div><span class="sub">התחלה</span><br><input id="bp-start" type="datetime-local" value="${esc(ilLocal(bp.start_at))}"></div>
+        <div><span class="sub">סיום</span><br><input id="bp-end" type="datetime-local" value="${esc(ilLocal(bp.end_at))}"></div></div>
       <p class="sub" id="bp-state">${bp.on ? "מצב נוכחי: פעילה" : "מצב נוכחי: כבויה"}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
         <button class="btn primary" id="bp-on">▶ הפעל / עדכן</button>
@@ -654,7 +711,8 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       const { status: s2, data: d2 } = await API.post("/api/admin/broadcast-popup", {
         on, resend: !!resend, message: document.getElementById("bp-msg").value,
         audience: document.getElementById("bp-aud").value, mode: document.getElementById("bp-mode").value,
-        interval_min: Number(document.getElementById("bp-int").value) });
+        interval_min: Number(document.getElementById("bp-int").value),
+        start_at: ilEpoch(document.getElementById("bp-start").value), end_at: ilEpoch(document.getElementById("bp-end").value) });
       if (s2 === 200) { document.getElementById("bp-state").textContent = d2.broadcast.on ? "מצב נוכחי: פעילה" : "מצב נוכחי: כבויה"; toast(on ? "ההודעה פעילה" : "ההודעה בוטלה"); }
       else toast((d2 && d2.error_he) || "שגיאה");
     };
@@ -725,11 +783,11 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     const m = st.data, mc = gc.data.controls.mail_updates || {};
     const ok = m.recipients.filter(r => r.opted_in && !r.excluded);
     body.innerHTML = `
-      <div class="card"><h2>📧 שליטה במנגנון</h2><p class="sub">חשבון ה-Gmail (כתובת + סיסמת אפליקציה) משמש את כל המיילים של המשחק: קודי כניסה, התראות טופס הקשר, תשובות אדמין ועדכוני שחקנים. המתג והמכסה כאן חלים על עדכוני שחקנים בלבד.</p>
+      <div class="card"><h2>📧 שליטה במנגנון</h2><p class="sub">שרת הדואר של המשחק (Brevo, כתובות brigastudio.com; הסיסמה שמורה כסוד שרת ולא כאן) משמש את כל המיילים של המשחק: קודי כניסה, התראות טופס הקשר, תשובות אדמין ועדכוני שחקנים. המתג והמכסה כאן חלים על עדכוני שחקנים בלבד.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-enabled" ${mc.enabled ? "checked" : ""} style="width:auto">מנגנון עדכוני מייל פעיל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-default" ${mc.default_checked !== false ? "checked" : ""} style="width:auto">תיבת ההסכמה בהרשמה מסומנת כברירת מחדל</label>
         <label>מכסת שליחה יומית (עד 400)</label><input type="number" id="mu-cap" min="0" max="400" step="1" value="${Number(mc.daily_cap ?? 250)}">
-        <label>כתובת שולח</label><input type="text" id="mu-sender" dir="ltr" style="text-align:left" maxlength="200" value="${esc(mc.sender_email || "")}">
+        <label>כתובת שולח (Gmail, רק כשהספק הוא gmail)</label><input type="text" id="mu-sender" dir="ltr" style="text-align:left" maxlength="200" value="${esc(mc.sender_email || "")}">
         <label>סיסמת אפליקציה של ה-Gmail השולח ${mc.gmail_app_password_set ? "(שמורה - הדביקו חדשה רק כדי להחליף)" : "(לא הוגדר)"}</label><input type="password" id="mu-key" autocomplete="off" dir="ltr" style="text-align:left" placeholder="${mc.gmail_app_password_set ? "••••••••" : ""}">
         <button class="btn" id="mu-save" style="margin-top:12px">שמור הגדרות</button>
         <p class="sub">נשלחו היום: ${m.sent_today} מתוך ${m.daily_cap}</p></div>
