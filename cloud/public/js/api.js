@@ -90,6 +90,7 @@ function toast(msg, ms = 3200) {
   t.textContent = msg;
   t.classList.remove("hidden");
   clearTimeout(toast._t);
+  if (document.body.classList.contains("game-active")) ms = Math.min(ms, 2200);
   toast._t = setTimeout(() => t.classList.add("hidden"), ms);
 }
 

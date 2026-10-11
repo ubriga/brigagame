@@ -99,6 +99,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
       control_tooltips: [null, null, "bool"],
       friend_share_button: [null, null, "bool"],
       bot_first_shot_countdown: [0, 15, "int"],
+      start_countdown: [null, null, "bool"],
       nav2: [null, null, "bool"],
     },
     guest_mode: { enabled: [null, null, "bool"], ttl_hours: [1, 168, "int"],

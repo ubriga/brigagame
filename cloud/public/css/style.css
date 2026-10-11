@@ -644,3 +644,25 @@ body:not(.game-active) #fs-float { position: static; display: block; transform:n
 #bcast-popup .bcast-ok { margin-top:12px; min-width:150px; }
 #bcast-popup .bcast-box h3, #bcast-popup .bcast-box .bcast-msg { color:#fff !important; text-shadow:none; }
 #bcast-popup .bcast-box .bcast-msg { opacity:1; }
+
+/* v79: in-match notices must never cover the stage or the controls: small, top edge, click-through. */
+body.game-active #toast {
+  top: 6px; bottom: auto; padding: 6px 14px; font-size: 13px; max-width: min(70vw, 420px);
+  pointer-events: none; opacity: .92; border-radius: 10px; box-shadow: 0 2px 10px #0006;
+}
+
+/* v79: user-controlled collapsible control column (landscape full-screen game). Hidden unless the side column exists. */
+#side-toggle { display: none; }
+@media (orientation: landscape) and (min-width: 640px) {
+  body.fs-mode.game-active #side-toggle { display: block; grid-column: 2; grid-row: 2; justify-self: end; min-width: 40px; padding: 4px 8px; margin: 0 0 2px; }
+  body.fs-mode.game-active.side-collapsed #view { grid-template-columns: min(calc((100dvh - 56px) * 1.785714), calc(100vw - 56px)) minmax(0, 1fr); }
+  body.fs-mode.game-active.side-collapsed #reload-wrap,
+  body.fs-mode.game-active.side-collapsed #aim-info, body.fs-mode.game-active.side-collapsed #ability-bar,
+  body.fs-mode.game-active.side-collapsed #weapon-bar, body.fs-mode.game-active.side-collapsed #guide-btn { display: none; }
+}
+body:not(.game-active) { --side-x: 0; }
+body.fs-mode.game-active.side-collapsed #shot-clock { font-size: 12px; text-align: center; padding: 0; }
+
+#start-cd { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(8,6,20,.45); pointer-events: auto; touch-action: none; }
+#start-cd b { font-size: min(28vmin, 140px); color: #fff; text-shadow: 0 0 24px #ff3df2, 0 0 48px #7c4dff; animation: cdpop 1s ease-out; }
+@keyframes cdpop { from { transform: scale(1.6); opacity: .2; } to { transform: scale(1); opacity: 1; } }

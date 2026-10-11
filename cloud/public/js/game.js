@@ -65,6 +65,7 @@ const GameView = {
         <canvas id="game-canvas" width="1000" height="560"></canvas>
         <div id="game-overlay" class="hidden"></div>
       </div>
+      <button id="side-toggle" type="button" class="btn small secondary" aria-label="הסתר/הצג לוח בקרה" aria-expanded="true" title="הסתר/הצג לוח בקרה">⇥</button>
       <div id="reload-wrap"><div id="reload-bar"></div></div>
       <div id="shot-clock">⏳ 10</div>
       <div id="turn-banner" class="hidden">🎯 מוכן לירייה! גרור מהמגדל שלך לכיוון המטרה ושחרר</div>
@@ -77,6 +78,18 @@ const GameView = {
       <p class="sub" id="aim-hint" style="margin-top:10px">גרור מהמגדל שלך כדי לכוון ושחרר כדי לירות. הרוח מזיזה את הפגז ומשתנה אחרי כל ירייה, ובכל משחק המגדלים במיקומים אחרים.</p>
       <p class="sub kbd-help">⌨️ מקלדת: <b>↑</b>/<b>↓</b> זווית · <b>←</b>/<b>→</b> עוצמה
         · <b>רווח</b> ירייה · <b>1-6</b> בחירת נשק (Shift = צעדים גדולים)</p>`;
+    {
+      const st = document.getElementById("side-toggle");
+      const setSide = (collapsed, save) => {
+        document.body.classList.toggle("side-collapsed", collapsed);
+        st.textContent = collapsed ? "⇤" : "⇥";
+        st.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        if (save) Consent.setPref("bg_side_collapsed", collapsed ? "1" : "0");
+        window.dispatchEvent(new Event("resize"));
+      };
+      setSide(Consent.getPref("bg_side_collapsed") === "1", false);
+      st.onclick = () => { Sfx.play("click"); setSide(!document.body.classList.contains("side-collapsed"), true); };
+    }
     this.canvas = document.getElementById("game-canvas");
     requestAnimationFrame(() => {
       document.documentElement.scrollLeft = 0; document.body.scrollLeft = 0;
@@ -545,7 +558,7 @@ const GameView = {
       this._tutorialChecked = true;
       const uxOn = !window.App || (App.ux || {}).tutorial_first_match !== false;
       const isNew = window.App && App.me && Number(App.me.matches_played || 0) === 0;
-      if (uxOn && isNew && Consent.getPref("bg_tutorial_done") !== "1") {
+      if (uxOn && isNew && s.mode === "ai" && Consent.getPref("bg_tutorial_done") !== "1") {
         const ov = document.getElementById("tutorial-ov");
         if (ov) {
           ov.innerHTML = `<div class="tutorial-box">
@@ -562,6 +575,22 @@ const GameView = {
           ov.onclick = done;
           this._tutorialDoneFn = done;
         }
+      }
+    }
+    // v79: 3-2-1 before every match (admin switch ux.start_countdown, default on). Client-side only:
+    // it blocks this player's own input for 3 s and never touches server timing.
+    if (s.status === "active" && !this._cdChecked) {
+      this._cdChecked = true;
+      const cdOn = !window.App || (App.ux || {}).start_countdown !== false;
+      const st = document.getElementById("game-stage");
+      if (cdOn && st && Number(s.version || 0) <= 3) {
+        this._cdUntil = Date.now() + 3000;
+        const ov = document.createElement("div");
+        ov.id = "start-cd"; ov.setAttribute("role", "status");
+        st.appendChild(ov);
+        let n = 3;
+        const tick = () => { if (n <= 0) { ov.remove(); return; } ov.innerHTML = `<b>${n}</b>`; n--; setTimeout(tick, 1000); };
+        tick();
       }
     }
     if (s.status === "aborted" && !this.ended) {
@@ -727,6 +756,7 @@ const GameView = {
   },
 
   async fire() {
+    if (this._cdUntil && Date.now() < this._cdUntil) return;
     if (!this.canFire()) return;
     if (this._tutorialDoneFn) { this._tutorialDoneFn(); this._tutorialDoneFn = null; }
     const command = {command_id: crypto.randomUUID(), angle:this.aimAngle,power:this.aimPower,weapon:this.weapon,mega:!!this.useMega};

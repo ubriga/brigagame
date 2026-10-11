@@ -2173,6 +2173,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "control_tooltips": true,
     "friend_share_button": true,
     "bot_first_shot_countdown": 3,
+    "start_countdown": true,
     "nav2": false
   },
   "xp": {

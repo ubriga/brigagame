@@ -197,7 +197,7 @@ const App = {
     ov = document.createElement("div");
     ov.id = "howto-ov";
     ov.innerHTML = `<div class="howto-card">
-      <h2>❓ איך משחקים?</h2>
+      <h2>איך משחקים?</h2>
       <div class="howto-panel"><div class="howto-ico">🎯</div><div><b>מטרה:</b> להפיל את מגדל היריב לפני שהוא מפיל את שלך. כל פגיעה מפרקת עוד חלק מהמגדל.</div></div>
       <div class="howto-panel"><div class="howto-ico">👆</div><div><b>ירייה:</b> גוררים מהמגדל שלך לכיוון היריב - הגרירה קובעת זווית ועוצמה - ומשחררים. מדדי הזווית והעוצמה למטה מראים את הכיוון הנוכחי.</div></div>
       <div class="howto-panel"><div class="howto-ico">💨</div><div><b>רוח:</b> החץ ליד גלולת הרוח למעלה מזיז את הפגז במעופו. הרוח משתנה אחרי כל ירייה - בודקים לפני כל יריה.</div></div>

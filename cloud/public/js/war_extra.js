@@ -79,7 +79,7 @@
     const render = () => {
       const h = view.querySelector("#war-extra"); if (!h) return;
       const ev = (ctx.me.events || []);
-      let html = `<div class="card wx"><h3>${T("🔔 עדכונים")}</h3>${ev.length ? "<ul>" + ev.slice(0, 8).map(e => `<li><span class="${e.seen ? "" : "new"}">${T(KINDTXT[e.kind] || "אריח")}${e.other ? " · " + esc2(e.other) : ""}</span>${e.battle_id ? `<button class="btn small secondary" data-rep="${e.battle_id}">${T("שחזור")}</button>` : ""}</li>`).join("") + "</ul>" : `<p class="sub">${T("אין עדכונים חדשים.")}</p>`}</div>`;
+      let html = `<div class="card wx"><h3>${T("🔔 עדכונים")}</h3>${ev.length ? "<ul>" + ev.slice(0, 8).map(e => `<li><span class="${e.seen ? "" : "new"}">${T(KINDTXT[e.kind] || "אריח")}${e.other ? " · " + esc2(e.other) : ""}</span></li>`).join("") + "</ul>" : `<p class="sub">${T("אין עדכונים חדשים.")}</p>`}</div>`;
       const L = st.live;
       html += `<div class="card wx"><h3>${T("👁️ קרבות חיים")}</h3>${L && L.battles.length ? "<ul>" + L.battles.map(b => `<li><span>${esc2(b.attacker || "שחקן")} ⚔️ ${esc2(b.defender || "שחקן")}${b.pool_a || b.pool_d ? ` · 🪙 ${b.pool_a}/${b.pool_d}` : ""}</span><span><button class="btn small secondary" data-live="${b.id}">${T("צפייה")}</button>${b.can_bet ? ` <button class="btn small" data-bet="${b.id}">${T("הימור")}</button>` : (b.my_side ? ` <small>${T("הימרת")}</small>` : "")}</span></li>`).join("") + "</ul>" : `<p class="sub">${T("אין קרבות פעילים כרגע.")}</p>`}</div>`;
       const A = st.alliance;
