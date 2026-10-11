@@ -90,7 +90,14 @@ function toast(msg, ms = 3200) {
   t.textContent = msg;
   t.classList.remove("hidden");
   clearTimeout(toast._t);
-  if (document.body.classList.contains("game-active")) ms = Math.min(ms, 2200);
+  const st = document.getElementById("game-stage");
+  if (document.body.classList.contains("game-active") && st) {
+    // in a match: a small note over the sky strip of the stage (never over the HUD, controls or towers)
+    ms = Math.min(ms, 2200);
+    const r = st.getBoundingClientRect();
+    t.style.top = Math.round(r.top + 6) + "px"; t.style.left = Math.round(r.left + r.width / 2) + "px";
+    t.style.right = "auto"; t.style.transform = "translateX(-50%)";
+  } else { t.style.top = t.style.left = t.style.right = t.style.transform = ""; }
   toast._t = setTimeout(() => t.classList.add("hidden"), ms);
 }
 

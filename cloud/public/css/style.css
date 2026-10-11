@@ -647,7 +647,7 @@ body:not(.game-active) #fs-float { position: static; display: block; transform:n
 
 /* v79: in-match notices must never cover the stage or the controls: small, top edge, click-through. */
 body.game-active #toast {
-  top: 6px; bottom: auto; padding: 6px 14px; font-size: 13px; max-width: min(70vw, 420px);
+  bottom: auto; padding: 6px 14px; font-size: 13px; max-width: min(70vw, 420px);
   pointer-events: none; opacity: .92; border-radius: 10px; box-shadow: 0 2px 10px #0006;
 }
 
