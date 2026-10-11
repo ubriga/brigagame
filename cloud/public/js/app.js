@@ -450,7 +450,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=68").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=79").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -700,7 +700,7 @@ const App = {
             <div id="login-error-text" style="font-size:14px"></div>
             <button class="btn" id="login-retry" style="margin-top:8px;padding:12px 22px;font-size:16px">🔄 נסה שוב</button>
             <div id="login-report" class="hidden" style="margin-top:8px;font-size:13px">
-              עדיין לא עובד? <a href="mailto:brigagame2026@gmail.com?subject=בעיית%20התחברות%20Brigagame">דווח לנו</a>
+              עדיין לא עובד? <a href="mailto:brigagame-support@brigastudio.com?subject=בעיית%20התחברות%20Brigagame">דווח לנו</a>
             </div>
           </div>
           <div id="login-spin" class="hidden" style="text-align:center;padding:6px">
@@ -1109,7 +1109,7 @@ const App = {
       <h1>שלום, ${esc(u.name)} 👋 ${u.is_guest ? "" : `<button class="btn ghost" id="nick-edit" style="font-size:.7em;padding:2px 8px" aria-label="שינוי כינוי"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m4 16 12-12 4 4-12 12-5 1Z M13 7l4 4"/></svg></button>`}</h1>
       <p class="sub">הפל את מגדל היריב לפני שהוא מפיל את שלך.</p>
       ${this._loginRewardData ? `<div class="card ux-welcome"><b>🔥 יום ${this._loginRewardData.streak} ברצף!</b> ${this._loginRewardData.amount > 0 ? `קיבלת היום 🪙 ${this._loginRewardData.amount} מטבעות על הרצף` : "הרצף נמשך!"}</div>` : ""}
-      ${(!u.is_guest && localStorage.getItem("bg_mailtip_dismissed") !== "1") ? `<div class="card ux-welcome" id="mailtip"><b>✉️ מקבל מאיתנו עדכונים במייל?</b> אם המייל הגיע לספאם, סמן "לא ספאם" והוסף את brigagame2026@gmail.com לאנשי הקשר, כדי שלא תפספס עדכונים. <button class="btn secondary" id="mailtip-ok" style="margin-inline-start:8px;padding:4px 10px;font-size:13px">הבנתי</button></div>` : ""}
+      ${(!u.is_guest && localStorage.getItem("bg_mailtip_dismissed") !== "1") ? `<div class="card ux-welcome" id="mailtip"><b>✉️ מקבל מאיתנו עדכונים במייל?</b> אם המייל הגיע לספאם, סמן "לא ספאם" והוסף את brigagame-notify@brigastudio.com לאנשי הקשר, כדי שלא תפספס עדכונים. <button class="btn secondary" id="mailtip-ok" style="margin-inline-start:8px;padding:4px 10px;font-size:13px">הבנתי</button></div>` : ""}
       ${(this.ux.lobby_labels !== false && Number(u.matches_played || 0) === 0) ? `<div class="card ux-welcome"><b>🎓 משחק ראשון?</b> מומלץ להתחיל מול בוט קל - משחק תרגול בלי דירוג ובלי לחץ. אפשר גם לפתוח את "איך משחקים?" למטה.</div>` : ""}
       <div class="home-hero" id="home-hero">
         ${!guest || guest.ranked_allowed ? `<button class="btn hero-btn" id="hero-quick"><span>⚡</span>משחק מהיר</button>` : `<button class="btn hero-btn" id="hero-ai"><span>🤖</span>מול הבוט</button>`}

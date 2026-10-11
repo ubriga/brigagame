@@ -2131,7 +2131,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
   },
   "contact_form": {
     "enabled": true,
-    "destination_email": "brigagame2026@gmail.com",
+    "destination_email": "brigagame-admin@brigastudio.com",
     "user_max_per_hour": 5,
     "guest_max_per_hour": 2,
     "max_length": 2000,
@@ -2141,6 +2141,10 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     "enabled": false,
     "default_checked": true,
     "daily_cap": 250,
+    "provider": "brevo",
+    "notify_email": "brigagame-notify@brigastudio.com",
+    "support_email": "brigagame-support@brigastudio.com",
+    "admin_email": "brigagame-admin@brigastudio.com",
     "sender_email": "brigagame2026@gmail.com",
     "gmail_app_password": ""
   },

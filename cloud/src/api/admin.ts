@@ -81,6 +81,8 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     mail_updates: {
       enabled: [null, null, "bool"], default_checked: [null, null, "bool"],
       daily_cap: [0, 400, "int"], sender_email: [null, null, "str"],
+      provider: [null, null, "str"], smtp_host: [null, null, "str"], smtp_port: [1, 65535, "int"], smtp_user: [null, null, "str"],
+      notify_email: [null, null, "str"], support_email: [null, null, "str"], admin_email: [null, null, "str"],
       gmail_app_password: [null, null, "secret_str"],
     },
     bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
@@ -648,7 +650,7 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     ].join("\n");
     let mailed = false;
     {
-      const sent = await sendGameMail(env, to, subject, text);
+      const sent = await sendGameMail(env, to, subject, text, "support");
       mailed = sent.ok;
       if (!sent.ok) console.error("contact_reply_mail_fail", sent.error);
     }

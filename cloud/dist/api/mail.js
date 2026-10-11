@@ -37,16 +37,58 @@ export function ensureMailSchema(env) {
     })().catch((e) => { _ready = null; throw e; });
     return _ready;
 }
+export const MAIL_ADDR = {
+    notify: "brigagame-notify@brigastudio.com", // login codes + player updates
+    support: "brigagame-support@brigastudio.com", // contact, privacy, replies to players
+    admin: "brigagame-admin@brigastudio.com", // internal contact-form alerts
+};
 export async function mailSettings(env) {
     const c = (await getControls(env)).mail_updates ?? {};
+    const provider = String(c.provider || "brevo") === "gmail" ? "gmail" : "brevo";
+    const e = env;
     return {
         enabled: c.enabled === true,
         default_checked: c.default_checked !== false,
         daily_cap: Math.max(0, Math.min(400, Number(c.daily_cap ?? 250))),
+        provider,
+        // Brevo: password only from the Worker secret SMTP_PASS, never from D1 or code.
+        smtp_host: String(c.smtp_host || "smtp-relay.brevo.com"),
+        smtp_port: Number(c.smtp_port || 587),
+        smtp_user: String(e.SMTP_USER || c.smtp_user || ""),
+        smtp_pass: String(e.SMTP_PASS ?? ""),
+        notify_email: String(c.notify_email || MAIL_ADDR.notify),
+        support_email: String(c.support_email || MAIL_ADDR.support),
+        admin_email: String(c.admin_email || MAIL_ADDR.admin),
+        // Gmail path stays available only when provider is explicitly set to "gmail".
         sender_email: String(c.sender_email || "brigagame2026@gmail.com"),
-        app_password: String(env.MAIL_APP_PASSWORD ?? "") || String(c.gmail_app_password ?? ""),
-        dry_run: String(env.MAIL_DRY_RUN ?? "") === "1",
+        app_password: String(e.MAIL_APP_PASSWORD ?? "") || String(c.gmail_app_password ?? ""),
+        dry_run: String(e.MAIL_DRY_RUN ?? "") === "1",
     };
+}
+/** One send through the configured provider. No silent fallback: a Brevo setup without a password fails loudly. */
+export async function smtpSend(s, kind, to, subject, text, html, headers) {
+    if (s.dry_run) {
+        console.log("mail_dry_run", to, subject);
+        return { ok: true };
+    }
+    if (s.provider === "gmail") {
+        if (!s.app_password)
+            return { ok: false, error: "no_key" };
+        return sendSmtpMail({ host: "smtp.gmail.com", port: 465, user: s.sender_email, pass: s.app_password,
+            from: s.sender_email, to, subject, text, html, headers });
+    }
+    if (!s.smtp_user || !s.smtp_pass)
+        return { ok: false, error: "no_key" };
+    const from = kind === "support" ? s.support_email : kind === "admin" ? s.admin_email : s.notify_email;
+    const base = { user: s.smtp_user, pass: s.smtp_pass, from, to, subject, text, html, headers, replyTo: s.support_email, fromName: "Brigagame 2.0" };
+    const r = await sendSmtpMail({ ...base, host: s.smtp_host, port: s.smtp_port, mode: "starttls" });
+    if (r.ok || r.permanent)
+        return r;
+    // Same provider, other port (direct TLS). Only for connection-level failures, never after an auth rejection.
+    if (/AUTH|535|554/.test(String(r.error)))
+        return r;
+    console.log("smtp_587_failed_retry_465", r.error);
+    return sendSmtpMail({ ...base, host: s.smtp_host, port: 465, mode: "tls" });
 }
 async function hmacKey(env) {
     const db = env.DB;
@@ -92,7 +134,7 @@ export function pickSubject(subject, uid) {
     const v = subject.split("||").map(x => x.trim()).filter(Boolean);
     return v.length ? v[Math.abs(uid) % v.length] : subject;
 }
-const NOT_SPAM_TEXT = "כדי שהעדכונים יגיעו אליך: אם המייל הגיע לתיקיית הספאם, סמן \"לא ספאם\" והוסף את brigagame2026@gmail.com לאנשי הקשר.";
+const NOT_SPAM_TEXT = "כדי שהעדכונים יגיעו אליך: אם המייל הגיע לתיקיית הספאם, סמן \"לא ספאם\" והוסף את brigagame-notify@brigastudio.com לאנשי הקשר.";
 export function renderMail(subject, body, name, unsub, existing = false) {
     const who = name && !name.includes("@") ? name : "שחקן יקר";
     const intro = existing
@@ -115,33 +157,12 @@ export function renderMail(subject, body, name, unsub, existing = false) {
     return { subject: subject.replaceAll("{name}", who), text, html };
 }
 export async function sendMailGmail(s, to, m, unsub) {
-    if (s.dry_run) {
-        console.log("mail_dry_run", to, m.subject);
-        return { ok: true };
-    }
-    if (!s.app_password)
-        return { ok: false, error: "no_key" };
-    const r = await sendSmtpMail({
-        host: "smtp.gmail.com", port: 465, user: s.sender_email, pass: s.app_password,
-        from: s.sender_email, to, subject: m.subject, text: m.text, html: m.html,
-        headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
-    });
-    return r;
+    return smtpSend(s, "notify", to, m.subject, m.text, m.html, { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" });
 }
-/** Plain transactional mail (login codes, contact notifications, admin replies) from the game Gmail.
- *  Independent of the player-updates switch: only needs the sender address and the app password. */
-export async function sendGameMail(env, to, subject, text) {
+/** Plain transactional mail: login codes (notify), replies to players (support), internal alerts (admin). */
+export async function sendGameMail(env, to, subject, text, kind = "notify") {
     const s = await mailSettings(env);
-    if (s.dry_run) {
-        console.log("mail_dry_run", to, subject);
-        return { ok: true };
-    }
-    if (!s.app_password)
-        return { ok: false, error: "no_key" };
-    const r = await sendSmtpMail({
-        host: "smtp.gmail.com", port: 465, user: s.sender_email, pass: s.app_password,
-        from: s.sender_email, to, subject, text,
-    });
+    const r = await smtpSend(s, kind, to, subject, text);
     return { ok: r.ok, error: r.error };
 }
 const page = (title, body) => new Response(`<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`

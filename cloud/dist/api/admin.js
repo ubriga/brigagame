@@ -12,6 +12,7 @@ import { rankPayload } from "../game/ranks.js";
 import { CATALOG, DEFAULT_GAMEPLAY_CONTROLS } from "../game/catalog.js";
 import { json } from "./routes.js";
 import { handleMailAdmin, sendGameMail } from "./mail.js";
+import { getBroadcastCfg, sanitizeBroadcast, invalidateBroadcastCache } from "./broadcast.js";
 const nowIso = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
 async function adminUser(env, request) {
@@ -72,6 +73,8 @@ function controlSpecs() {
         mail_updates: {
             enabled: [null, null, "bool"], default_checked: [null, null, "bool"],
             daily_cap: [0, 400, "int"], sender_email: [null, null, "str"],
+            provider: [null, null, "str"], smtp_host: [null, null, "str"], smtp_port: [1, 65535, "int"], smtp_user: [null, null, "str"],
+            notify_email: [null, null, "str"], support_email: [null, null, "str"], admin_email: [null, null, "str"],
             gmail_app_password: [null, null, "secret_str"],
         },
         bot_fallback: { enabled: [null, null, "bool"], wait_seconds: [5, 300, "int"],
@@ -91,6 +94,7 @@ function controlSpecs() {
             control_tooltips: [null, null, "bool"],
             friend_share_button: [null, null, "bool"],
             bot_first_shot_countdown: [0, 15, "int"],
+            start_countdown: [null, null, "bool"],
             nav2: [null, null, "bool"],
         },
         guest_mode: { enabled: [null, null, "bool"], ttl_hours: [1, 168, "int"],
@@ -107,7 +111,7 @@ function controlSpecs() {
         graphics_pack: { enabled: [null, null, "bool"], low_spec_default: [null, null, "bool"],
             max_particles: [16, 96, "int"], airship_motion: [null, null, "bool"],
             webgl3d_enabled: [null, null, "bool"], webgl3d_adaptive: [null, null, "bool"],
-            webgl3d_min_fps: [30, 60, "int"] },
+            webgl3d_min_fps: [30, 60, "int"], skins3d_enabled: [null, null, "bool"] },
         coatings: {
             enabled: [null, null, "bool"], max_level: [1, 3, "int"], build_minutes: [0.01, 10080, "float"],
             wood_price: [0, 100000, "int"], wood_minutes: [0.01, 10080, "float"], wood_hp: [1, 10000, "float"],
@@ -120,7 +124,7 @@ function controlSpecs() {
         },
         territory: { enabled: [null, null, "bool"], map_size: [8, 60, "int"], base_yield_per_hour: [0, 1000, "float"],
             store_cap: [10, 100000, "int"], accrual_cap_hours: [1, 168, "float"], start_grant: [0, 10000, "int"],
-            attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"],
+            attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"], home_income_per_hour: [0, 100, "float"],
             daily_attack_cap: [0, 100, "int"], grace_hours: [0, 336, "float"], ongoing_battle_minutes: [1, 120, "int"],
             live_defense: [null, null, "bool"], live_offer_seconds: [10, 120, "int"],
             rebellion_enabled: [null, null, "bool"], rebellion_inactive_days: [1, 365, "float"], rebellion_max_per_run: [1, 500, "int"],
@@ -225,6 +229,88 @@ export async function handleAdminApi(env, request, path) {
                 created_at: r.created_at, last_login: r.last_login,
                 streak: r.streak ?? 0, broken_streak: r.broken_streak ?? null, broken_on: r.broken_on ?? null,
             })) });
+    }
+    // POST /api/admin/users/bulk - one action on every registered player matching a filter.
+    // Always two steps: dry_run=true returns who would be affected; the real run must repeat the
+    // exact count (confirm_count) so a changed list can never be hit by accident. The admin is never touched.
+    if (path === "/api/admin/users/bulk" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const action = String(body.action ?? "");
+        if (!["coins", "item", "ban", "suspend", "lift", "message"].includes(action))
+            return json({ error: "bad_action" }, 400);
+        const term = `%${String(body.q ?? "").trim()}%`;
+        const rows = (await db.prepare("SELECT id, name, email FROM users WHERE is_guest = 0 AND lower(email) != lower(?) AND (email LIKE ? OR name LIKE ?) ORDER BY id LIMIT 401")
+            .bind(String(env.ADMIN_EMAIL ?? ""), term, term).all()).results;
+        if (rows.length > 400)
+            return json({ error: "too_many", error_he: "יותר מ-400 משתמשים - צמצמו את הסינון." }, 400);
+        let detail = {};
+        let note = "";
+        if (action === "coins") {
+            const delta = Number.parseInt(String(body.delta ?? 0), 10);
+            if (!Number.isFinite(delta) || delta === 0 || Math.abs(delta) > 10000)
+                return json({ error: "bad_delta", error_he: "סכום לא תקין (עד 10,000 לשחקן)." }, 400);
+            detail = { delta, reason: String(body.reason ?? "admin_bulk").slice(0, 120) };
+        }
+        else if (action === "item") {
+            const item = String(body.item_id ?? "");
+            const qty = Math.trunc(Number(body.qty));
+            const def = CATALOG[item];
+            if (!def || def.kind !== "consumable")
+                return json({ error: "bad_item", error_he: "פריט לא תקין (רק תחמושת/מתכלים)." }, 400);
+            if (!Number.isFinite(qty) || qty < 1 || qty > 50)
+                return json({ error: "bad_qty", error_he: "כמות 1 עד 50." }, 400);
+            detail = { item_id: item, qty };
+        }
+        else if (action === "ban") {
+            const hours = Math.max(1, Math.min(24 * 365, Number.parseInt(String(body.hours ?? 24), 10) || 24));
+            detail = { hours };
+        }
+        else if (action === "message") {
+            const text = String(body.text ?? "").trim().slice(0, 500);
+            if (!text)
+                return json({ error: "text_required", error_he: "חסר נוסח." }, 400);
+            detail = { text };
+        }
+        const sample = rows.slice(0, 8).map((r) => String(r.name || r.email));
+        if (body.dry_run !== false) {
+            return json({ ok: true, dry_run: true, action, count: rows.length, sample, detail });
+        }
+        if (Math.trunc(Number(body.confirm_count)) !== rows.length || rows.length === 0)
+            return json({ error: "count_mismatch", error_he: "מספר המושפעים השתנה או לא אושר. הריצו בדיקה יבשה שוב." }, 409);
+        const nowI = nowIso();
+        const msg = (uid, title, text) => db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)").bind(uid, title, text, nowI);
+        const stmts = [];
+        for (const r of rows) {
+            const uid = Number(r.id);
+            if (action === "coins") {
+                stmts.push(db.prepare("UPDATE users SET coins = coins + ? WHERE id = ?").bind(detail.delta, uid));
+                stmts.push(db.prepare("INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)").bind(uid, detail.delta, detail.reason, "", nowI));
+                stmts.push(msg(uid, "מתנה מהנהלת Brigagame", detail.delta > 0 ? `קיבלת ${detail.delta} מטבעות 🪙` : `עודכנה יתרת המטבעות שלך (${detail.delta}).`));
+            }
+            else if (action === "item") {
+                stmts.push(db.prepare("INSERT INTO user_items (user_id, item_id, qty) VALUES (?,?,?) ON CONFLICT(user_id, item_id) DO UPDATE SET qty = qty + excluded.qty").bind(uid, detail.item_id, detail.qty));
+                stmts.push(msg(uid, "מתנה מהנהלת Brigagame", `קיבלת ${detail.qty} יחידות של ${String(CATALOG[detail.item_id]?.name_he ?? detail.item_id)} 🎁`));
+            }
+            else if (action === "ban") {
+                stmts.push(db.prepare("UPDATE users SET banned_until = ? WHERE id = ?").bind(new Date(Date.now() + detail.hours * 3600_000).toISOString(), uid));
+                stmts.push(msg(uid, "עדכון מהנהלת Brigagame", `החשבון שלך נחסם ל-${detail.hours} שעות.`));
+            }
+            else if (action === "suspend") {
+                stmts.push(db.prepare("UPDATE users SET suspended = 1 WHERE id = ?").bind(uid));
+                stmts.push(msg(uid, "עדכון מהנהלת Brigagame", "החשבון שלך הושהה."));
+            }
+            else if (action === "lift") {
+                stmts.push(db.prepare("UPDATE users SET suspended = 0, banned_until = NULL WHERE id = ?").bind(uid));
+                stmts.push(msg(uid, "עדכון מהנהלת Brigagame", "מגבלות החשבון שלך הוסרו."));
+            }
+            else {
+                stmts.push(msg(uid, "הודעה מהנהלת Brigagame", detail.text));
+            }
+        }
+        for (let i = 0; i < stmts.length; i += 90)
+            await db.batch(stmts.slice(i, i + 90));
+        await audit(env, request, Number(u.id), "admin.bulk", "users", rows.length, { action, q: String(body.q ?? ""), count: rows.length, ...detail, text: undefined });
+        return json({ ok: true, dry_run: false, action, count: rows.length });
     }
     // POST /api/admin/users/<uid>/moderate
     const modMatch = path.match(/^\/api\/admin\/users\/(\d+)\/moderate$/);
@@ -511,6 +597,32 @@ export async function handleAdminApi(env, request, path) {
         await audit(env, request, Number(u.id), "admin.maintenance", "", "", { on, message });
         return json({ ok: true, maintenance: await getMaintenance(env) });
     }
+    // GET|POST /api/admin/broadcast-popup - popup message shown to players at game open
+    if (path === "/api/admin/broadcast-popup" && method === "GET") {
+        return json({ broadcast: await getBroadcastCfg(env, true) });
+    }
+    if (path === "/api/admin/broadcast-popup" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const prev = await getBroadcastCfg(env, true);
+        const next = sanitizeBroadcast({ ...body, id: prev.id });
+        if (next.on && !next.message)
+            return json({ error: "message_required", error_he: "אי אפשר להפעיל הודעה בלי טקסט." }, 400);
+        // A new id means "a new broadcast": everybody is eligible again. It changes
+        // on activation, on a text/audience/frequency edit, or an explicit resend.
+        const changed = next.message !== prev.message || next.audience !== prev.audience
+            || next.mode !== prev.mode || next.interval_min !== prev.interval_min
+            || next.start_at !== prev.start_at || next.end_at !== prev.end_at;
+        if (next.start_at && next.end_at && next.end_at <= next.start_at)
+            return json({ error: "bad_schedule", error_he: "זמן הסיום חייב להיות אחרי זמן ההתחלה." }, 400);
+        if (next.on && (!prev.on || changed || body.resend === true))
+            next.id = prev.id + 1;
+        await db.prepare("INSERT INTO settings (key, value) VALUES ('broadcast_popup', ?)"
+            + " ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+            .bind(JSON.stringify(next)).run();
+        invalidateBroadcastCache();
+        await audit(env, request, Number(u.id), "admin.broadcast_popup", "", "", { on: next.on, audience: next.audience, mode: next.mode, interval_min: next.interval_min, start_at: next.start_at, end_at: next.end_at, id: next.id, len: next.message.length });
+        return json({ ok: true, broadcast: next });
+    }
     // GET /api/admin/contact-reports - latest player contact/bug submissions.
     if (path === "/api/admin/contact-reports" && method === "GET") {
         const rows = await db.prepare("SELECT r.id, r.user_id, r.reporter_name, r.reporter_email, r.rtype, r.message, r.context,"
@@ -574,7 +686,7 @@ export async function handleAdminApi(env, request, path) {
         ].join("\n");
         let mailed = false;
         {
-            const sent = await sendGameMail(env, to, subject, text);
+            const sent = await sendGameMail(env, to, subject, text, "support");
             mailed = sent.ok;
             if (!sent.ok)
                 console.error("contact_reply_mail_fail", sent.error);

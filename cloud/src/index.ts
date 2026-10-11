@@ -132,7 +132,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         popup: af.popup_enabled !== false,
         redirect: af.redirect_enabled === true,
         email_code: af.email_code_enabled === true && !lockNow.active,
-        email_from: ms.sender_email,
+        email_from: ms.provider === "gmail" ? ms.sender_email : ms.notify_email,
         // Installed-PWA logins: the Google redirect leaves the app storage, so
         // the client emphasizes the email-code path unless the admin disables it.
         pwa_email_hint: af.pwa_email_hint !== false,
@@ -476,7 +476,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       let mailed = false;
       const dest = String(cf.destination_email ?? "").trim() || String(env.ADMIN_EMAIL ?? "");
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) {
-        const sent = await sendGameMail(env, dest, subject, text);
+        const sent = await sendGameMail(env, dest, subject, text, "admin");
         mailed = sent.ok;
         if (!sent.ok) console.error("contact_mail_fail", sent.error);
       } else {

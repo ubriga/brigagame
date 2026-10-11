@@ -15,6 +15,7 @@ import { d1, getControls, getLoginStreak, israelDate, streakRewardFor, nextStrea
 import { limited } from "./ratelimit.js";
 import { getGuestCfg, guestExpiresAt, guestExpired, sweepExpiredGuests } from "./guest.js";
 import { validateNick, shownName, DEFAULT_CHANGE_PRICE } from "../nickname.js";
+import { broadcastFor, markBroadcastShown } from "./broadcast.js";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 export function json(body, status = 200) {
     return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
@@ -248,6 +249,7 @@ export async function handleApi(env, request, path, ctx) {
             user: publicUser(u, env), server_version: env.SERVER_VERSION,
             bot_fallback: { enabled: fbCtl.enabled === true, wait_seconds: Number(fbCtl.wait_seconds ?? 30) },
             maintenance, inventory: inv,
+            broadcast: await broadcastFor(env, u).catch(() => null),
             invite_enabled: controls.invite_system?.enabled === true,
             ux: controls.ux_onboarding ?? {},
             graphics: (() => {
@@ -261,6 +263,7 @@ export async function handleApi(env, request, path, ctx) {
                         enabled: gp.webgl3d_enabled === true,
                         adaptive: gp.webgl3d_adaptive !== false,
                         min_fps: Number(gp.webgl3d_min_fps ?? 45),
+                        skins3d: gp.skins3d_enabled !== false,
                     },
                 };
             })(),
@@ -694,6 +697,21 @@ export async function handleApi(env, request, path, ctx) {
         }
         return json({ messages: out });
     }
+    // POST /api/broadcast/seen - the player was shown the admin popup
+    if (path === "/api/broadcast/seen" && method === "POST") {
+        const u = await needAuth();
+        if (!u)
+            return json({ error: "unauthorized" }, 401);
+        const rl = await limited(env, request, "state", u);
+        if (rl)
+            return rl;
+        const body = await request.json().catch(() => ({}));
+        const bid = Math.trunc(Number(body.id));
+        if (!isFinite(bid) || bid < 0)
+            return json({ error: "bad_id" }, 400);
+        await markBroadcastShown(env, Number(u.id), bid);
+        return json({ ok: true });
+    }
     // POST /api/presence/ping
     if (path === "/api/presence/ping" && method === "POST") {
         const u = await needAuth();
@@ -729,7 +747,8 @@ export async function handleApi(env, request, path, ctx) {
             await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
         }
         const out = { ok: true, offer: null, unread_messages: unread?.c ?? 0,
-            server_version: env.SERVER_VERSION, maintenance };
+            server_version: env.SERVER_VERSION, maintenance,
+            broadcast: await broadcastFor(env, u).catch(() => null) };
         if (offer) {
             out.offer = { match_id: offer.match_id, expires_in: Math.max(1, Math.trunc(offer.expires_at - now)) };
             const tb = await env.DB.prepare("SELECT b.tile_id, COALESCE(n.nickname, '') AS attacker FROM matches m"

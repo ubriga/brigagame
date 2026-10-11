@@ -11,15 +11,18 @@ export async function sendSmtpMail(opts: {
   host: string; port: number; user: string; pass: string;
   from: string; to: string; subject: string; text: string;
   html?: string; headers?: Record<string, string>; fromName?: string;
+  /** "tls" = direct TLS (465); "starttls" = plain connect then STARTTLS (587). Default tls. */
+  mode?: "tls" | "starttls"; replyTo?: string;
 }): Promise<{ ok: boolean; error?: string; permanent?: boolean }> {
   const enc = new TextEncoder();
   const dec = new TextDecoder();
   let socket: any = null;
   try {
+    const starttls = opts.mode === "starttls";
     socket = connect({ hostname: opts.host, port: opts.port },
-      { secureTransport: "on" } as any);
-    const writer = socket.writable.getWriter();
-    const reader = socket.readable.getReader();
+      { secureTransport: starttls ? "starttls" : "on", allowHalfOpen: false } as any);
+    let writer = socket.writable.getWriter();
+    let reader = socket.readable.getReader();
     let buf = "";
     const readReply = async (): Promise<{ code: number; body: string }> => {
       const deadline = Date.now() + 20000;
@@ -48,8 +51,18 @@ export async function sendSmtpMail(opts: {
     };
 
     await expect([220], "banner");
-    await send("EHLO brigagame.ubriga.workers.dev");
+    await send("EHLO brigagame.brigastudio.com");
     await expect([250], "EHLO");
+    if (starttls) {
+      await send("STARTTLS");
+      await expect([220], "STARTTLS");
+      writer.releaseLock(); reader.releaseLock();
+      socket = socket.startTls();
+      writer = socket.writable.getWriter(); reader = socket.readable.getReader();
+      buf = "";
+      await send("EHLO brigagame.brigastudio.com");
+      await expect([250], "EHLO after STARTTLS");
+    }
     await send("AUTH LOGIN");
     await expect([334], "AUTH LOGIN");
     await send(b64(opts.user));
@@ -83,7 +96,7 @@ export async function sendSmtpMail(opts: {
       "Date: " + new Date().toUTCString().replace("GMT", "+0000") + nl +
       "From: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
       "To: <" + opts.to + ">" + nl +
-      "Reply-To: " + (opts.fromName ?? "Brigagame 2.0") + " <" + opts.from + ">" + nl +
+      "Reply-To: " + (opts.fromName ?? "Brigagame 2.0") + " <" + (opts.replyTo ?? opts.from) + ">" + nl +
       "Message-ID: " + msgId + nl +
       "Subject: =?UTF-8?B?" + b64(opts.subject) + "?=" + nl +
       "MIME-Version: 1.0" + nl + extra;

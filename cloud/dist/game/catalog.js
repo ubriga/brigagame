@@ -2125,7 +2125,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     },
     "contact_form": {
         "enabled": true,
-        "destination_email": "brigagame2026@gmail.com",
+        "destination_email": "brigagame-admin@brigastudio.com",
         "user_max_per_hour": 5,
         "guest_max_per_hour": 2,
         "max_length": 2000,
@@ -2135,6 +2135,10 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "enabled": false,
         "default_checked": true,
         "daily_cap": 250,
+        "provider": "brevo",
+        "notify_email": "brigagame-notify@brigastudio.com",
+        "support_email": "brigagame-support@brigastudio.com",
+        "admin_email": "brigagame-admin@brigastudio.com",
         "sender_email": "brigagame2026@gmail.com",
         "gmail_app_password": ""
     },
@@ -2167,6 +2171,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "control_tooltips": true,
         "friend_share_button": true,
         "bot_first_shot_countdown": 3,
+        "start_countdown": true,
         "nav2": false
     },
     "xp": {
@@ -2185,7 +2190,8 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
         "airship_motion": true,
         "webgl3d_enabled": false,
         "webgl3d_adaptive": true,
-        "webgl3d_min_fps": 45
+        "webgl3d_min_fps": 45,
+        "skins3d_enabled": true
     },
     "coatings": {
         "enabled": true,
@@ -2210,7 +2216,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
     },
     "territory": {
         "enabled": true, "map_size": 20, "base_yield_per_hour": 6, "store_cap": 500, "accrual_cap_hours": 24,
-        "start_grant": 60, "attack_cost_per_rarity": 15, "maintenance_per_extra_tile": 1,
+        "start_grant": 60, "attack_cost_per_rarity": 15, "maintenance_per_extra_tile": 0.5, "home_income_per_hour": 2,
         "daily_attack_cap": 6, "grace_hours": 24, "ongoing_battle_minutes": 10,
         "live_defense": true, "live_offer_seconds": 30,
         "rebellion_enabled": true, "rebellion_inactive_days": 14, "rebellion_max_per_run": 25

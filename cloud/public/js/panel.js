@@ -296,7 +296,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.redirect_enabled" ${c.auth_flow.redirect_enabled ? "checked" : ""} style="width:auto">כניסה עם חשבון גוגל (דף מלא)</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.email_code_enabled" ${c.auth_flow.email_code_enabled ? "checked" : ""} style="width:auto">כניסה עם קוד למייל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="auth_flow.pwa_email_hint" ${c.auth_flow.pwa_email_hint !== false ? "checked" : ""} style="width:auto">הסבר PWA: הדגשת קוד מייל באפליקציה המותקנתת</label>
-        <div class="sub" style="font-size:12px">קודי הכניסה, התראות טופס הקשר ותשובות האדמין נשלחים מחשבון ה-Gmail של המשחק. הכתובת והסיסמה מוגדרות בלשונית "עדכוני מייל".</div></div>
+        <div class="sub" style="font-size:12px">קודי הכניסה, התראות טופס הקשר ותשובות האדמין נשלחים דרך שרת הדואר של המשחק (Brevo, כתובות brigastudio.com). ההגדרות בלשונית "עדכוני מייל".</div></div>
       <div class="card"><h2>📨 הזמנת חבר (א1)</h2><p class="sub">כפתור "הזמן חבר" בלובי ובסיום משחק מייצר קישור אישי. כשהחבר נכנס דרך הקישור (נרשם או מתחבר), המזמין מקבל תג באופן אוטומטי והתג מוצג בעמוד התגים. מכסה יומית = כמה הזמנות כל שחקן יכול ליצור ביום. שם התג = התג שהמזמין מקבל. נוסח ההזמנה = הטקסט שמחוך לקישור בשיתוף; {name} מוחלף בשם המזמין.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="invite_system.enabled" ${c.invite_system && c.invite_system.enabled ? "checked" : ""} style="width:auto">מערכת ההזמנות פעילה</label>
         <label>מכסת הזמנות ליום</label><input type="number" min="1" max="100" step="1" value="${c.invite_system ? c.invite_system.max_per_day : 5}" data-control="invite_system.max_per_day">
@@ -322,7 +322,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       <div class="card"><h2>🛟 טופס יצירת קשר / דיווח תקלות</h2><p class="sub">כפתור "דיווח על תקלה / צור קשר" בלובי ובתפריט פותח טופס עם סוג פנייה, טקסט חופשי ופרטים טכניים אוטומטיים (גרסה, דפדפן, מסך). שחקנים רשומים מזוהים אוטומטית; אורחים ומבקרים משאירים מייל לתשובה. כל פנייה נשלחת מיידית במייל לכתובת היעד ונשמרת גם בלשונית "📮 פניות". מגבלות = כמה פניות מותר לשחקן רשום / לאורח (לפי IP) בשעה, כולל הגנה מבוטים.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.enabled" ${c.contact_form && c.contact_form.enabled !== false ? "checked" : ""} style="width:auto">טופס יצירת קשר פעיל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-control="contact_form.reply_enabled" ${c.contact_form && c.contact_form.reply_enabled !== false ? "checked" : ""} style="width:auto">מנגנון תשובות לשחקנים פעיל (שליחת תשובה במייל מלשונית "📮 פניות")</label>
-        <label>כתובת מייל יעד לפניות</label><input type="text" maxlength="300" dir="ltr" style="text-align:left" value="${esc(c.contact_form ? c.contact_form.destination_email : "brigagame2026@gmail.com")}" data-control="contact_form.destination_email">
+        <label>כתובת מייל יעד לפניות</label><input type="text" maxlength="300" dir="ltr" style="text-align:left" value="${esc(c.contact_form ? c.contact_form.destination_email : "brigagame-admin@brigastudio.com")}" data-control="contact_form.destination_email">
         <label>מגבלת פניות לשחקן רשום בשעה</label><input type="number" min="1" max="50" step="1" value="${c.contact_form ? c.contact_form.user_max_per_hour : 5}" data-control="contact_form.user_max_per_hour">
         <label>מגבלת פניות לאורח בשעה (לפי IP)</label><input type="number" min="1" max="20" step="1" value="${c.contact_form ? c.contact_form.guest_max_per_hour : 2}" data-control="contact_form.guest_max_per_hour">
         <label>אורך הודעה מרבי (תווים)</label><input type="number" min="100" max="5000" step="100" value="${c.contact_form ? c.contact_form.max_length : 2000}" data-control="contact_form.max_length"></div>
@@ -783,11 +783,11 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     const m = st.data, mc = gc.data.controls.mail_updates || {};
     const ok = m.recipients.filter(r => r.opted_in && !r.excluded);
     body.innerHTML = `
-      <div class="card"><h2>📧 שליטה במנגנון</h2><p class="sub">חשבון ה-Gmail (כתובת + סיסמת אפליקציה) משמש את כל המיילים של המשחק: קודי כניסה, התראות טופס הקשר, תשובות אדמין ועדכוני שחקנים. המתג והמכסה כאן חלים על עדכוני שחקנים בלבד.</p>
+      <div class="card"><h2>📧 שליטה במנגנון</h2><p class="sub">שרת הדואר של המשחק (Brevo, כתובות brigastudio.com; הסיסמה שמורה כסוד שרת ולא כאן) משמש את כל המיילים של המשחק: קודי כניסה, התראות טופס הקשר, תשובות אדמין ועדכוני שחקנים. המתג והמכסה כאן חלים על עדכוני שחקנים בלבד.</p>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-enabled" ${mc.enabled ? "checked" : ""} style="width:auto">מנגנון עדכוני מייל פעיל</label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mu-default" ${mc.default_checked !== false ? "checked" : ""} style="width:auto">תיבת ההסכמה בהרשמה מסומנת כברירת מחדל</label>
         <label>מכסת שליחה יומית (עד 400)</label><input type="number" id="mu-cap" min="0" max="400" step="1" value="${Number(mc.daily_cap ?? 250)}">
-        <label>כתובת שולח</label><input type="text" id="mu-sender" dir="ltr" style="text-align:left" maxlength="200" value="${esc(mc.sender_email || "")}">
+        <label>כתובת שולח (Gmail, רק כשהספק הוא gmail)</label><input type="text" id="mu-sender" dir="ltr" style="text-align:left" maxlength="200" value="${esc(mc.sender_email || "")}">
         <label>סיסמת אפליקציה של ה-Gmail השולח ${mc.gmail_app_password_set ? "(שמורה - הדביקו חדשה רק כדי להחליף)" : "(לא הוגדר)"}</label><input type="password" id="mu-key" autocomplete="off" dir="ltr" style="text-align:left" placeholder="${mc.gmail_app_password_set ? "••••••••" : ""}">
         <button class="btn" id="mu-save" style="margin-top:12px">שמור הגדרות</button>
         <p class="sub">נשלחו היום: ${m.sent_today} מתוך ${m.daily_cap}</p></div>
