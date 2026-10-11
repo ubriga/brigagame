@@ -457,7 +457,7 @@ body.guest-mode #topbar nav a[data-nav="tags"] { display: none; }
   padding: 8px 12px; font-size: 14px; text-align: center;
   border-bottom: 1px solid rgba(255,200,90, .5);
 }
-body.guest-mode #topbar { margin-top: 40px; }
+body.guest-banner-on #topbar { margin-top: var(--gb-h, 46px); }
 
 .lang-switch {
   position: absolute; top: 12px; inset-inline-start: 12px; z-index: 5;

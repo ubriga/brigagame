@@ -111,3 +111,9 @@ body:has(#login-wrap) footer a { color: #8a0f7c; font-weight: 600; }
 .build-job,.coating-grid .card{background:linear-gradient(160deg,#221a4a,#171134) !important;border:1.5px solid #5b46c8 !important;color:var(--text)}
 .build-job{box-shadow:0 0 12px rgba(138,77,255,.35)}
 .war-cost{color:var(--gold);font-weight:800}
+
+/* v80 item 3: guest banner in the neon style, closable */
+#guest-banner{background:linear-gradient(90deg,#171134,#221a4a) !important;color:var(--text) !important;border-bottom:2px solid var(--neon-cyan) !important;box-shadow:0 0 18px rgba(25,227,255,.45);gap:10px !important;padding:7px 40px 7px 12px !important;font-weight:700}
+#guest-banner .gb-ico{filter:drop-shadow(0 0 6px var(--neon-pink))}
+#guest-banner .gb-x{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;border:1.5px solid var(--neon-cyan);background:transparent;color:var(--neon-cyan);font-size:14px;line-height:1;cursor:pointer;padding:0}
+@media (max-width:640px){#guest-banner{font-size:12.5px !important;gap:6px 8px !important;padding:6px 38px 6px 10px !important}#guest-banner .gb-ico{display:none}#guest-banner .btn.small{padding:5px 12px;font-size:12.5px}}
