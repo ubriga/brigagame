@@ -13,8 +13,8 @@
     root.querySelectorAll("[aria-label]").forEach(e => { let v = e.getAttribute("aria-label"); for (const k of keys) v = v.split(k).join(EN_MAP[k]); e.setAttribute("aria-label", v); });
   };
   const OAKS = '<svg viewBox="0 0 24 24" width="1.6em" height="1.6em" aria-hidden="true" style="vertical-align:middle"><rect x="6.2" y="15" width="2.2" height="7" rx="1" fill="#6e4320"/><circle cx="7.3" cy="11.5" r="5" fill="#6f9433"/><circle cx="5" cy="13" r="3" fill="#7da13b"/><circle cx="9.5" cy="13" r="3" fill="#7da13b"/><circle cx="6" cy="9.5" r="1.6" fill="#a3c452" opacity=".7"/><rect x="15.6" y="13" width="2.4" height="9" rx="1" fill="#6e4320"/><circle cx="16.8" cy="8.5" r="6" fill="#8db444"/><circle cx="13.8" cy="10.5" r="3.6" fill="#7da13b"/><circle cx="19.8" cy="10.5" r="3.6" fill="#a3c452"/><circle cx="15.5" cy="6" r="2" fill="#c3dd7a" opacity=".7"/></svg>';
-  const KIND = { forest: [OAKS, "יער", "#3f5a26"], mine: ["⛏️", "מכרה", "#6b5a45"], quarry: ["🪨", "מחצבה", "#5b6572"],
-    plains: ["🌾", "מישור", "#7a8a3c"], fortress: ["🏰", "מצודה", "#7b3f6e"] };
+  const KIND = { forest: [OAKS, "יער", "#0e6b45"], mine: ["⛏️", "מכרה", "#6a3fb8"], quarry: ["🪨", "מחצבה", "#1c6a8c"],
+    plains: ["🌾", "מישור", "#8a7a1c"], fortress: ["🏰", "מצודה", "#a0267f"] };
   const RAR = ["", "רגיל", "נדיר", "אפי", "אגדי"];
   const MAT = { wood: "🪵 עץ", iron: "⚙️ ברזל", stone: "🧱 אבן" };
   const CSS = `
@@ -23,7 +23,7 @@
   .war-wrap{display:grid;grid-template-columns:minmax(0,2fr) minmax(220px,1fr);gap:12px}
   @media (max-width:760px){.war-wrap{grid-template-columns:1fr}}
   .war-wrap>div{min-width:0}
-  .war-map{overflow:auto;border-radius:12px;background:#361c0b;padding:6px;max-width:100%;touch-action:pan-x pan-y pinch-zoom}
+  .war-map{overflow:auto;border-radius:12px;background:#0b0820;padding:6px;max-width:100%;touch-action:pan-x pan-y pinch-zoom}
   .war-zoom{display:flex;gap:6px;margin:0 0 8px}
   .war-zoom button{min-width:44px}
   .war-grid{width:max-content;display:grid;gap:2px;direction:ltr}

@@ -98,3 +98,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--neon-cya
 body:has(#login-wrap) footer, body:has(#login-wrap) footer * { opacity: 1; }
 body:has(#login-wrap) footer { color: #3b2f66; }
 body:has(#login-wrap) footer a { color: #8a0f7c; font-weight: 600; }
+
+/* v80 item 1: territory war and tower workshop in the dark neon style */
+.war-top .war-chip{background:linear-gradient(160deg,#1a1240,#120c30);color:var(--text);border:1.5px solid #5b46c8;box-shadow:0 0 12px rgba(255,61,240,.25)}
+.war-map{background:#0b0820 !important;border:1.5px solid var(--neon-cyan);box-shadow:0 0 18px rgba(25,227,255,.35),inset 0 0 20px rgba(138,77,255,.25)}
+.wt{opacity:1 !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.wt.mine{outline-color:var(--gold) !important;box-shadow:0 0 8px rgba(255,225,74,.8)}
+.wt.enemy{outline-color:var(--neon-pink) !important;box-shadow:0 0 8px rgba(255,61,240,.7)}
+.wt.sel{outline-color:var(--neon-cyan) !important;box-shadow:0 0 10px var(--neon-cyan)}
+.war-legend summary,.war-persona label{color:var(--text)}
+.workshop-jump a{display:inline-block;background:linear-gradient(160deg,#1a1240,#120c30) !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan);border-radius:999px;padding:8px 14px;box-shadow:0 0 12px rgba(25,227,255,.35);text-decoration:none;font-weight:800}
+.build-job,.coating-grid .card{background:linear-gradient(160deg,#221a4a,#171134) !important;border:1.5px solid #5b46c8 !important;color:var(--text)}
+.build-job{box-shadow:0 0 12px rgba(138,77,255,.35)}
