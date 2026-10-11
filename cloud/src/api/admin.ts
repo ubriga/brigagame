@@ -129,7 +129,7 @@ function controlSpecs(): Record<string, Record<string, Spec>> {
     },
     territory: { enabled: [null, null, "bool"], map_size: [8, 60, "int"], base_yield_per_hour: [0, 1000, "float"],
       store_cap: [10, 100000, "int"], accrual_cap_hours: [1, 168, "float"], start_grant: [0, 10000, "int"],
-      attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"],
+      attack_cost_per_rarity: [0, 10000, "int"], maintenance_per_extra_tile: [0, 1000, "float"], home_income_per_hour: [0, 100, "float"],
       daily_attack_cap: [0, 100, "int"], grace_hours: [0, 336, "float"], ongoing_battle_minutes: [1, 120, "int"],
       live_defense: [null, null, "bool"], live_offer_seconds: [10, 120, "int"],
       rebellion_enabled: [null, null, "bool"], rebellion_inactive_days: [1, 365, "float"], rebellion_max_per_run: [1, 500, "int"],
@@ -234,6 +234,73 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
       created_at: r.created_at, last_login: r.last_login,
       streak: r.streak ?? 0, broken_streak: r.broken_streak ?? null, broken_on: r.broken_on ?? null,
     })) });
+  }
+
+  // POST /api/admin/users/bulk - one action on every registered player matching a filter.
+  // Always two steps: dry_run=true returns who would be affected; the real run must repeat the
+  // exact count (confirm_count) so a changed list can never be hit by accident. The admin is never touched.
+  if (path === "/api/admin/users/bulk" && method === "POST") {
+    const body: any = await request.json().catch(() => ({}));
+    const action = String(body.action ?? "");
+    if (!["coins", "item", "ban", "suspend", "lift", "message"].includes(action)) return json({ error: "bad_action" }, 400);
+    const term = `%${String(body.q ?? "").trim()}%`;
+    const rows = ((await db.prepare(
+      "SELECT id, name, email FROM users WHERE is_guest = 0 AND lower(email) != lower(?) AND (email LIKE ? OR name LIKE ?) ORDER BY id LIMIT 401")
+      .bind(String(env.ADMIN_EMAIL ?? ""), term, term).all()).results as any[]);
+    if (rows.length > 400) return json({ error: "too_many", error_he: "יותר מ-400 משתמשים - צמצמו את הסינון." }, 400);
+    let detail: any = {}; let note = "";
+    if (action === "coins") {
+      const delta = Number.parseInt(String(body.delta ?? 0), 10);
+      if (!Number.isFinite(delta) || delta === 0 || Math.abs(delta) > 10000) return json({ error: "bad_delta", error_he: "סכום לא תקין (עד 10,000 לשחקן)." }, 400);
+      detail = { delta, reason: String(body.reason ?? "admin_bulk").slice(0, 120) };
+    } else if (action === "item") {
+      const item = String(body.item_id ?? ""); const qty = Math.trunc(Number(body.qty));
+      const def: any = (CATALOG as any)[item];
+      if (!def || def.kind !== "consumable") return json({ error: "bad_item", error_he: "פריט לא תקין (רק תחמושת/מתכלים)." }, 400);
+      if (!Number.isFinite(qty) || qty < 1 || qty > 50) return json({ error: "bad_qty", error_he: "כמות 1 עד 50." }, 400);
+      detail = { item_id: item, qty };
+    } else if (action === "ban") {
+      const hours = Math.max(1, Math.min(24 * 365, Number.parseInt(String(body.hours ?? 24), 10) || 24));
+      detail = { hours };
+    } else if (action === "message") {
+      const text = String(body.text ?? "").trim().slice(0, 500);
+      if (!text) return json({ error: "text_required", error_he: "חסר נוסח." }, 400);
+      detail = { text };
+    }
+    const sample = rows.slice(0, 8).map((r) => String(r.name || r.email));
+    if (body.dry_run !== false) {
+      return json({ ok: true, dry_run: true, action, count: rows.length, sample, detail });
+    }
+    if (Math.trunc(Number(body.confirm_count)) !== rows.length || rows.length === 0)
+      return json({ error: "count_mismatch", error_he: "מספר המושפעים השתנה או לא אושר. הריצו בדיקה יבשה שוב." }, 409);
+    const nowI = nowIso();
+    const msg = (uid: number, title: string, text: string) => db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)").bind(uid, title, text, nowI);
+    const stmts: any[] = [];
+    for (const r of rows) {
+      const uid = Number(r.id);
+      if (action === "coins") {
+        stmts.push(db.prepare("UPDATE users SET coins = coins + ? WHERE id = ?").bind(detail.delta, uid));
+        stmts.push(db.prepare("INSERT INTO transactions (user_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)").bind(uid, detail.delta, detail.reason, "", nowI));
+        stmts.push(msg(uid, "מתנה מהנהלת Brigagame", detail.delta > 0 ? `קיבלת ${detail.delta} מטבעות 🪙` : `עודכנה יתרת המטבעות שלך (${detail.delta}).`));
+      } else if (action === "item") {
+        stmts.push(db.prepare("INSERT INTO user_items (user_id, item_id, qty) VALUES (?,?,?) ON CONFLICT(user_id, item_id) DO UPDATE SET qty = qty + excluded.qty").bind(uid, detail.item_id, detail.qty));
+        stmts.push(msg(uid, "מתנה מהנהלת Brigagame", `קיבלת ${detail.qty} יחידות של ${String((CATALOG as any)[detail.item_id]?.name_he ?? detail.item_id)} 🎁`));
+      } else if (action === "ban") {
+        stmts.push(db.prepare("UPDATE users SET banned_until = ? WHERE id = ?").bind(new Date(Date.now() + detail.hours * 3600_000).toISOString(), uid));
+        stmts.push(msg(uid, "עדכון מהנהלת Brigagame", `החשבון שלך נחסם ל-${detail.hours} שעות.`));
+      } else if (action === "suspend") {
+        stmts.push(db.prepare("UPDATE users SET suspended = 1 WHERE id = ?").bind(uid));
+        stmts.push(msg(uid, "עדכון מהנהלת Brigagame", "החשבון שלך הושהה."));
+      } else if (action === "lift") {
+        stmts.push(db.prepare("UPDATE users SET suspended = 0, banned_until = NULL WHERE id = ?").bind(uid));
+        stmts.push(msg(uid, "עדכון מהנהלת Brigagame", "מגבלות החשבון שלך הוסרו."));
+      } else {
+        stmts.push(msg(uid, "הודעה מהנהלת Brigagame", detail.text));
+      }
+    }
+    for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));
+    await audit(env, request, Number(u.id), "admin.bulk", "users", rows.length, { action, q: String(body.q ?? ""), count: rows.length, ...detail, text: undefined });
+    return json({ ok: true, dry_run: false, action, count: rows.length });
   }
 
   // POST /api/admin/users/<uid>/moderate

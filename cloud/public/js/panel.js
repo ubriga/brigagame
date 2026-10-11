@@ -148,6 +148,14 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       </table></div>`;
   } else if (tab === "users") {
     body.innerHTML = `<div id="online-box"></div>
+      <details class="card" id="bulk-box" style="margin-bottom:12px"><summary><b>⚠️ פעולה על כמה שחקנים בבת אחת</b></summary>
+        <p class="sub">הפעולה חלה על כל השחקנים הרשומים שמתאימים לשדה החיפוש שלמטה (ריק = כל הרשומים). קודם בדיקה יבשה שמראה כמה יושפעו, ורק אחר כך ביצוע עם אישור. האדמין והאורחים לא נכללים. עד 400 שחקנים בפעולה.</p>
+        <select id="bk-act"><option value="coins">🪙 מטבעות (±)</option><option value="item">🎁 מתנת תחמושת</option><option value="message">✉️ הודעה פנימית</option>
+          <option value="ban">⏸️ חסימה לשעות</option><option value="suspend">🚫 השהיה</option><option value="lift">✓ שחרור</option></select>
+        <input id="bk-a" placeholder="סכום / כמות / שעות / נוסח" style="margin-top:6px">
+        <input id="bk-b" placeholder="מזהה פריט (לתחמושת בלבד), למשל double_bomb" style="margin-top:6px">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" id="bk-dry">🔍 בדיקה יבשה</button><button class="btn" id="bk-go" disabled>בצע</button></div>
+        <p class="sub" id="bk-out"></p></details>
       <input id="uq" placeholder="חיפוש לפי שם או אימייל">
       <div id="ulist" style="margin-top:10px"></div>`;
     const loadOnline = async () => {
@@ -207,6 +215,35 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         else toast("שגיאה");
       });
     };
+    {
+      let last = null;
+      const req = (dry, count) => {
+        const act = document.getElementById("bk-act").value, a = document.getElementById("bk-a").value, bb = document.getElementById("bk-b").value.trim();
+        const o = { action: act, q: document.getElementById("uq").value, dry_run: dry, confirm_count: count };
+        if (act === "coins") { o.delta = parseInt(a, 10) || 0; o.reason = "admin_bulk"; }
+        else if (act === "item") { o.item_id = bb; o.qty = parseInt(a, 10) || 0; }
+        else if (act === "ban") o.hours = parseInt(a, 10) || 24;
+        else if (act === "message") o.text = a;
+        return API.post("/api/admin/users/bulk", o);
+      };
+      const out = document.getElementById("bk-out"), go = document.getElementById("bk-go");
+      document.getElementById("bk-dry").onclick = async () => {
+        go.disabled = true; last = null;
+        const { status, data } = await req(true, 0);
+        if (status !== 200) { out.textContent = (data && data.error_he) || "שגיאה"; return; }
+        last = data.count; out.textContent = `בדיקה יבשה: יושפעו ${data.count} שחקנים${data.sample.length ? " (למשל: " + data.sample.join(", ") + ")" : ""}. לא בוצע דבר.`;
+        go.disabled = data.count === 0;
+      };
+      go.onclick = async () => {
+        if (last == null) return;
+        if (!confirm(`לבצע על ${last} שחקנים? אי אפשר לבטל.`)) return;
+        const { status, data } = await req(false, last);
+        go.disabled = true; last = null;
+        out.textContent = status === 200 ? `בוצע על ${data.count} שחקנים.` : ((data && data.error_he) || "שגיאה");
+        if (status === 200) load();
+      };
+      ["bk-act", "bk-a", "bk-b", "uq"].forEach(id => document.getElementById(id).addEventListener("input", () => { go.disabled = true; last = null; }));
+    }
     document.getElementById("uq").oninput = () => load();
     load();
   } else if (tab === "contact") {
@@ -364,7 +401,7 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
           ${cb("enabled", "המלחמה פעילה")}
           ${nb("map_size", "גודל מפה (צלעות)", 8, 60, 1)}${nb("base_yield_per_hour", "הפקה בסיסית לשעה לאריח", 0, 1000, 0.5)}
           ${nb("store_cap", "תקרת אגירה לכל חומר", 10, 100000, 10)}${nb("accrual_cap_hours", "שעות צבירה מרביות כשלא מחובר", 1, 168, 1)}
-          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}
+          ${nb("start_grant", "מענק פתיחה (מכל חומר)", 0, 10000, 5)}${nb("maintenance_per_extra_tile", "תחזוקה לשעה לכל אריח נוסף", 0, 1000, 0.5)}${nb("home_income_per_hour", "הכנסת אריח בית (מכל חומר, לשעה)", 0, 100, 0.5)}
         </div></div>
         <div class="card"><h2>⚔️ טריטוריות: תקיפה והגנה</h2><div class="grid-fields">
           ${nb("attack_cost_per_rarity", "עלות תקיפה לכל דרגת נדירות", 0, 10000, 1)}${nb("daily_attack_cap", "תקיפות מרביות ביום", 0, 100, 1)}

@@ -7,7 +7,7 @@ export const KINDS = ["forest", "mine", "quarry", "plains", "fortress"] as const
 export const YIELD_KIND: Record<string, "wood" | "iron" | "stone" | null> = { forest: "wood", mine: "iron", quarry: "stone", plains: null, fortress: null };
 export const TERRITORY_DEFAULTS = {
   enabled: true, map_size: 20, base_yield_per_hour: 6, store_cap: 500, accrual_cap_hours: 24,
-  start_grant: 60, attack_cost_per_rarity: 15, maintenance_per_extra_tile: 1,
+  start_grant: 60, attack_cost_per_rarity: 15, maintenance_per_extra_tile: 0.5, home_income_per_hour: 2,
   daily_attack_cap: 6, grace_hours: 24, ongoing_battle_minutes: 10,
   live_defense: true, live_offer_seconds: 30,
   rebellion_enabled: true, rebellion_inactive_days: 14, rebellion_max_per_run: 25,
@@ -71,7 +71,9 @@ export async function settle(db: Db, uid: number, controls: any): Promise<{ wood
   const hours = Math.max(0, Math.min(c.accrual_cap_hours, (now - Date.parse(m.last_settle)) / 3600000));
   const tiles = await allOwned(db, uid);
   const gross = { wood: 0, iron: 0, stone: 0 };
-  for (const t of tiles) { const y = yieldOf(t.kind, t.rarity, c.base_yield_per_hour); gross.wood += y.wood; gross.iron += y.iron; gross.stone += y.stone; }
+  for (const t of tiles) { const y = yieldOf(t.kind, t.rarity, c.base_yield_per_hour); gross.wood += y.wood; gross.iron += y.iron; gross.stone += y.stone;
+    // Home tile: a small income of all three materials so nobody is stuck without one of them.
+    if (t.is_home) { const h = Math.max(0, Number(c.home_income_per_hour) || 0); gross.wood += h; gross.iron += h; gross.stone += h; } }
   const maint = Math.max(0, tiles.length - 1) * c.maintenance_per_extra_tile;
   const cap = c.store_cap;
   const grow = (have: number, g: number) => {

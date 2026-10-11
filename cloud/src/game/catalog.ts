@@ -2218,7 +2218,7 @@ export const DEFAULT_GAMEPLAY_CONTROLS = {
   },
   "territory": {
     "enabled": true, "map_size": 20, "base_yield_per_hour": 6, "store_cap": 500, "accrual_cap_hours": 24,
-    "start_grant": 60, "attack_cost_per_rarity": 15, "maintenance_per_extra_tile": 1,
+    "start_grant": 60, "attack_cost_per_rarity": 15, "maintenance_per_extra_tile": 0.5, "home_income_per_hour": 2,
     "daily_attack_cap": 6, "grace_hours": 24, "ongoing_battle_minutes": 10,
     "live_defense": true, "live_offer_seconds": 30,
     "rebellion_enabled": true, "rebellion_inactive_days": 14, "rebellion_max_per_run": 25
