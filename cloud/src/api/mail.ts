@@ -9,7 +9,7 @@ import { sendSmtpMail } from "./smtp.js";
 import type { Env } from "../do/MatchRoom";
 
 const nowIso = () => new Date().toISOString();
-const SITE = "https://brigagame.ubriga.workers.dev";
+const SITE = "https://brigagame.brigastudio.com";
 
 let _ready: Promise<void> | null = null;
 export function ensureMailSchema(env: Env): Promise<void> {

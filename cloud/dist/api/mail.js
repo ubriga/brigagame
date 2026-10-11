@@ -7,7 +7,7 @@
 import { getControls } from "../util.js";
 import { sendSmtpMail } from "./smtp.js";
 const nowIso = () => new Date().toISOString();
-const SITE = "https://brigagame.ubriga.workers.dev";
+const SITE = "https://brigagame.brigastudio.com";
 let _ready = null;
 export function ensureMailSchema(env) {
     if (_ready)

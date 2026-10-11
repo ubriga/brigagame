@@ -1,6 +1,7 @@
 # Created by OrelAI - Brigagame 2.0 (https://github.com/ubriga/brigagame)
 # Brigagame 2.0 - Cloudflare port (deploy-ready; requires OrelAI's free Cloudflare account)
 name = "brigagame"
+workers_dev = true
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
@@ -27,10 +28,14 @@ database_id = "SET_LOCALLY_AT_DEPLOY"  # real id kept out of the repo
 # Secrets (set via wrangler secret put, never in repo):
 #   GOOGLE_CLIENT_ID, SESSION_SIGNING_KEY
 [vars]
-FRONTEND_ORIGIN = "https://ubriga.github.io/brigagame"
-SERVER_VERSION = "77"
-ALLOWED_ORIGINS = "https://brigagame.ubriga.workers.dev"
+FRONTEND_ORIGIN = "https://brigagame.brigastudio.com"
+SERVER_VERSION = "78"
+ALLOWED_ORIGINS = "https://brigagame.ubriga.workers.dev,https://brigagame.brigastudio.com"
 
 # Fixed-cadence mail drip: Sun-Thu 07:17 UTC (10:17 Israel). Sends only approved campaigns.
 [triggers]
 crons = ["17 7 * * SUN-THU"]
+
+[[routes]]
+pattern = "brigagame.brigastudio.com"
+custom_domain = true

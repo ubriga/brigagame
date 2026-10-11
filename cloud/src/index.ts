@@ -33,6 +33,7 @@ function json(body: unknown, status = 200): Response {
 const CORS_ORIGINS = new Set([
   "https://ubriga.github.io",
   "https://brigagame.ubriga.workers.dev",
+  "https://brigagame.brigastudio.com",
 ]);
 
 function withCors(request: Request, res: Response): Response {

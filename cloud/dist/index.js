@@ -27,6 +27,7 @@ function json(body, status = 200) {
 const CORS_ORIGINS = new Set([
     "https://ubriga.github.io",
     "https://brigagame.ubriga.workers.dev",
+    "https://brigagame.brigastudio.com",
 ]);
 function withCors(request, res) {
     if (res.status === 101)
