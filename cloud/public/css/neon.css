@@ -110,3 +110,4 @@ body:has(#login-wrap) footer a { color: #8a0f7c; font-weight: 600; }
 .workshop-jump a{display:inline-block;background:linear-gradient(160deg,#1a1240,#120c30) !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan);border-radius:999px;padding:8px 14px;box-shadow:0 0 12px rgba(25,227,255,.35);text-decoration:none;font-weight:800}
 .build-job,.coating-grid .card{background:linear-gradient(160deg,#221a4a,#171134) !important;border:1.5px solid #5b46c8 !important;color:var(--text)}
 .build-job{box-shadow:0 0 12px rgba(138,77,255,.35)}
+.war-cost{color:var(--gold);font-weight:800}
