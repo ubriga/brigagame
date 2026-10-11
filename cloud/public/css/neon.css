@@ -83,3 +83,18 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--neon-cya
 #lang-btn{background:#221a4a !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan) !important}
 #game-hud .player-tag,#game-hud .player-tag.me{background:linear-gradient(160deg,#1a1240,#120c30) !important}
 .tabs{background:transparent !important;border:0 !important;box-shadow:none !important}
+
+/* v80: login screen small-text contrast (outside card = dark on cream, inside card = light on navy) */
+#login-wrap > .sub, #login-wrap > p.sub { color: #2a1f52; opacity: 1; }
+#login-wrap > .card ~ label, #login-wrap .card ~ label,
+#login-wrap > .card ~ label span { color: #2a1f52; opacity: 1; }
+#login-wrap .card ~ p.sub, #login-wrap .card ~ p.sub a { color: #2a1f52; opacity: 1; }
+#login-wrap .card ~ p.sub a { color: #8a0f7c; font-weight: 600; text-decoration: underline; }
+#login-wrap .card .sub, #login-wrap .card p.sub { color: #e6e0fb; opacity: 1; }
+#login-wrap .card label { color: #e6e0fb; opacity: 1; }
+/* v80: SEO intro + footer on the cream login page were pale lavender (low contrast). */
+#seo-intro, #seo-intro p { color: #3b2f66; opacity: 1; }
+#seo-intro h1 { color: #231a4a; opacity: 1; }
+body:has(#login-wrap) footer, body:has(#login-wrap) footer * { opacity: 1; }
+body:has(#login-wrap) footer { color: #3b2f66; }
+body:has(#login-wrap) footer a { color: #8a0f7c; font-weight: 600; }
