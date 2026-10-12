@@ -148,6 +148,11 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       </table></div>`;
   } else if (tab === "users") {
     body.innerHTML = `<div id="online-box"></div>
+      <div class="card" id="giftall-box" style="margin-bottom:12px"><h2>🪙 זיכוי מטבעות לכל השחקנים</h2>
+        <p class="sub">מזכה כל שחקן רשום (בלי אורחים ובלי האדמין) בסכום שתזינו. קודם בדיקה שמראה כמה שחקנים יקבלו, ורק אחר כך ביצוע עם אישור. כל שחקן מקבל הודעה בתיבה והפעולה נרשמת ביומן.</p>
+        <label>סכום לכל שחקן (1 עד 10,000)</label><input id="ga-amt" type="number" min="1" max="10000" step="1" placeholder="למשל 100">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn secondary" id="ga-dry">🔍 בדיקה</button><button class="btn" id="ga-go" disabled>🪙 זכה את כולם</button></div>
+        <p class="sub" id="ga-out"></p></div>
       <details class="card" id="bulk-box" style="margin-bottom:12px"><summary><b>⚠️ פעולה על כמה שחקנים בבת אחת</b></summary>
         <p class="sub">הפעולה חלה על כל השחקנים הרשומים שמתאימים לשדה החיפוש שלמטה (ריק = כל הרשומים). קודם בדיקה יבשה שמראה כמה יושפעו, ורק אחר כך ביצוע עם אישור. האדמין והאורחים לא נכללים. עד 400 שחקנים בפעולה.</p>
         <select id="bk-act"><option value="coins">🪙 מטבעות (±)</option><option value="item">🎁 מתנת תחמושת</option><option value="message">✉️ הודעה פנימית</option>
@@ -215,6 +220,28 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         else toast("שגיאה");
       });
     };
+    {
+      let gaN = null, gaAmt = 0;
+      const gOut = document.getElementById("ga-out"), gGo = document.getElementById("ga-go"), gIn = document.getElementById("ga-amt");
+      const gReq = (dry, n) => API.post("/api/admin/users/bulk", { action: "coins", q: "", delta: gaAmt, reason: "admin_gift_all", dry_run: dry, confirm_count: n });
+      gIn.oninput = () => { gGo.disabled = true; gaN = null; };
+      document.getElementById("ga-dry").onclick = async () => {
+        gGo.disabled = true; gaN = null; gaAmt = parseInt(gIn.value, 10) || 0;
+        if (gaAmt < 1 || gaAmt > 10000) { gOut.textContent = "הזינו סכום בין 1 ל-10,000."; return; }
+        const { status, data } = await gReq(true, 0);
+        if (status !== 200) { gOut.textContent = (data && data.error_he) || "שגיאה"; return; }
+        gaN = data.count; gOut.textContent = `בדיקה: ${data.count} שחקנים יקבלו ${gaAmt} מטבעות כל אחד (סה"כ ${data.count * gaAmt}). לא בוצע דבר.`;
+        gGo.disabled = data.count === 0;
+      };
+      gGo.onclick = async () => {
+        if (gaN == null) return;
+        if (!confirm(`לזכות ${gaN} שחקנים ב-${gaAmt} מטבעות כל אחד (סה"כ ${gaN * gaAmt})? אי אפשר לבטל.`)) return;
+        gGo.disabled = true;
+        const { status, data } = await gReq(false, gaN);
+        gOut.textContent = status === 200 ? `בוצע: ${data.count} שחקנים זוכו ב-${gaAmt} מטבעות.` : ((data && data.error_he) || "הפעולה נכשלה");
+        gaN = null;
+      };
+    }
     {
       let last = null;
       const req = (dry, count) => {
@@ -800,7 +827,8 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
       <div class="card"><h2>👥 נמענים (${ok.length} מסכימים)</h2>
         <p class="sub">רק מי שהסכים וסומן כאן יקבל. אפשר להוריד סימון לנמען בודד.</p>
         <div style="max-height:260px;overflow:auto"><table>${m.recipients.map(r => `<tr><td><input type="checkbox" data-rcp="${r.id}" ${r.opted_in && !r.excluded ? "checked" : ""} ${r.opted_in ? "" : "disabled"} style="width:auto"></td><td dir="ltr">${esc(r.email)}</td><td>${r.opted_in ? "מסכים" : "הוסר"}</td></tr>`).join("")}</table></div>
-        <button class="btn" id="mt-send" style="margin-top:12px">📤 שלח עדכון לשחקנים</button><div id="mt-status" class="sub" style="margin-top:8px"></div></div>`;
+        <p class="sub">יתרה לשליחה היום: <b>${m.remaining}</b> (נשלחו ${m.sent_today}; מגבלת Brevo ${m.brevo_limit || 300} ליום משותפת, ${m.reserve || 50} שמורים לקודי כניסה והתראות)</p>
+        <button class="btn" id="mt-send" style="margin-top:12px">📤 שלח מייל לכל השחקנים המסכימים</button><div id="mt-status" class="sub" style="margin-top:8px"></div></div>`;
     const val = (id) => document.getElementById(id).value;
     document.getElementById("mu-save").onclick = async () => {
       const mu = { enabled: document.getElementById("mu-enabled").checked, default_checked: document.getElementById("mu-default").checked,
@@ -822,7 +850,13 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
     document.getElementById("mt-send").onclick = async () => {
       const ids = [...body.querySelectorAll("[data-rcp]")].filter(x => x.checked && !x.disabled).map(x => Number(x.dataset.rcp));
       if (!ids.length) return toast("אין נמענים מסומנים");
-      if (!confirm("לשלוח את העדכון ל-" + ids.length + " שחקנים?")) return;
+      const fresh = await API.get("/api/admin/mail/status");
+      const left = fresh.status === 200 ? fresh.data.remaining : 0, sentT = fresh.status === 200 ? fresh.data.sent_today : 0;
+      if (!fresh.data || !fresh.data.enabled) return toast("מנגנון עדכוני המייל כבוי. הפעילו אותו למעלה ושמרו.");
+      if (left <= 0) return toast("אין יתרה לשליחה היום (נשלחו " + sentT + "). המכסה היומית משותפת גם לקודי כניסה.");
+      if (!val("mt-subject").trim() || !val("mt-body").trim()) return toast("חסר נושא או תוכן");
+      const will = Math.min(left, ids.length);
+      if (!confirm("לשלוח מייל הפצה?\nנמענים מסכימים: " + ids.length + "\nיתרה היום (אחרי שמירת מקום לקודי כניסה): " + left + "\nיישלחו היום: " + will + (will < ids.length ? "\nהשאר לא יישלחו (ניתן להמשיך מחר, מי שכבר קיבל לא יקבל שוב)" : "") + "\nכולל קישור הסרה בכל מייל. אי אפשר לבטל.")) return;
       const campaign = "c" + Date.now();
       const stat = document.getElementById("mt-status"); let sent = 0, failed = 0, capped = 0;
       for (let i = 0; i < ids.length; i += 10) {
