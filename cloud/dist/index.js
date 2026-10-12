@@ -63,7 +63,13 @@ export default {
                     "Vary": "Origin",
                 } });
         }
-        return withCors(request, await handleRequest(request, env, ctx));
+        const res = withCors(request, await handleRequest(request, env, ctx));
+        if (corsUrl.protocol !== "https:" || res.status === 101)
+            return res;
+        // HSTS (HTTPS only). No includeSubDomains/preload: other subdomains are not audited.
+        const out = new Response(res.body, res);
+        out.headers.set("Strict-Transport-Security", "max-age=15552000");
+        return out;
     },
 };
 async function handleRequest(request, env, ctx) {
