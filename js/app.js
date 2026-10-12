@@ -450,7 +450,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=79").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=80").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },
@@ -463,13 +463,20 @@ const App = {
   // that keeps every bit of progress (server converts the same row).
   showGuestBanner() {
     this.hideGuestBanner();
+    // v80: once the guest closes the banner it stays hidden for this guest account (keyed by its expiry).
+    const dkey = "bg_guest_banner_off";
+    const stamp = String(this._guest && this._guest.expires_at || "1");
+    try { if (localStorage.getItem(dkey) === stamp) return; } catch (e) {}
     const en = Lang.current === "en";
     const bar = document.createElement("div");
     bar.id = "guest-banner";
     bar.innerHTML = `
+      <span class="gb-ico" aria-hidden="true">🎭</span>
       <span id="guest-banner-text"></span>
-      <button class="btn small" id="guest-register-btn">${en ? "Sign up & keep progress" : "הירשם ושמור את ההתקדמות"}</button>`;
+      <button class="btn small" id="guest-register-btn">${en ? "Sign in & keep progress" : "התחבר ושמור"}</button>
+      <button class="gb-x" id="guest-banner-x" aria-label="${en ? "Close" : "סגירה"}">✕</button>`;
     document.body.appendChild(bar);
+    document.body.classList.add("guest-banner-on");
     const tick = () => {
       const el = document.getElementById("guest-banner-text");
       if (!el) { clearInterval(this._guestTimer); return; }
@@ -477,20 +484,27 @@ const App = {
       const left = Math.max(0, exp - Date.now());
       const h = Math.floor(left / 3600e3), m = Math.floor((left % 3600e3) / 60e3);
       el.textContent = en
-        ? `🎭 Guest account - deletes itself in ${h}h ${m}m · progress is not kept`
-        : `🎭 חשבון אורח - נמחק בעוד ${h} שעות ו-${m} דקות · ההתקדמות לא נשמרת`;
+        ? `Guest account - deleted automatically in ${h}h ${m}m. Sign in to save your progress`
+        : `חשבון אורח - נמחק אוטומטית בעוד ${h} שעות ו-${m} דקות. התחבר כדי לשמור התקדמות`;
     };
     tick();
+    const fit = () => { const g = document.getElementById("guest-banner"); if (g) document.documentElement.style.setProperty("--gb-h", g.offsetHeight + "px"); };
+    fit(); setTimeout(fit, 300); window.addEventListener("resize", fit);
     this._guestTimer = setInterval(tick, 30000);
     document.getElementById("guest-register-btn").onclick = () => {
       this._guestUpgrade = true;
       location.hash = "#/login";
+    };
+    document.getElementById("guest-banner-x").onclick = () => {
+      try { localStorage.setItem(dkey, stamp); } catch (e) {}
+      this.hideGuestBanner();
     };
   },
 
   hideGuestBanner() {
     clearInterval(this._guestTimer); this._guestTimer = null;
     document.getElementById("guest-banner")?.remove();
+    document.body.classList.remove("guest-banner-on");
   },
 
   // Timed guest sign-up prompt (separate from the once-per-session games

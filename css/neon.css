@@ -83,3 +83,37 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--neon-cya
 #lang-btn{background:#221a4a !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan) !important}
 #game-hud .player-tag,#game-hud .player-tag.me{background:linear-gradient(160deg,#1a1240,#120c30) !important}
 .tabs{background:transparent !important;border:0 !important;box-shadow:none !important}
+
+/* v80: login screen small-text contrast (outside card = dark on cream, inside card = light on navy) */
+#login-wrap > .sub, #login-wrap > p.sub { color: #2a1f52; opacity: 1; }
+#login-wrap > .card ~ label, #login-wrap .card ~ label,
+#login-wrap > .card ~ label span { color: #2a1f52; opacity: 1; }
+#login-wrap .card ~ p.sub, #login-wrap .card ~ p.sub a { color: #2a1f52; opacity: 1; }
+#login-wrap .card ~ p.sub a { color: #8a0f7c; font-weight: 600; text-decoration: underline; }
+#login-wrap .card .sub, #login-wrap .card p.sub { color: #e6e0fb; opacity: 1; }
+#login-wrap .card label { color: #e6e0fb; opacity: 1; }
+/* v80: SEO intro + footer on the cream login page were pale lavender (low contrast). */
+#seo-intro, #seo-intro p { color: #3b2f66; opacity: 1; }
+#seo-intro h1 { color: #231a4a; opacity: 1; }
+body:has(#login-wrap) footer, body:has(#login-wrap) footer * { opacity: 1; }
+body:has(#login-wrap) footer { color: #3b2f66; }
+body:has(#login-wrap) footer a { color: #8a0f7c; font-weight: 600; }
+
+/* v80 item 1: territory war and tower workshop in the dark neon style */
+.war-top .war-chip{background:linear-gradient(160deg,#1a1240,#120c30);color:var(--text);border:1.5px solid #5b46c8;box-shadow:0 0 12px rgba(255,61,240,.25)}
+.war-map{background:#0b0820 !important;border:1.5px solid var(--neon-cyan);box-shadow:0 0 18px rgba(25,227,255,.35),inset 0 0 20px rgba(138,77,255,.25)}
+.wt{opacity:1 !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+.wt.mine{outline-color:var(--gold) !important;box-shadow:0 0 8px rgba(255,225,74,.8)}
+.wt.enemy{outline-color:var(--neon-pink) !important;box-shadow:0 0 8px rgba(255,61,240,.7)}
+.wt.sel{outline-color:var(--neon-cyan) !important;box-shadow:0 0 10px var(--neon-cyan)}
+.war-legend summary,.war-persona label{color:var(--text)}
+.workshop-jump a{display:inline-block;background:linear-gradient(160deg,#1a1240,#120c30) !important;color:var(--neon-cyan) !important;border:1.5px solid var(--neon-cyan);border-radius:999px;padding:8px 14px;box-shadow:0 0 12px rgba(25,227,255,.35);text-decoration:none;font-weight:800}
+.build-job,.coating-grid .card{background:linear-gradient(160deg,#221a4a,#171134) !important;border:1.5px solid #5b46c8 !important;color:var(--text)}
+.build-job{box-shadow:0 0 12px rgba(138,77,255,.35)}
+.war-cost{color:var(--gold);font-weight:800}
+
+/* v80 item 3: guest banner in the neon style, closable */
+#guest-banner{background:linear-gradient(90deg,#171134,#221a4a) !important;color:var(--text) !important;border-bottom:2px solid var(--neon-cyan) !important;box-shadow:0 0 18px rgba(25,227,255,.45);gap:10px !important;padding:7px 40px 7px 12px !important;font-weight:700}
+#guest-banner .gb-ico{filter:drop-shadow(0 0 6px var(--neon-pink))}
+#guest-banner .gb-x{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;border:1.5px solid var(--neon-cyan);background:transparent;color:var(--neon-cyan);font-size:14px;line-height:1;cursor:pointer;padding:0}
+@media (max-width:640px){#guest-banner{font-size:12.5px !important;gap:6px 8px !important;padding:6px 38px 6px 10px !important}#guest-banner .gb-ico{display:none}#guest-banner .btn.small{padding:5px 12px;font-size:12.5px}}
