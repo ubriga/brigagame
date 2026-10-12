@@ -746,7 +746,7 @@ export async function handleApi(env, request, path, ctx) {
         if (now - lsStored > 20) {
             await env.DB.prepare("UPDATE users SET last_seen = ? WHERE id = ?").bind(nowIso(), uid).run();
         }
-        const out = { ok: true, offer: null, unread_messages: unread?.c ?? 0,
+        const out = { ok: true, offer: null, unread_messages: unread?.c ?? 0, coins: Number(u.coins ?? 0),
             server_version: env.SERVER_VERSION, maintenance,
             broadcast: await broadcastFor(env, u).catch(() => null) };
         if (offer) {

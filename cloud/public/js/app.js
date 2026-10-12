@@ -167,6 +167,26 @@ const App = {
     window.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
   },
 
+  // Keeps the header coin chip equal to the server balance. A raise (gift, reward) floats a "+N" next to it.
+  syncCoins(n) {
+    if (!this.me || typeof this.me.coins !== "number" || n === this.me.coins) return;
+    const gain = n - this.me.coins;
+    this.me.coins = n;
+    const chip = document.getElementById("coin-chip");
+    if (!chip) return;
+    chip.textContent = "🪙 " + n;
+    if (gain <= 0) return;
+    try {
+      const f = document.createElement("span");
+      f.className = "coin-gain"; f.textContent = "+" + gain + " 🪙";
+      const r = chip.getBoundingClientRect();
+      f.style.left = Math.round(r.left + r.width / 2) + "px"; f.style.top = Math.round(r.bottom) + "px";
+      document.body.appendChild(f);
+      chip.classList.remove("coin-pop"); void chip.offsetWidth; chip.classList.add("coin-pop");
+      setTimeout(() => { f.remove(); chip.classList.remove("coin-pop"); }, 2400);
+      try { Sfx.play("click"); } catch (x) { /* ignore */ }
+    } catch (x) { /* ignore */ }
+  },
   // App-wide presence pulse: keeps the player invitable from ANY screen
   // (lobby, store, leaderboard, ...) and delivers incoming match invites as
   // a global overlay.
@@ -182,6 +202,7 @@ const App = {
         this.showMatchOffer(offer.match_id, offer.expires_in || 20, offer.territory || null);
       if (typeof data.unread_messages === "number")
         this.setUnread(data.unread_messages);
+      if (typeof data.coins === "number") this.syncCoins(data.coins);
       if (data.maintenance) this.setMaintenance(data.maintenance);
       this.setBroadcast(data.broadcast || null);
     };
@@ -450,7 +471,7 @@ const App = {
     if (!this.me.is_admin) document.getElementById("nav-admin")?.remove();
     if (this.me.is_admin && !this._panelLoading) {
       this._panelLoading = true;
-      import("./panel.js?v=80").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
+      import("./panel.js?v=81").then(m => m.install(this)).catch(() => { this._panelLoading = false; });
     }
     GameView.setInventory(this.inventory);
   },

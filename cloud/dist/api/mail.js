@@ -249,6 +249,14 @@ export const DEFAULT_TEMPLATE = {
     subject: "עדכון חדש ב-Brigagame 2.0",
     body: "שלום {name},\n\nזה העדכון הראשון שלנו על Brigagame 2.0. הוספנו להסביר מה חדש במשחק:\n\n- ...\n\nנתראה בזירה,\nצוות Brigagame 2.0",
 };
+/** Brevo free plan: 300 mails/day shared by login codes, contact alerts and campaigns. Keep a reserve for the transactional ones. */
+export const BREVO_DAY_LIMIT = 300;
+export const TRANSACTIONAL_RESERVE = 50;
+export function campaignRemaining(s, usedToday) {
+    const byCap = s.daily_cap - usedToday;
+    const byProvider = s.provider === "gmail" ? Infinity : BREVO_DAY_LIMIT - TRANSACTIONAL_RESERVE - usedToday;
+    return Math.max(0, Math.min(byCap, byProvider));
+}
 export async function handleMailAdmin(env, request, path, adminId) {
     const J = (b, st = 200) => new Response(JSON.stringify(b), { status: st, headers: { "content-type": "application/json" } });
     const db = env.DB;
@@ -268,8 +276,9 @@ export async function handleMailAdmin(env, request, path, adminId) {
             + " WHERE u.is_guest = 0 ORDER BY u.id LIMIT 1000").all();
         return J({
             enabled: s.enabled, default_checked: s.default_checked, daily_cap: s.daily_cap,
-            key_set: Boolean(s.app_password), sender_email: s.sender_email,
-            sent_today: Number(used?.c ?? 0), template,
+            key_set: s.provider === "gmail" ? Boolean(s.app_password) : Boolean(s.smtp_user && s.smtp_pass), sender_email: s.sender_email,
+            provider: s.provider, brevo_limit: BREVO_DAY_LIMIT, reserve: TRANSACTIONAL_RESERVE,
+            sent_today: Number(used?.c ?? 0), remaining: campaignRemaining(s, Number(used?.c ?? 0)), template,
             recipients: rows.results.map((r) => ({
                 id: r.id, email: r.email, name: r.name, opted_in: Boolean(r.opted_in), excluded: Boolean(r.excluded)
             })),
@@ -333,8 +342,9 @@ export async function handleMailAdmin(env, request, path, adminId) {
         const s = await mailSettings(env);
         if (!s.enabled)
             return J({ error: "disabled", error_he: "מנגנון המייל כבוי בשליטת האדמין." }, 403);
-        if (!s.app_password && !s.dry_run)
-            return J({ error: "no_key", error_he: "סיסמת האפליקציה של שולח המיילים עדיין לא הוגדרה." }, 503);
+        const keyOk = s.provider === "gmail" ? Boolean(s.app_password) : Boolean(s.smtp_user && s.smtp_pass);
+        if (!keyOk && !s.dry_run)
+            return J({ error: "no_key", error_he: "פרטי שרת הדואר (Brevo) לא מוגדרים בשרת." }, 503);
         const b = await request.json().catch(() => ({}));
         const campaign = String(b.campaign ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
         const subject = String(b.subject ?? "").trim().slice(0, 200);
@@ -344,7 +354,7 @@ export async function handleMailAdmin(env, request, path, adminId) {
             return J({ error: "bad_request", error_he: "בקשה לא תקינה." }, 400);
         const day = nowIso().slice(0, 10);
         const used = await db.prepare("SELECT COUNT(*) c FROM mail_send_log WHERE day = ? AND status = 'sent'").bind(day).first();
-        let remaining = Math.max(0, s.daily_cap - Number(used?.c ?? 0));
+        let remaining = campaignRemaining(s, Number(used?.c ?? 0));
         const out = { sent: 0, skipped: 0, failed: 0, capped: 0, errors: [] };
         for (const id of ids) {
             // Only currently opted-in, non-excluded, real accounts - re-checked server-side.
