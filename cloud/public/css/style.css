@@ -703,3 +703,4 @@ body.fs-mode.game-active.side-collapsed #shot-clock { font-size: 12px; text-alig
 /* Mobile interface chosen on a wide screen: a phone-width column. */
 @media (min-width: 700px) { body.ui-mobile:not(.fs-mode) main { max-width: 480px; } body.ui-mobile.game-active:not(.fs-mode) #game-stage { max-width: 480px; margin: 0 auto; } }
 @media (min-width: 1300px) { body.ui-desktop.view-war:not(.fs-mode) main { max-width: 1600px; } }
+@media (min-width: 1300px) { body.ui-desktop.view-war:not(.fs-mode) main { max-width: 1600px; } }
