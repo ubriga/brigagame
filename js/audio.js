@@ -7,6 +7,7 @@
 const Sfx = {
   ctx: null,
   muted: (typeof Consent !== "undefined" ? Consent.getPref("bg_muted") : localStorage.getItem("bg_muted")) === "1",
+  musicOff: (typeof Consent !== "undefined" ? Consent.getPref("bg_music_off") : localStorage.getItem("bg_music_off")) === "1",
   musicOn: false,
   _musicTimer: null,
   _buffers: {},   // name -> AudioBuffer | "error"
@@ -67,6 +68,14 @@ const Sfx = {
       }
     }));
     return this._loading;
+  },
+
+  // v83: music can be switched off on its own (sound effects stay on).
+  toggleMusic() {
+    this.musicOff = !this.musicOff;
+    Consent.setPref("bg_music_off", this.musicOff ? "1" : "0");
+    if (this.musicOff) this.stopMusic(); else this.startMusic();
+    return this.musicOff;
   },
 
   toggleMute() {
@@ -171,7 +180,7 @@ const Sfx = {
 
   // Short original 8-bar chiptune-style loop.
   startMusic() {
-    if (this.muted || this.musicOn || window.__BG_LOCKED__ || !this.ensure()) return;
+    if (this.muted || this.musicOff || this.musicOn || window.__BG_LOCKED__ || !this.ensure()) return;
     this.musicOn = true;
     const ctx = this.ctx;
     const night = typeof PesachNight !== "undefined" && PesachNight.on;
