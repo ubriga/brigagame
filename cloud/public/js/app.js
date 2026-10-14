@@ -1241,7 +1241,8 @@ const App = {
       Sfx.play("click");
       const difficulty = aiTier.value;
       Consent.setPref("brigagame.aiTier", difficulty);
-      const result = await API.post("/api/matches/ai", { difficulty });
+      const ps = parseInt(Consent.getPref("bg_prestart"), 10);
+      const result = await API.post("/api/matches/ai", { difficulty, prestart: ps >= 5 && ps <= 10 ? ps : 5 });
       const data = result.data || {};
       if (data.match_id) go(data.match_id); else toast(apiError(result, "שגיאה ביצירת משחק מול בוט"));
     };

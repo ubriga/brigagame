@@ -584,11 +584,17 @@ const GameView = {
       const cdOn = !window.App || (App.ux || {}).start_countdown !== false;
       const st = document.getElementById("game-stage");
       if (cdOn && st && Number(s.version || 0) <= 3) {
-        this._cdUntil = Date.now() + 3000;
+        // v83: the player picks 5-10 s in the lobby (default 5). Against a bot never longer than the
+        // server-side bot hold, so the bot cannot shoot while the player is still locked out.
+        let secs = 5;
+        try { const v = parseInt(Consent.getPref("bg_prestart"), 10); if (v >= 5 && v <= 10) secs = v; } catch (e) {}
+        const hold = Number(s.bot_hold_until || 0);
+        if (hold > 0) secs = Math.max(3, Math.min(secs, Math.floor(hold - Date.now() / 1000)));
+        this._cdUntil = Date.now() + secs * 1000;
         const ov = document.createElement("div");
         ov.id = "start-cd"; ov.setAttribute("role", "status");
         st.appendChild(ov);
-        let n = 3;
+        let n = secs;
         const tick = () => { if (n <= 0) { ov.remove(); return; } ov.innerHTML = `<b>${n}</b>`; n--; setTimeout(tick, 1000); };
         tick();
       }

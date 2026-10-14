@@ -550,7 +550,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       // app.py parity: the client sends { difficulty }; creation logic lives
       // in createAiMatch (shared with the quick-match bot fallback).
       const tier = String(body.difficulty ?? body.tier ?? "medium").toLowerCase();
-      const created = await createAiMatch(env, user, tier);
+      const ps = Math.trunc(Number(body.prestart ?? 0));
+      const created = await createAiMatch(env, user, tier, undefined, ps >= 5 && ps <= 10 ? ps : 0);
       if (!created.ok) return json({ error: created.error, error_he: created.error_he }, created.status);
       return json({ match_id: created.match_id, status: "active" });
     }

@@ -201,7 +201,7 @@ async function scaleObstacle(env: Env, state: any, controls: any, difficulty?: s
   applyObstacleCtx(state, controls.dynamic_obstacle, ctx);
 }
 
-export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?: Record<string, unknown>): Promise<AiMatchResult> {
+export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?: Record<string, unknown>, prestartSecs = 0): Promise<AiMatchResult> {
   // app.py parity: the client sends { difficulty }; the server privately
   // maps the tier to a bot rank at or above the player's rank.
   const controls = await getControls(env);
@@ -269,7 +269,8 @@ export async function createAiMatch(env: Env, user: any, tierRaw: string, extra?
   // UX onboarding (item ח): hold the bot's first shot for a short countdown
   // so a fresh player orients before coming under fire. Server-enforced in
   // MatchRoom.alarm; the client shows the countdown from this field.
-  const holdSecs = Math.trunc(Number(ux.bot_first_shot_countdown ?? 0));
+  // v83: the player chooses 5-10 s before the match; the bot holds fire at least that long.
+  const holdSecs = Math.max(Math.trunc(Number(ux.bot_first_shot_countdown ?? 0)), prestartSecs > 0 ? prestartSecs + 1 : 0);
   if (holdSecs > 0) state.bot_hold_until = Math.floor(Date.now() / 1000) + holdSecs;
   state.bot_controls = controls.bot_system;
   state.bot_ammo = {
