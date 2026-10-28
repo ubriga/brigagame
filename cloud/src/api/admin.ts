@@ -381,6 +381,46 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     return json({ ok: true, streak: restored, reward });
   }
 
+  // POST /api/admin/users/<uid>/streak-set - set a player's login-streak day and
+  // grant the streak coins up to that day retroactively, per the EXISTING streak
+  // reward table (no new amounts). Days 1..current streak count as already paid,
+  // so only days current+1..day are granted - never a double grant. Setting the
+  // day also marks today as the last login day, as if the player connected on
+  // all those days. Two-step: default is a dry-run preview; dry_run=false runs.
+  const streakSetMatch = path.match(/^\/api\/admin\/users\/(\d+)\/streak-set$/);
+  if (streakSetMatch && method === "POST") {
+    const uid = Number(streakSetMatch[1]);
+    const body: any = await request.json().catch(() => ({}));
+    const day = Number.parseInt(String(body.day ?? ""), 10);
+    if (!Number.isFinite(day) || day < 1 || day > 365)
+      return json({ error: "bad_day", error_he: "יום רצף לא תקין (1 עד 365)." }, 400);
+    const target: any = await db.prepare("SELECT * FROM users WHERE id = ?").bind(uid).first();
+    if (!target) return json({ error: "not_found" }, 404);
+    if (Number(target.is_guest))
+      return json({ error: "guest", error_he: "אורחים לא צוברים רצף התחברות." }, 400);
+    const current = Math.max(0, Number(target.streak ?? 0));
+    const streakCfg = await getLoginStreak(env);
+    let amount = 0;
+    if (streakCfg.enabled && day > current)
+      for (let d = current + 1; d <= day; d++) amount += streakRewardFor(streakCfg, d);
+    const preview = { current, target_day: day, days_paid: Math.max(0, day - current), amount };
+    if (day <= current) {
+      return json({ ok: true, dry_run: body.dry_run !== false, granted: 0, ...preview,
+        note: "already_at_or_beyond",
+        note_he: `השחקן כבר ביום ${current} ברצף - לא שולמו מטבעות כפולים.` });
+    }
+    if (body.dry_run !== false) return json({ ok: true, dry_run: true, ...preview });
+    const todayIL = israelDate(0);
+    await db.prepare("UPDATE users SET streak = ?, last_daily = ?, broken_streak = NULL, broken_on = NULL WHERE id = ?")
+      .bind(day, todayIL, uid).run();
+    if (amount > 0) await addCoins(d1(db), uid, amount, "login_streak", "admin set streak day " + day);
+    await db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
+      .bind(uid, "רצף התחברות 🔥", `קיבלת ${amount} מטבעות עבור רצף התחברות של ${day} ימים 🪙`, nowIso()).run();
+    await audit(env, request, Number(u.id), "admin.streak_set", "user", uid,
+      { day, from: current + 1, granted: amount, days_paid: day - current });
+    return json({ ok: true, dry_run: false, streak: day, granted: amount, days_paid: day - current });
+  }
+
   // GET /api/admin/nicknames?q=  |  POST /api/admin/nickname {user_id, action: block|unblock|rename, nickname?, reason?}
   // GET|POST /api/admin/nickname-config {change_price, blocked_words[]}
   if (path === "/api/admin/nicknames" && method === "GET") {
@@ -864,4 +904,4 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   }
 
   return null;
-}
+      }
