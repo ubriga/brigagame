@@ -404,21 +404,42 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
     if (streakCfg.enabled && day > current)
       for (let d = current + 1; d <= day; d++) amount += streakRewardFor(streakCfg, d);
     const preview = { current, target_day: day, days_paid: Math.max(0, day - current), amount };
-    if (day <= current) {
-      return json({ ok: true, dry_run: body.dry_run !== false, granted: 0, ...preview,
-        note: "already_at_or_beyond",
-        note_he: `השחקן כבר ביום ${current} ברצף - לא שולמו מטבעות כפולים.` });
+    if (body.dry_run !== false) {
+      return json({ ok: true, dry_run: true, ...preview,
+        ...(day <= current ? { note: "set_no_grant",
+          note_he: `הרצף ייקבע ליום ${day} (היום ${current}) - לא ישולמו מטבעות.` } : {}) });
     }
-    if (body.dry_run !== false) return json({ ok: true, dry_run: true, ...preview });
     const todayIL = israelDate(0);
+    if (day > current) {
+      // Atomic guard: the conditional UPDATE itself decides who grants, so two
+      // concurrent admin runs can never both pay. The loser sees 0 changes and
+      // reports already_at_or_beyond with granted 0.
+      const moved = await db.prepare(
+        "UPDATE users SET streak = ?, last_daily = ?, broken_streak = NULL, broken_on = NULL"
+        + " WHERE id = ? AND streak < ?").bind(day, todayIL, uid, day).run();
+      if (Number(moved.meta?.changes ?? 0) !== 1) {
+        return json({ ok: true, dry_run: false, granted: 0, ...preview,
+          note: "already_at_or_beyond",
+          note_he: "הרצף כבר עודכן - לא שולמו מטבעות כפולים." });
+      }
+      if (amount > 0) {
+        await addCoins(d1(db), uid, amount, "login_streak", "admin set streak day " + day);
+        await db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
+          .bind(uid, "רצף התחברות 🔥", `קיבלת ${amount} מטבעות עבור רצף התחברות של ${day} ימים 🪙`, nowIso()).run();
+      }
+      await audit(env, request, Number(u.id), "admin.streak_set", "user", uid,
+        { day, from: current + 1, granted: amount, days_paid: day - current });
+      return json({ ok: true, dry_run: false, streak: day, granted: amount, days_paid: day - current });
+    }
+    // day <= current: the admin explicitly chose this day - set the streak to
+    // it (also repairs a wrong current value), refresh last_daily, no coins.
     await db.prepare("UPDATE users SET streak = ?, last_daily = ?, broken_streak = NULL, broken_on = NULL WHERE id = ?")
       .bind(day, todayIL, uid).run();
-    if (amount > 0) await addCoins(d1(db), uid, amount, "login_streak", "admin set streak day " + day);
-    await db.prepare("INSERT INTO messages (user_id, title, body, created_at) VALUES (?,?,?,?)")
-      .bind(uid, "רצף התחברות 🔥", `קיבלת ${amount} מטבעות עבור רצף התחברות של ${day} ימים 🪙`, nowIso()).run();
     await audit(env, request, Number(u.id), "admin.streak_set", "user", uid,
-      { day, from: current + 1, granted: amount, days_paid: day - current });
-    return json({ ok: true, dry_run: false, streak: day, granted: amount, days_paid: day - current });
+      { day, from: current, granted: 0, days_paid: 0, direction: day < current ? "down" : "same" });
+    return json({ ok: true, dry_run: false, streak: day, granted: 0, days_paid: 0,
+      note: "set_no_grant",
+      note_he: `הרצף נקבע ליום ${day}. לא שולמו מטבעות.` });
   }
 
   // GET /api/admin/nicknames?q=  |  POST /api/admin/nickname {user_id, action: block|unblock|rename, nickname?, reason?}
@@ -904,4 +925,4 @@ export async function handleAdminApi(env: Env, request: Request, path: string): 
   }
 
   return null;
-      }
+}
