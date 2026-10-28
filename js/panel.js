@@ -183,9 +183,10 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         ${(data.users || []).map(u => `<tr>
           <td>${esc(u.name)}<br><span class="sub" style="margin:0">${esc(u.email)}</span></td>
           <td>${u.coins}</td><td>${u.rating}</td><td>${u.wins}/${u.losses}</td>
-          <td>${u.suspended ? "🚫 מושהה" : u.banned_until ? "⏸️ חסום" : "✓"}${u.broken_on ? `<br><span class="sub">💔 רצף שבור (${u.broken_streak} ימים)</span>` : ""}</td>
+          <td>${u.suspended ? "🚫 מושהה" : u.banned_until ? "⏸️ חסום" : "✓"}<br><span class="sub">🔥 יום ${u.streak || 0}</span>${u.broken_on ? `<br><span class="sub">💔 רצף שבור (${u.broken_streak} ימים)</span>` : ""}</td>
           <td style="white-space:nowrap">
             <button class="btn small secondary" data-coins="${u.id}">🪙±</button>
+            <button class="btn small secondary" data-streakset="${u.id}" data-streakcur="${u.streak || 0}" title="קבע יום ברצף התחברות">🔥📅</button>
             <button class="btn small secondary" data-ban="${u.id}">חסום 24ש׳</button>
             <button class="btn small secondary" data-susp="${u.id}">השהה</button>
             <button class="btn small secondary" data-lift="${u.id}">שחרר</button>
@@ -208,6 +209,22 @@ async function vAdmin(App, view, tab, seq = App._routeSeq) {
         const { status, data } = await API.post(`/api/admin/users/${b.dataset.streakfix}/streak-restore`, {});
         if (status === 200) toast(`🔥 הרצף שוחזר ל-${data.streak} ימים`);
         else toast((data && data.error_he) || "השחזור נכשל");
+        load();
+      });
+      body.querySelectorAll("[data-streakset]").forEach(b => b.onclick = async () => {
+        const cur = parseInt(b.dataset.streakcur, 10) || 0;
+        const v = prompt(`קביעת יום ברצף ההתחברות (כרגע יום ${cur}). לאיזה יום לקבוע? למשל 5, 10`);
+        if (v === null) return;
+        const day = parseInt(v, 10);
+        if (!Number.isFinite(day) || day < 1 || day > 365) { toast("יום לא תקין (1-365)"); return; }
+        const pre = await API.post(`/api/admin/users/${b.dataset.streakset}/streak-set`, { day });
+        const d = pre.data;
+        if (pre.status !== 200 || !d) { toast((d && d.error_he) || "שגיאה"); return; }
+        if (d.note === "already_at_or_beyond") { toast(d.note_he); return; }
+        if (!confirm(`השחקן ביום ${d.current}. ישולמו רטרואקטיבית ימים ${d.current + 1}-${d.target_day} בסך ${d.amount} מטבעות לפי טבלת הרצף הקיימת, והרצף ייקבע על יום ${d.target_day}. לאשר?`)) return;
+        const { status, data: r } = await API.post(`/api/admin/users/${b.dataset.streakset}/streak-set`, { day, dry_run: false });
+        if (status === 200 && r && r.ok) toast(`🔥 נקבע יום ${r.streak}; שולמו ${r.granted} מטבעות`);
+        else toast((r && r.error_he) || "שגיאה");
         load();
       });
       body.querySelectorAll("[data-coins]").forEach(b => b.onclick = async () => {
